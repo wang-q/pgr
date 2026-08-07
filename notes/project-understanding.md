@@ -1,7 +1,13 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-06
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-08
+（2026-08-08：全量核对子命令注册与库文件——align 4 子命令（fill/lastz/pgi/rest）、paf 10
+ 子命令（新增 validate）、pl 4 子命令（ir/rept/trf 迁出为独立 rept 命令：ir→e-kmer、
+ rept→s-kmer）、rept 独立命令（6 子命令，含 masker）；补 libs/rmblast.rs、
+ 更新 §2.1/§3/§4.4/§6.2/§8/§9/§10/§13）。
+（2026-08-07：AVX2 加速 HV 编码（hash_hv_bit/hash_hv_i8）+ `rept masker` 完整 RepeatMasker
+ 模拟 pipeline（TRF + rmblastn），更新 §8/§13）。
 （2026-08-06：新增 notes/todo.md 近期待办索引，见 §12）。
 （2026-08-06：SIMD 迁移——`std::simd`（nightly portable_simd）→ `wide` 1.6.0，
  `rust-toolchain.toml` 切 stable 1.97，更新 §2.4/§8.1）。
@@ -76,12 +82,13 @@ src/
 │   ├── psl/
 │   ├── lav/
 │   ├── maf/
-│   ├── align/          #   两基因组比对：pgi (FastGA 式)、lastz
+│   ├── align/          #   两基因组比对：pgi/lastz/fill/rest
 │   ├── paf/            #   PAF 泛基因组图操作
 │   ├── pbit/           #   群体基因组压缩
 │   ├── dist/           #   距离计算 (hv/pgi/seq)
 │   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv
 │   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
+│   ├── rept/           #   重复检测与遮蔽 (e-kmer/e-align/s-kmer/s-align/trf/masker)
 │   ├── rg/             #   .rg 行级区间操作 (cover/coverage/count/merge/prop/runlist/sort/span)
 │   ├── runlist/        #   runlist JSON 集合操作 (combine/compare/convert/genome/merge/some/span/split/stat/statop)
 │   ├── ms/
@@ -108,6 +115,7 @@ src/
     ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex + 内建 runlist 管道)
     ├── plot/           #   可视化 (dot/histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
+    ├── rmblast.rs      #   RMBlast 重复遮蔽参数移植 (RepeatMasker 4.2.4)
     ├── lastz.rs        #   lastz 封装
     ├── par.rs          #   并行工具
     ├── syncmer.rs      #   closed syncmer 采样 (Edgar 2021)
@@ -186,7 +194,7 @@ src/
 | `psl`   | 9        | PSL 统计、直方图、lift、swap、转 chain/range/PAF     |
 | `lav`   | 1        | LAV (lastz 原生输出) 转 PSL                         |
 | `maf`   | 2        | MAF (multiple alignment format) 转 Block FA、转 PAF  |
-| `align` | 2        | 两基因组比对：pgi (两索引归并→链→扩展→PSL)、lastz (外部比对器封装) |
+| `align` | 4        | 两基因组比对：pgi (两索引归并→链→扩展→PSL)、lastz (外部比对器封装)、fill (pgi 锚点 + LASTZ 2D gap fill)、rest (两侧 trim→excise→holes 补集填充) |
 
 **这是 pgr 最成熟的模块群**。完整覆盖了 UCSC 的 lastz → axtChain → chainAntiRepeat →
 chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset → netToAxt →
@@ -202,7 +210,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 
 | 模块  | 子命令数 | 核心能力                                                                 |
 |-------|----------|--------------------------------------------------------------------------|
-| `paf` | 9        | PAF 隐式图：索引、查询、to-bed、to-fas、to-maf、graph、to-gfa、to-vcf、stat |
+| `paf` | 10       | PAF 隐式图：索引、查询、to-bed、to-fas、to-maf、graph、to-gfa、to-vcf、stat、validate |
 
 `paf` 模块是 pgr 走向泛基因组的核心载体。基于 PAF (Pairwise mApping Format) 的 all-vs-all
 比对，构建隐式泛基因组图：
@@ -213,6 +221,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
   （CIGAR 反转并交换 I/D），使 BFS 无需反向 PAF 记录即可双向遍历；`.paf.idx` v4 已持久化镜像树
 - **图构建层**：`graph` 粗全局 GFA（seqwish DSU 风格，零序列依赖拓扑模式）；`to-gfa` 区域精细 GFA；
   `to-vcf` POA MSA 导出变异；`stat` 图拓扑统计报告
+- **校验层**：`validate` 校验 PAF 记录 CIGAR 坐标与长度一致性（2026-08-06 新增）
 
 详见 [[paf-pangenome.md]]。
 
@@ -228,12 +237,13 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 | 模块   | 子命令数 | 核心能力                                          |
 |--------|----------|---------------------------------------------------|
 | `ms`   | 1        | Hudson's ms 模拟器输出转 DNA 序列                 |
-| `pl`   | 7        | 集成流程：chainnet、p2m、trf、ir、rept、ucsc、prefilter |
+| `pl`   | 4        | 集成流程：chainnet、p2m、prefilter、ucsc |
 | `plot` | 4        | 图：dot (SVG 共线性图)、Venn、HH (hedgehog)、NRPS   |
 
-`pl` (pipelines) 模块定位特殊——它**编排外部工具**（UCSC kent-tools、trf、FastK、Profex、
-clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的纯 Rust 实现形成互补：能用 Rust
-就自己实现，复杂/成熟的用外部工具。
+`pl` (pipelines) 模块定位特殊——它**编排命令与外部工具**（`chainnet`/`p2m`/`prefilter`
+完全用 pgr 自身命令，`ucsc` 需要 kent-tools），充当工作流 glue。这与 `chain`/`net` 模块的
+纯 Rust 实现形成互补：能用 Rust 就自己实现，复杂/成熟的用外部工具
+（trf、FastK/Profex、RMBlast 等外部工具编排在 `rept` 模块）。
 
 > 注意（2026-08-06 与用户确认）：`pgr pl` 目前是"暂时没想好该放到哪边"的命令的
 > 临时存放处，定位可能随命令演化调整；新命令不要默认往 `pl` 里放。
@@ -242,7 +252,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 
 | 模块 | 子命令数 | 核心能力 |
 |------|----------|----------|
-| `sd`  | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
+| `sd`   | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
+| `rept` | 6        | 重复检测与遮蔽：e-kmer / e-align / s-kmer / s-align / trf / masker (RepeatMasker 模拟) |
 
 ### 3.7 区间 (Intervals)
 
@@ -328,6 +339,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 - `libs/plot/`：绘图工具（dot/histogram/nrps/venn）
 - `libs/lastz.rs`：lastz 调用封装
+- `libs/rmblast.rs`：RMBlast 重复遮蔽参数移植（RepeatMasker 4.2.4 的
+  general_search_parameters / word size tiers / gap 参数），支撑 `pgr rept masker`
 - `libs/par.rs`：并行辅助
 - `libs/translate.rs`：序列翻译（六框翻译）
 
@@ -420,11 +433,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   追加参考语义等设计决策待作者定夺（见设计笔记顶部开放项）。
 
 - **泛基因组方向**：`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf /
-  stat 子命令已全部完成（路线见 `notes/paf-pangenome.md`）；规模扩展与应用层待真实 cohort
+  stat / validate 子命令已全部完成（路线见 `notes/paf-pangenome.md`）；规模扩展与应用层待真实 cohort
   数据（§6.3）。
 
-- **`pl` 流程模块**：`chainnet`（纯 pgr 原生管道，与 UCSC 字节级一致）、`ucsc`、`trf`、
-  `rept`、`ir`、`p2m`、`prefilter` 等 pipeline。
+- **`pl` 流程模块**：`chainnet`（纯 pgr 原生管道，与 UCSC 字节级一致）、`ucsc`、`p2m`、
+  `prefilter` 等 pipeline（ir/rept/trf 已迁出为独立 `rept` 命令：ir→e-kmer、rept→s-kmer）。
 
 - **`align` 补全（fill/rest）**：`pgr align hybrid` 拆分为 `fill`（2D 锚点间
   gap fill）与 `rest`（两侧 trim→excise→holes 一维补集 + syncmer 预筛配对），
@@ -437,6 +450,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   （`rept e-kmer` 三库 → `fa mask --hard` → `sd search`，遮蔽后 pgi/lastz
   引擎互相漏检 3.2%/6.0%，pgi 可替代 lastz）。详见
   [[design/sd.md]] §4.9/§4.10。
+
+- **重复遮蔽（masker）**（2026-08-07）：`rept masker` 完整 RepeatMasker 模拟 pipeline
+  （TRF PERFECT 简单重复 → rmblastn 库搜索 → TRF DIVERGED，输出 runlist JSON 供
+  `pgr fa mask`）；`libs/rmblast.rs` 移植 RepeatMasker 4.2.4 的
+  general_search_parameters / word size tiers / gap 参数。
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
@@ -518,7 +536,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
 4. **测试覆盖不均衡（已改善）**：`fa`/`fas` 覆盖最全；`chain`/`net`/`pl` 经 UCSC 字节级
-   复现工作后已有相当覆盖（cli_chain 12、cli_net 11、cli_ucsc 18、cli_pl 7、
+   复现工作后已有相当覆盖（cli_chain 13、cli_net 12、cli_ucsc 18、cli_pl 4、
    cli_chain_net_complex 2），`pl` 依赖外部工具的部分仍较难测试。
 5. **外部工具依赖**：`pgr pl ucsc` 需要安装一整套 kent-tools，但 `pgr pl chainnet` 已完全原生；
    `lastz` 仍为唯一必需的外部二进制。
@@ -529,6 +547,10 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
    （2026-08-03 新增）已把该约束固化为回归测试：after_help 提及的命令集合必须与
    注册的顶层命令集合一致，且每个顶层命令必须有对应 docs（`2bit` 例外映射到
    `twobit.md`）。首次运行即发现 `align` 缺 `docs/align.md`，已补上。
+8. ~~HV 矢量化提速不明显~~（已解决 2026-08-07）：`hash_hv_bit` / `hash_hv_i8`
+   以 AVX2（256-bit）为主实现（跳步 RapidRng + 块主序 + 位展开），bit ±1 编码实测
+   ~4.8×（相对旧 bit）/ ~3.1×（相对旧 i8）、i8 保语义 ~2.1×；AVX-512 仅作基准参考
+   不参与分派，无 AVX2 自动降级（基准见 [[benchmarks/bench-simd-hv-jaccard.md]] §2/§5）。
 
 ## 9. 主题链路索引（按技术线，跨目录）
 
@@ -546,7 +568,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | PAF 隐式图 / 泛基因组 | [[impg.md]]、[[seqwish.md]]、[[smoothxg.md]]、[[minigraph.md]] | [[paf-pangenome.md]]（场景枢纽） | — | `pgr paf graph`（`libs/paf/graph`） |
 | syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
-| 重复标记（repeat masking） | [[fastk.md]] | [[design/repeat-masking.md]] | — | `pgr rept e-kmer/s-kmer/trf` + `pgr fa mask`（`libs/pl`、`cmd_pgr/rept`） |
+| 重复标记（repeat masking） | [[fastk.md]] | [[design/repeat-masking.md]] | — | `pgr rept e-kmer/e-align/s-kmer/s-align/trf/masker` + `pgr fa mask`（`libs/pl`、`libs/rmblast`、`cmd_pgr/rept`） |
 | 区间操作（runlist / rg） | — | [[design/runlist.md]]、[[design/rgr-tva-audit.md]] | [[benchmarks/bench-rg-count.md]]、[[benchmarks/bench-rg-prop.md]]、[[benchmarks/bench-rg-runlist.md]] | `pgr runlist`、`pgr rg`（`libs/runlist`、`libs/ds/{IntSpan,Range}`） |
 | 其他参考 | [[fastk.md]]、[[kaks.md]]、[[gfa.md]]、[[ropebwt3.md]]、[[pangenome-tools.md]] | [[design/ms2dna_port.md]]（ms→dna 移植） | — | `pgr ms to-dna`、`pgr paf to-gfa` 等 |
 
@@ -563,7 +585,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令（2026-08-04） |
 | [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（2026-08-04，见 [[audit/audit-runlist-rg.md]]） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
-| [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 计划已定；命令已迁移（`pgr rept`），待 §2.5 验证 |
+| [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成（2026-08-06）；`rept masker` 完整 RepeatMasker 模拟已实现（2026-08-07） |
 
 ## 11. 外部工具参考索引（notes/references/）
 
@@ -610,4 +632,4 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-rg-prop.md]] | `pgr rg prop` vs `rgr prop`（同源 IntSpan 算法）命令行基准：持平（rgr 快 ~6%）；含二分重叠段优化方向 |
 | [[benchmarks/bench-intspan-setops.md]] | IntSpan 集合运算（intersect/union/diff/xor）线性化与 `from_pairs` 批量构建的 criterion 基准：20k span 时 ~100–220×、100k 构建 ~105× |
 | [[benchmarks/bench-rg-runlist.md]] | `pgr rg runlist` vs `rgr runlist`：`IntSpan::covered` 二分后 overlap ~83×、superset ~588×（rgr 走旧 diff） |
-| [[benchmarks/bench-simd-hv-jaccard.md]] | SIMD/HV/Jaccard 基准（hnsm 迁移）：norm SIMD ~7.8×、HV i8 最优（快于 bit ~1.5×）、rapidhash Jaccard 最快（2026-08-06） |
+| [[benchmarks/bench-simd-hv-jaccard.md]] | SIMD/HV/Jaccard 基准（hnsm 迁移 + AVX2）：norm SIMD ~7.8×、AVX2 bit ±1 编码 ~4.8×（相对旧 bit）/~3.1×（相对旧 i8）、i8 保语义 ~2.1×、rapidhash Jaccard 最快（2026-08-07 更新） |
