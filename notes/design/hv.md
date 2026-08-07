@@ -110,9 +110,31 @@ k-mer 及其 1-错配变体归入同一桶），保持"桶集合计数"语义并
 
 **速度**（AVX2，n=10k、D=4096）
 
-* RNG 调用：bit 每 32 维 1 次（`rnd_at` 低 32 位）；i8 每 8 维 1 次 →
-  bit 的 RNG 成本约为 i8 的 1/4。
-* 实测：bit **1.14 ms**、i8 2.09 ms（bit 快 ~1.8×）。
+* RNG 调用：bit 每 64 维 1 次（一次 `rnd_at` 用满 64 位：低 32 位 → 前
+  32 维、高 32 位 → 后 32 维）；i8 每 8 维 1 次 → bit 的 RNG 成本约为
+  i8 的 1/8。
+* 实测：bit **1.11 ms**、i8 2.11 ms（bit 快 ~1.9×）。
+
+**三组实现对比**（n=10k、D=4096；标量 = 每 seed 串行 RNG 流 + 逐位累加，
+数据见 [[../benchmarks/bench-simd-hv-jaccard.md]]）：
+
+| 编码 | AVX2 手写 | wide（可移植路径） | 标量（串行流） | AVX2/wide | AVX2/标量 |
+|---|---:|---:|---:|---:|---:|
+| bit（±1） | **1.11 ms** | 6.64 ms | 9.01 ms | ~6.0× | ~8.1× |
+| i8 | **2.11 ms** | 4.38 ms | 11.69 ms | ~2.1× | ~5.5× |
+
+差异根源（**三者 lane 数相同——都是 8（256-bit i32），差距不在 lane
+宽度**）：
+
+* **wide vs 标量只有 1.4–2.7×**（bit 6.64/9.01、i8 4.38/11.69）：wide 的
+  8-lane SIMD 只加速"位提取/字节转换 + 累加"部分，RNG 仍是串行
+  `next_u64`（i8 每 8 维 1 次，依赖链主导，见 §2.2 的 rng-only 2.68 ms
+  vs 总 4.36 ms）——这正是"8 lane 只有约两倍"观察的来源。
+* **AVX2 vs wide**（bit 6.0×、i8 2.1×）：AVX2 额外带来**跳步 RNG +
+  块主序**（RNG 调用大幅降低、跨 seed ILP）+ 手写展开（无 wide 的冗余
+  装载/转换/每次循环重建 shift 数组）；i8 因 RNG 频率高（每 8 维 1 次），
+  跳步收益被稀释。
+* **AVX2 vs 标量**：bit ~8.1×、i8 ~5.5×（两块收益叠加）。
 
 **决策**：bit（±1）为主实现；i8 仅作为"保语义"变体保留（FASTA 路径当前
 仍走 i8，其量纲问题见 §3.4、修复计划见 §5.3）。
@@ -126,7 +148,8 @@ k-mer 及其 1-错配变体归入同一桶），保持"桶集合计数"语义并
 **关键性质**：`RapidRng` 的状态是常数步长计数器
 （输出 j = mix(seed + j·SECRET0, …)），因此可以**跳步**（`rnd_at`）。
 这让循环可以改成**块主序**：HV 分块常驻寄存器、遍历全部种子，每个种子
-每 32 维只做 1 次 RNG，且不同种子的 mix 相互独立 → 指令级并行。
+每 64 维只做 1 次 RNG（一次 u64 输出用满），且不同种子的 mix 相互独立
+→ 指令级并行。
 
 **现状**：bit 主路径的 RNG 独立成本只有 ~0.3–0.7 ms，且与 SIMD 展开在
 **不同执行端口上重叠**（标量 128-bit mix 走标量 ALU，展开走向量端口），
@@ -139,15 +162,36 @@ StdRng(ChaCha12)，i16 累加、n=10k）三者差距很小（9.15 / 9.38 / 10.45
 循环的前提；SmallRng 虽快但走 `next_u64` 串行链、无跳步接口，拿不到块主序
 收益。换更快的 RNG（xorshift/LCG 等）收益有限，不投入。
 
-**RNG 候选实测（2026-08-08，AVX2 bit 主路径，n=10k/D=4096）**：RNG 输出
-统一加 black_box（阻止编译器对常量 RNG 做 LICM 广播折叠）后，wyrand /
-宏版 rapid / 常量 RNG 三者持平（1.128–1.168 ms vs 基线 1.1445 ms，
-差异 <3%），splitmix64 反而慢 ~33%（1.535 ms）；常量（RNG 免费）与基线
-仅差 ~1.5%——**广播 + 依赖链占 ~98% 成本，mix 计算本身只占 ~2%**。
-真实候选均无法超越 RapidRng，换 RNG 无收益，维持原决策；进一步优化方向
-是削减每 seed 广播/依赖链而非换 RNG（基准变体 `bit_avx2_rng_*` 保留在
-`benches/hv_benchmark.rs`，数据详见 [[../benchmarks/bench-simd-hv-jaccard.md]]
-RNG 候选对比）。
+**RNG 候选实测（2026-08-08，AVX2 bit 主路径 64 位框架，n=10k/D=4096）**：
+RNG 输出统一加 black_box（阻止 LICM 广播折叠）后，wyrand / 宏版 rapid /
+常量 RNG 三者持平（1.09–1.13 ms vs 主实现 1.1145 ms，差异 <3%），
+splitmix64 慢 ~4%；常量（RNG 免费）只快 ~2%——**广播 + 依赖链占 ~98%
+成本，mix 计算本身只占 ~2%**。经典 RNG 全部落选：MT19937 标量慢 ~2.9×
+（每 seed 需初始化 624 项状态数组 + temper），LCG/PCG 的 O(log j) 跳步
+在块主序内层每 chunk 重算、慢 2.7–9.6×——"O(1) 跳步（counter+mix）"
+是块主序框架的硬前提。真实候选均无法超越 RapidRng，换 RNG 无收益，
+维持原决策；进一步优化方向是削减每 seed 广播/依赖链而非换 RNG（基准
+变体 `bit_avx2_rng_*` 保留在 `benches/hv_benchmark.rs`，数据详见
+[[../benchmarks/bench-simd-hv-jaccard.md]] RNG 候选对比）。
+
+> 采样哈希侧（HyperGen 的 t1ha2）同样不引入：21-mer 吞吐比 pgr 现役
+> rapidhash 慢 ~1.76×（rapid 16.9 µs vs t1ha2 29.7 µs / 10k）。
+
+**RNG 性质与 HV 编码的适配**（2026-08-08，外部交叉验证见 rapidrand 基准
+与 [[../benchmarks/bench-simd-hv-jaccard.md]]）：
+
+* **原生输出宽度**：64 位原生（RapidRng / wyrand / splitmix64 /
+  xoshiro256++ / PCG64）一次 mix 给完整 64 位；32 位原生（MT19937 /
+  PCG32 / ChaCha12 字 / MINSTD 31 位）的 u64 是两个 u32 拼的——成本 ×2
+  （rapidrand 表：Pcg32 u64≈2×u32、ChaCha12 u64≈2×u32）。"生成 u32 是
+  普遍行为"只对经典款成立，现代快速款原生 64 位。
+* **跳步能力三档**：O(1) counter+mix（RapidRng / wyrand / splitmix64）
+  ——块主序的硬前提；O(log j)（LCG / PCG，每 chunk 重算，实测慢
+  2.7–9.6×）；不可跳步（MT19937，标量慢 ~2.9×）。
+* **单次 draw 速度档**（rapidrand，M1 Max）：快速款 ~0.5 ns（RapidRng /
+  WyRand）、1–2 ns（xoshiro / PCG）、4–13 ns（ChaCha12/8/20）。
+* **适配结论**：HV 块主序需要"64 位原生 + O(1) 跳步 + 快"三者齐备，
+  缺一即慢或不可用；RapidRng 与 wyrand 类是最佳候选，两者实测持平。
 
 > **边界澄清**：`hash_hv_sparse` 的 splitmix64 是投影维度的确定性派生
 > （非 RNG 实验）；HyperGen 参考实现的 WyRng/t1ha2 仅见于
@@ -160,11 +204,15 @@ RNG 候选对比）。
   [−S, S]，S ≤ 32767 就**确定不溢出**（不依赖概率）。实测反而慢
   **~2.5×**（3.50 vs 当时 i32 基线 1.40 ms）：16-bit 变量移位 `vpsrlvw` 延迟更高，
   且 32 维块从 4 条独立累加链降到 2 条——这循环是链式延迟主导，
-  指令数少不顶用。
+  指令数少不顶用。**2026-08-08 64 位框架复测**（`hash_hv_bit_i16`，每 64
+  维 4 个 i16 16-lane 寄存器，n=10k 不分段，值域 [−10k, 10k] 安全）：
+  3.64 ms vs i32 主实现 1.11 ms，**慢 ~3.3×**——链 8→4 条 + `vpsrlvw`
+  延迟 + 每块末尾 i16→i32 扩展转存（i32 路径无此步）；结论不变，且
+  随链数增加差距略扩大。
 * **延迟 −N 偏移**（bit 路径采用）：既然 ±1 数值围绕 0 平衡，就不必
   每种子做 `2b−1`；改为每种子只累加 `2b`、每块末尾一次性减 N——每组
   少 1 个向量 op，4 条累加链不变 → **1.40 → 1.14 ms**（n=100k 14.0 →
-  11.4 ms）。
+  11.4 ms；2026-08-08 64 位用满后再降至 1.11 ms / 11.2 ms，见 §3.3）。
 * **i8 必须 i32**：直流偏置 + 值域 ±128N；260 万种子实测各维 ±1.3e6，
   i16 必溢出。
 
@@ -174,16 +222,16 @@ i16 lane 分段累加不采用。
 ### 2.4 位拆分/展开（当前限速点）
 
 逐组件分解（deferred 前）：完整 1.41 ms，纯展开 **1.37 ms**（~97%），
-纯 RNG 0.71 ms（与展开重叠，被掩盖）。采用延迟 −N 后完整降到 1.14 ms，
-展开仍是主体。
+纯 RNG 0.71 ms（与展开重叠，被掩盖）。采用延迟 −N 后完整降到 1.14 ms
+（2026-08-08 64 位用满后再降至 1.11 ms），展开仍是主体。
 
 每 bit 至少需要 ~5 个向量 op（variable shift → and → shift-left → add，
 加上 broadcast 摊销）；i16 lane 不能减少每 bit 的 op 数（实测更慢，
 见 §2.3）。
 
 **决策**：进一步提速应从"减少每 bit 指令数"入手，而不是换 RNG 或换
-lane 宽度；当前暂无更优方案。AVX-512 参考实现（旧式每步 sub）Zen 4 实测
-1.50 ms，反而比当前 AVX2 主路径（1.14 ms）慢，作者决策不采用 AVX-512
+lane 宽度。AVX-512 参考实现（旧式每步 sub，已同步 64 位用满）Zen 4 实测
+1.44 ms，反而比当前 AVX2 主路径（1.11 ms）慢，作者决策不采用 AVX-512
 （见 [[../benchmarks/bench-simd-hv-jaccard.md]] §2）。
 
 ### 2.5 幅度与区分度
@@ -274,7 +322,7 @@ lane 宽度；当前暂无更优方案。AVX-512 参考实现（旧式每步 sub
 
 | 函数 | 编码 | 说明 |
 |---|---|---|
-| `hash_hv_bit` | 稠密位编码 ±1，i32 | AVX2 主路径：跳步 RNG + 块主序 + 延迟 −N；每 32 维 1 次 RNG |
+| `hash_hv_bit` | 稠密位编码 ±1，i32 | AVX2 主路径：跳步 RNG + 块主序 + 延迟 −N；每 64 维 1 次 RNG（用满 64 位，低 32 位→前 32 维、高 32 位→后 32 维） |
 | `hash_hv_i8` | 稠密 i8 累加，i32 | AVX2 路径：每 8 维 1 次 RNG；保留原语义（含直流偏置） |
 | `hash_hv_sparse` | 稀疏 ±1，i32 | splitmix64 派生，每 k-mer 只更新 `s`（默认 3）个随机维度；`.hv` v2 采用 |
 | `hv_norm_l2_sq` / `hv_cardinality` / `hv_dot` | — | wide SIMD 范数；cardinality=‖H‖²/D；dot 按 √D 归一 |
@@ -300,10 +348,11 @@ AVX-512 实现只保留在 `benches/hv_benchmark.rs` 作参考对照，不参与
 
 ### 3.3 基准与验证记录
 
-* [[../benchmarks/bench-simd-hv-jaccard.md]]（2026-08-06/07）：AVX2 bit
-  主路径 1.14 ms（n=10k、D=4096），相对旧 wide bit ~5.9×、相对旧 wide
-  i8 ~3.8×；i8 保语义 2.09 ms（~2.1×）；限速分解、累加器宽度实验、
-  幅度模拟结论均记录于此。
+* [[../benchmarks/bench-simd-hv-jaccard.md]]（2026-08-06/07/08）：AVX2 bit
+  主路径 1.11 ms（n=10k、D=4096；2026-08-08 升级为 64 位用满后实测），
+  相对旧 wide bit ~6.0×、相对旧 wide i8 ~3.9×；i8 保语义 2.11 ms
+  （~2.1×）；限速分解、累加器宽度实验、幅度模拟、RNG 候选对比结论均
+  记录于此。
 * [[../benchmarks/dist-cohort-validation.md]]（10 株 E. coli × 45 对）：
   稠密 i8 饱和（±1.3e6，Spearman ≈ 0）→ **稀疏 v2 修复**（与 `dist pgi`
   mash 排序 Spearman 0.969、45 对 0.12 s、共享计数平均误差 2.39%）；

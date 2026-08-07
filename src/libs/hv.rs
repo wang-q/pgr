@@ -28,18 +28,18 @@ mod rng_jump {
 use rng_jump::rnd_at;
 
 /// AVX2 bit encoding, block-major. Bit-identical to the scalar `hash_hv_bit`
-/// (each 32-dim chunk consumes the low 32 bits of one u64 of the RapidRng
-/// stream; ±1 values accumulated in four 8-lane registers per chunk). The −N
-/// offset is deferred: per seed only `2·bit` is accumulated (values balance
-/// around 0), and N is subtracted once per chunk when storing — one vector op
-/// less per seed per group.
+/// (each 64-dim chunk consumes all 64 bits of one u64 of the RapidRng stream:
+/// low 32 bits → dims 0..32, high 32 bits → dims 32..64; ±1 values accumulated
+/// in eight 8-lane registers per chunk). The −N offset is deferred: per seed
+/// only `2·bit` is accumulated (values balance around 0), and N is subtracted
+/// once per chunk when storing — one vector op less per seed per group.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn hash_hv_bit_avx2(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     use std::arch::x86_64::*;
     let n = seed_vec.len() as i32;
     let mut hv = vec![0i32; hv_d];
-    let num_chunk = hv_d / 32;
+    let num_chunk = hv_d / 64;
     let one = _mm256_set1_epi32(1);
     let s0 = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
     let s1 = _mm256_set_epi32(15, 14, 13, 12, 11, 10, 9, 8);
@@ -48,43 +48,30 @@ unsafe fn hash_hv_bit_avx2(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     let nv = _mm256_set1_epi32(n);
     for b in 0..num_chunk {
         let j = b as u64 + 1;
-        let mut a0 = _mm256_setzero_si256();
-        let mut a1 = _mm256_setzero_si256();
-        let mut a2 = _mm256_setzero_si256();
-        let mut a3 = _mm256_setzero_si256();
+        let mut a = [_mm256_setzero_si256(); 8];
         for &seed in seed_vec {
-            let r = rnd_at(seed, j) as u32;
-            let v = _mm256_set1_epi32(r as i32);
-            let b0 = _mm256_and_si256(_mm256_srlv_epi32(v, s0), one);
-            a0 = _mm256_add_epi32(a0, _mm256_slli_epi32(b0, 1));
-            let b1 = _mm256_and_si256(_mm256_srlv_epi32(v, s1), one);
-            a1 = _mm256_add_epi32(a1, _mm256_slli_epi32(b1, 1));
-            let b2 = _mm256_and_si256(_mm256_srlv_epi32(v, s2), one);
-            a2 = _mm256_add_epi32(a2, _mm256_slli_epi32(b2, 1));
-            let b3 = _mm256_and_si256(_mm256_srlv_epi32(v, s3), one);
-            a3 = _mm256_add_epi32(a3, _mm256_slli_epi32(b3, 1));
+            let r = rnd_at(seed, j);
+            let vlo = _mm256_set1_epi32((r as u32) as i32);
+            let vhi = _mm256_set1_epi32(((r >> 32) as u32) as i32);
+            for k in 0..4 {
+                let shift = [s0, s1, s2, s3][k];
+                let bl = _mm256_and_si256(_mm256_srlv_epi32(vlo, shift), one);
+                a[k] = _mm256_add_epi32(a[k], _mm256_slli_epi32(bl, 1));
+                let bh = _mm256_and_si256(_mm256_srlv_epi32(vhi, shift), one);
+                a[k + 4] = _mm256_add_epi32(a[k + 4], _mm256_slli_epi32(bh, 1));
+            }
         }
-        let base = b * 32;
-        _mm256_storeu_si256(
-            hv[base..base + 8].as_mut_ptr() as *mut _,
-            _mm256_sub_epi32(a0, nv),
-        );
-        _mm256_storeu_si256(
-            hv[base + 8..base + 16].as_mut_ptr() as *mut _,
-            _mm256_sub_epi32(a1, nv),
-        );
-        _mm256_storeu_si256(
-            hv[base + 16..base + 24].as_mut_ptr() as *mut _,
-            _mm256_sub_epi32(a2, nv),
-        );
-        _mm256_storeu_si256(
-            hv[base + 24..base + 32].as_mut_ptr() as *mut _,
-            _mm256_sub_epi32(a3, nv),
-        );
+        let base = b * 64;
+        for (k, acc) in a.iter().enumerate() {
+            _mm256_storeu_si256(
+                hv[base + k * 8..base + (k + 1) * 8].as_mut_ptr() as *mut _,
+                _mm256_sub_epi32(*acc, nv),
+            );
+        }
     }
-    // Tail dims (hv_d not a multiple of 32) keep the −N offset, matching the
+    // Tail dims (hv_d not a multiple of 64) keep the −N offset, matching the
     // portable fallback exactly.
-    for v in &mut hv[num_chunk * 32..] {
+    for v in &mut hv[num_chunk * 64..] {
         *v = -n;
     }
     hv
@@ -139,46 +126,45 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
         return unsafe { hash_hv_bit_avx2(seed_vec, hv_d) };
     }
     let num_seed = seed_vec.len();
-    let num_chunk = hv_d / 32;
+    let num_chunk = hv_d / 64;
     let mut hv = vec![-(num_seed as i32); hv_d];
 
     // Loop through all seeds
     for hash in seed_vec {
         let mut rng = RapidRng::seed_from_u64(*hash);
 
-        // SIMD-based HV encoding
+        // Consume all 64 bits of each u64: low 32 bits → dims 0..32,
+        // high 32 bits → dims 32..64 (half the RNG calls of the 32-bit path).
         for i in 0..num_chunk {
-            // 32 * 8 can be fit into an AVX2 register
-            let rnd_bits = rng.next_u32();
+            let rnd_bits = rng.next_u64();
+            let halves = [(rnd_bits as u32), (rnd_bits >> 32) as u32];
 
-            // Use SIMD to process 8 bits at a time
-            for j in (0..32).step_by(8) {
-                let bit_mask = u32x8::splat(1);
-                let shift = u32x8::from([
-                    j as u32,
-                    (j + 1) as u32,
-                    (j + 2) as u32,
-                    (j + 3) as u32,
-                    (j + 4) as u32,
-                    (j + 5) as u32,
-                    (j + 6) as u32,
-                    (j + 7) as u32,
-                ]);
-                let bits = (u32x8::splat(rnd_bits) >> shift) & bit_mask;
+            for (k, half) in halves.iter().enumerate() {
+                // Use SIMD to process 8 bits at a time
+                for j in (0..32).step_by(8) {
+                    let bit_mask = u32x8::splat(1);
+                    let shift = u32x8::from([
+                        j as u32,
+                        (j + 1) as u32,
+                        (j + 2) as u32,
+                        (j + 3) as u32,
+                        (j + 4) as u32,
+                        (j + 5) as u32,
+                        (j + 6) as u32,
+                        (j + 7) as u32,
+                    ]);
+                    let bits = (u32x8::splat(*half) >> shift) & bit_mask;
 
-                // Convert bits to i32 and shift left by 1 (0/1 bit pattern
-                // is identical in u32 and i32, so a reinterpret cast suffices)
-                let bits_i32: i32x8 = bytemuck::cast(bits);
-                let bits_i32 = bits_i32 << i32x8::splat(1);
+                    // Convert bits to i32 and shift left by 1 (0/1 bit pattern
+                    // is identical in u32 and i32, so a reinterpret cast suffices)
+                    let bits_i32: i32x8 = bytemuck::cast(bits);
+                    let bits_i32 = bits_i32 << i32x8::splat(1);
 
-                // Load the target HV values
-                let mut hv_simd = i32x8::from(&hv[i * 32 + j..i * 32 + j + 8]);
-
-                // Accumulate the bits
-                hv_simd += bits_i32;
-
-                // Store the updated HV values
-                hv[i * 32 + j..i * 32 + j + 8].copy_from_slice(&hv_simd.to_array());
+                    let base = i * 64 + k * 32 + j;
+                    let mut hv_simd = i32x8::from(&hv[base..base + 8]);
+                    hv_simd += bits_i32;
+                    hv[base..base + 8].copy_from_slice(&hv_simd.to_array());
+                }
             }
         }
     }
@@ -484,10 +470,14 @@ mod tests {
         let mut hv = vec![-(num_seed as i32); hv_d];
         for hash in seed_vec {
             let mut rng = RapidRng::seed_from_u64(*hash);
-            for i in 0..(hv_d / 32) {
-                let rnd_bits = rng.next_u32();
-                for j in 0..32 {
-                    hv[i * 32 + j] += (((rnd_bits >> j) & 1) << 1) as i32;
+            for i in 0..(hv_d / 64) {
+                let rnd_bits = rng.next_u64();
+                let halves = [(rnd_bits as u32), (rnd_bits >> 32) as u32];
+                for (k, half) in halves.iter().enumerate() {
+                    for j in 0..32 {
+                        let idx = i * 64 + k * 32 + j;
+                        hv[idx] += (((half >> j) & 1) << 1) as i32;
+                    }
                 }
             }
         }
