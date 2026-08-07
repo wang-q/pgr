@@ -27,8 +27,9 @@ pgr 的思路是用 FastK 系工具做**快速近似**：不做逐条 repeat 的
 | `pgr rept e-kmer` | 散在重复（interspersed） | 与重复库做 k-mer 富集比对 | 基因组 + repeat 库（Dfam/RepBase/TnCentral） |
 | `pgr rept s-kmer` | 基因组内重复（无库） | 自身 k-mer 深度比较 | 仅基因组 |
 | `pgr rept trf` | 串联重复（tandem） | trf 的周期搜索 | 仅基因组 |
+| `pgr rept masker` | 散在 + 串联（复刻 RepeatMasker） | TRF PERFECT → rmblastn 库比对 → TRF DIVERGED | 基因组 + repeat 库 |
 
-三者输出**同一种格式**：runlist JSON（`{"chr": "start-end,start-end,..."}`），
+这些命令输出**同一种格式**：runlist JSON（`{"chr": "start-end,start-end,..."}`），
 可直接作为 `pgr fa mask --runlist` 的输入，因此检测结果与屏蔽步骤天然闭环：
 
 ```bash
@@ -79,10 +80,12 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 * 库 + align → `pgr rept e-align <repeats> <genome>`（未来遮蔽版）
 * 自身 + align → `pgr rept s-align <genome>`（未来，`scripts/pgr-repeat.sh`）
 
-加上 `pgr rept trf`（串联重复）共 5 个命令。
+加上 `pgr rept trf`（串联重复）共 5 个命令；2026-08-07 再加
+`pgr rept masker`（RepeatMasker 复刻，命名同 trf 取工具名），共 6 个。
 命名规则：前缀 `e` = 外部库 / `s` = 自身（对象），后缀 `kmer` / `align` = 机制。
 库文件是 `e-*` 的位置参数（沿用原 `pl ir <repeat> <infile>` 的接口），无需 `--lib`。
-`trf` 不参与 e/s 前缀——它封装 TRF 工具、输入只有基因组，保留工具名即可。
+`trf` / `masker` 不参与 e/s 前缀——它们封装外部工具（TRF / RMBlast），
+保留工具名即可。
 
 #### 为什么选 e / s 前缀
 
@@ -177,7 +180,8 @@ pm=80、pi=10、minscore=50、max_period=2000）。
 用户曾担心 FastK 会在工作目录生成一批库文件（`*.ktab.*`）。该问题已由
 `src/libs/pl/ctx.rs` 的 `PipelineCtx` 内建解决：
 
-*   管道启动时创建 `tempfile::TempDir`（前缀 `pgr_rept_e_` / `pgr_rept_s_` / `pgr_rept_trf_`）；
+*   管道启动时创建 `tempfile::TempDir`（前缀 `pgr_rept_e_` / `pgr_rept_s_` /
+    `pgr_rept_trf_` / `pgr_rept_rm_`）；
 *   `enter()` 把 CWD 切进 tempdir，此后 FastK 的 `genome.ktab.*` / `repeat.ktab.*`、
     Profex 的 `prof.*.txt/.rg`、trf 的 `.dat` 全部落在 tempdir 内；
 *   ctx drop 时 TempDir 自动删除，`CwdGuard` 保证出错时 CWD 也能恢复。
@@ -756,7 +760,8 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 
 1.  取转座子丰富基因组（拟南芥或玉米），先跑 RepeatMasker 得到 masked
     参考 runlist（沿用 §RepeatMasker (reference) 的 gff→runlist 流程）；
-    沙箱无 RM，需用户环境执行；
+    RepeatMasker 4.2.4 已安装配置（见
+    [references/repeatmasker.md](../references/repeatmasker.md)），可直接执行；
 2.  **主推 `pgr rept e-align`**（修正后真核可用，S288c 3.90%）；e-kmer
     作对照（FastK 大小写不敏感、快）。**前置：确认基因组未 soft-mask**
     （小写比例 >0 时先 `tr a-z A-Z`），否则 e-align 严重低估。参数扫描：
@@ -782,7 +787,8 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 *   **k-mer 敏感度**：依赖与库共享的精确 k-mer，分化较远的拷贝会漏检或碎成小片段；
     fill 步骤只能桥接短孔，无法恢复长距离分化的拷贝。
 *   **输出是区间而非序列**：mask 后的序列需另行用 `pgr fa mask` 生成。
-*   **依赖外部工具**：FastK / Profex（trf 还需 trf）。
+*   **依赖外部工具**：FastK / Profex；`trf` 需 trf；`masker` 需
+    rmblastn/makeblastdb + trf。
 
 ### 3.2 遮蔽版的边界
 
@@ -797,7 +803,7 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 * **RepeatMasker 完整复刻（2026-08-07 落地）**：新增 `pgr rept masker`，按
   RepeatMasker 4.2.4 `-lib` 流程逐阶段复刻（TRF PERFECT → makeblastdb +
   rmblastn → TRF DIVERGED，阶段间 X 掩蔽），只出 runlist 区间。完整设计见
-  [[repeatmasker-rmblast.md]]；`pgr rept trf` 保持独立通用命令不变。
+  [[masker.md]]；`pgr rept trf` 保持独立通用命令不变。
 
 *   `e-kmer` 依赖重复库（Dfam/RepBase/TnCentral），下载与准备见
     [docs/rept.md](../../docs/rept.md)；三库已备于 `~/data/repeats/`
@@ -822,7 +828,9 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 ## 附录 A：RepeatMasker 源码梳理
 
 > 2026-08-03 依据仓库内 `RepeatMasker/` 目录源码（open-4.2.4，Arian Smit &
-> Robert Hubley）梳理，作为 §2 方案的源码证据。
+> Robert Hubley）梳理，作为 §2 方案的源码证据。`pgr rept masker` 的
+> 逐参数实现映射（`general_search_parameters` → rmblastn、GC→矩阵、
+> TRF 两阶段）见 [design/masker.md](./masker.md)。
 
 ### A.1 概览
 
@@ -927,6 +935,9 @@ complexity-adjusted scoring；`raw=1` 时用 basic scoring。
     增大，仍失败则放弃该 batch。
 *   crossmatch/WUBlast 用各自的矩阵目录（`Matrices/crossmatch/`、
     `Matrices/wublast/aa/`、`Matrices/ncbi/nt/`）。
+
+> 精确参数对应（minscore/gapopen/gapextend/xdrops/outfmt/矩阵）见
+> [masker.md](./masker.md) §2/§3。
 
 ### A.5 后处理 ProcessRepeats
 

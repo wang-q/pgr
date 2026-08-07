@@ -303,7 +303,7 @@ pgr runlist compare json/$g.rm-strict.json json/$g.<method>.json --op diff -o tm
 ### 2.8 `pgr rept masker` 完整复刻验证（TRF + RMBlast + TRF，10 株全跑）
 
 2026-08-07 实现 `pgr rept masker`：按 RepeatMasker 4.2.4 `-lib` 流程逐阶段复刻
-（设计见 [design/repeatmasker-rmblast.md](design/repeatmasker-rmblast.md)）。
+（设计见 [design/masker.md](design/masker.md)）。
 每 60 kb/2 kb batch（`SimpleBatcher` 算法）依次执行：
 
 1. TRF PERFECT（2/7/7/80/10/50/10，拷贝 > 4）——RM 第一 TRF 阶段，找到的

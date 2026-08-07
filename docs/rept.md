@@ -174,13 +174,14 @@ Notes:
 ## RepeatMasker (reference)
 
 RepeatMasker remains the reference annotation tool. Example run through a
-native installation (4.2.4; RMBlast 2.14.1 + TRF configured via
-`perl ./configure`), using TnCentral as a custom library, then converting its
-`.out` to a GFF runlist for comparison:
+native installation (4.2.4; TRF + RMBlast 2.14.1 — the CBP build, which also
+runs on old glibc — configured via `perl ./configure`), using TnCentral as a
+custom library, then converting its `.out` to a GFF runlist for comparison
+(`<rm_dir>` is the RepeatMasker installation directory):
 
 ```bash
-~/share/RepeatMasker/RepeatMasker genome.fa -lib tncentral.fa -pa 8 -e rmblast -dir rm_out
-perl ~/share/RepeatMasker/util/rmOutToGFF3.pl rm_out/genome.fa.out > genome.rm.gff
+<rm_dir>/RepeatMasker genome.fa -lib tncentral.fa -pa 8 -e rmblast -dir rm_out
+perl <rm_dir>/util/rmOutToGFF3.pl rm_out/genome.fa.out > genome.rm.gff
 pgr gff runlist genome.rm.gff -o genome.rm.json
 ```
 
@@ -189,6 +190,13 @@ Notes:
 *   `-lib` takes any FASTA library (TnCentral, RepBase, Dfam, ...) directly;
     it does **not** accept gzipped files — decompress first. `-species` needs a
     FamDB/Dfam installation, which is not configured here.
+*   RepeatMasker's `configure` validates that RMBLAST_DIR contains six
+    executables (rmblastn, dustmasker, makeblastdb, blastdbcmd,
+    blastdb_aliastool, blastn). The install used for the reference runs
+    satisfies this with a merged directory where rmblastn/makeblastdb are the
+    CBP build and the other four are symlinks to the official package purely
+    to pass the check; the `-lib` flow only ever calls rmblastn and
+    makeblastdb.
 *   On the 10-strain E. coli cohort (notes/ecoli-repeats.md §2.7), all `e-kmer`
     / `e-align` hits fall inside the RepeatMasker intervals (99%+), while
     RepeatMasker's raw output is more permissive: TnCentral hits total
@@ -392,7 +400,8 @@ pgr rept masker [OPTIONS] <repeat> <infile>
 
 ### Dependencies
 
-*   `makeblastdb`, `rmblastn` (RMBlast ≥ 2.13)
+*   `makeblastdb`, `rmblastn` (RMBlast ≥ 2.13; validated with the CBP build
+    of 2.14.1)
 *   `trf`
 
 ### Notes
@@ -410,6 +419,9 @@ pgr rept masker [OPTIONS] <repeat> <infile>
     re-joining, boundary refinement) is not replicated; intervals are the
     stage outputs merged per chromosome. `--min-len` / `--fill-fragment` can
     be raised to match `e-align`'s filtering.
+*   The official NCBI prebuilt RMBlast 2.14.1 requires glibc ≥ 2.29 and will
+    not run on CentOS 7 (glibc 2.17); on old systems use the CBP build
+    (glibc ≤ 2.16) or bioconda's package, and point `--rmblast-dir` at it.
 *   On the 10-strain E. coli cohort, RepeatMasker's full output (IS + simple
     repeats) is fully covered (100.0%); our extra ~0.6% is element-end
     flanks that RepeatMasker's boundary refinement trims.

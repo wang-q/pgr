@@ -5,24 +5,12 @@
 > 区间（直接喂 `pgr fa mask`），不做 family/class 注释与 ProcessRepeats
 > 后处理。`pgr rept trf` 保持独立的通用串联重复命令不变。
 
-> **状态（2026-08-07 最终）**：`pgr rept masker` 已实现落地——
-> `src/libs/rmblast.rs`（矩阵/参数/tab 解析 + 单测）、
-> `src/libs/pl/repeat.rs::run_rm_pipeline`（TRF PERFECT → rmblastn →
-> TRF DIVERGED，阶段间 X 掩蔽）、`src/cmd_pgr/rept/rm.rs`。三处修正后与
-> RM 默认输出**完全一致**：① minscore 直接用 cutoff=225（7.5% 折扣只在
-> 未使用的 `runTestStage`）；② 默认 `--frag 60000` 复刻分片 + 每片段 GC
-> 选矩阵；③ 补上 RM 的两个 TRF 阶段（PERFECT 2/7/7/80/10/50/10 拷贝>4 +
-> DIVERGED 2/3/5/75/20/33/7 拷贝>5）。10 株 × TnCentral：RM 全量 .out
-> 被我们覆盖 100.0%（见 §2.8）。
-
-> **TRF 两阶段发现（源码核对）**：`runSearchStages` 对 blast 引擎在
-> 自定义库阶段**前后各跑一次 `runTRFStage`**（PERFECT 与 DIVERGED 参数
-> 不同，见 RepeatMasker:3594 与 4084 附近）。PERFECT 找到的简单重复被
-> **切除**（postProcessSearch excise=1，中间文件变短 118 bp 可复现），
-> rmblastn 在切除后序列上搜索，DIVERGED 再在 IS 掩蔽后序列上跑。本命令
-> 用 X 掩蔽近似切除（hit 集等价、坐标不漂移）。`pgr rept rmblast` 旧名
-> 已更名 `pgr rept masker`（RMBlast 只存在于 RM 流程内，无需独立命令；
-> 原名 `rm` 易被误认为删除命令，弃用）。
+> **状态（2026-08-07 落地）**：薄壳 `src/cmd_pgr/rept/masker.rs` + 管道
+> `src/libs/pl/repeat.rs::run_masker_pipeline` + 参数/矩阵/tab 解析
+> `src/libs/rmblast.rs`。三处关键修正：minscore 用 225 不打折、默认
+> `--frag 60000` 分片 + 片段 GC 选矩阵、内置 RM 两个 TRF 阶段。
+> 10 株 × TnCentral 对 RM 全量 .out 覆盖 100.0%，验证见
+> [ecoli-repeats.md](../ecoli-repeats.md) §2.8。
 
 ## 1. 复刻对象：RM 的 `-lib` 单阶段路径
 
@@ -34,6 +22,13 @@
 * `NCBIBlastSearchEngine.pm` `getParameters()`（:439 起）：把配方翻译成 rmblastn
   命令行；
 * `search()`（RepeatMasker:1896）：组装并调用，含失败重试（带宽/word_size 调整）。
+
+**TRF 两阶段（源码核对）**：`runSearchStages` 对 blast 引擎在自定义库阶段
+**前后各跑一次 `runTRFStage`**（RepeatMasker:3594 与 4084 附近，PERFECT 与
+DIVERGED 参数不同）。PERFECT 找到的简单重复被**切除**（postProcessSearch
+excise=1，中间文件变短 118 bp 可复现），rmblastn 在切除后序列上搜索，
+DIVERGED 再在 IS 掩蔽后序列上跑；本命令用 X 掩蔽近似切除（hit 集等价、
+坐标不漂移）。
 
 ## 2. 逐参数对应表（默认档）
 
@@ -79,16 +74,16 @@
 命名理由：**与 `trf` 保持一致**（工具名即子命令名，无 e/s 前缀）；库仍作
 第一个位置参数（同 e-kmer / e-align）。RM 参数面（cutoff/word_size/matrix/
 frag）与 e-align 的 PGI 参数面完全正交，塞进 `--engine rmblast` 会让
-e-align 的 CLI 变脏，故单独命令。
+e-align 的 CLI 变脏，故单独命令。命名沿革：`rmblast` → `rm`（易被误认为
+删除命令，弃用）→ `masker`。
 
-选项（初始）：
+选项：
 
 | 选项 | 默认 | 说明 |
 | :--- | :--- | :--- |
 | `--cutoff` | 225 | 复刻 `-cutoff`（直接传给 rmblastn，不打折） |
-| `--word-size` | 9 | 或 `--speed slow\|default\|quick\|rush` → 8/9/11/13 |
-| `--matrix-gc` | auto | auto=按染色体 GC 计算（=RM 单序列 batch）；`43` 复刻多序列 batch 默认；或显式数值 |
-| `--gccalc` | off | 复刻 `-gccalc`（batch 平均 GC，仅配合 `--frag` 有意义） |
+| `--speed` | default | slow/default/quick/rush → `-word_size` 8/9/11/13 |
+| `--matrix-gc` | — | 缺省按片段 GC 选矩阵（单片段 batch ≤2000 bp 时为 43g，同 RM 默认）；或显式 0–100 固定值 |
 | `--frag` | 60000 | 复刻 RM 默认分片（fragmentLen/overlap=2000，SimpleBatcher 算法）；0=整条染色体 |
 | `--min-len` / `--fill-fragment` | 0 / 0 | 0=完全忠实 RM 原始 hit；设 >0 与 e-align 可比 |
 | `--parallel` | 8 | 每个 rmblastn `-num_threads 4`（复刻 RM 4 核/batch），并行数 ≤8 |
@@ -109,9 +104,9 @@ genome.fa(.gz) + repeats.fa(.gz)
   └─ runlist JSON（空结果输出 {}）
 ```
 
-实现位置：薄壳 `src/cmd_pgr/rept/rm.rs`；管道/解析逻辑在
-`src/libs/pl/repeat.rs` 新增 `run_rm_pipeline`（与
-`run_align_repeat_pipeline` 并列），tab 解析器独立函数 + 单测。
+实现位置：薄壳 `src/cmd_pgr/rept/masker.rs`；管道/解析逻辑在
+`src/libs/pl/repeat.rs::run_masker_pipeline`（与
+`run_align_repeat_pipeline` 并列），tab 解析器在 `src/libs/rmblast.rs` + 单测。
 
 ## 5. 一致性决策（复刻 vs 简化）
 
@@ -120,7 +115,7 @@ genome.fa(.gz) + repeats.fa(.gz)
    GC→矩阵映射。
 2. **分片默认复刻**（`--frag 60000`、overlap 2000，SimpleBatcher 算法，
    每片段独立 batch + 片段 GC 选矩阵）：这是 RM 默认行为；实测与 RM .out
-   对拍后达到 100% 覆盖（§2.8）。`--frag 0` 提供整染色体模式。
+   对拍后达到 100% 覆盖（见 ecoli-repeats.md §2.8）。`--frag 0` 提供整染色体模式。
 3. **矩阵来源（仿 lastz.rs）**：pgr 对 lastz 的得分矩阵处理（
    `src/libs/lastz.rs`）是现成先例——把 UCSC 矩阵内置为 `pub const &str`，
    运行时写临时文件、`Q=<path>` 引用、`NamedTempFile` 保活到进程结束。
@@ -132,39 +127,28 @@ genome.fa(.gz) + repeats.fa(.gz)
    临时目录在调用期间保活。**好处**：与 lastz 一致、零外部路径依赖、结果可复现。
 4. **不做 ProcessRepeats**：cycleReJoin（碎片连链）、边界精修、edge effect
    移除、family/class、K2P、报告——全部不做；区间侧只做 cover+excise+fill。
-5. **TRF 阶段不包含**：`pgr rept trf` 已有；组合用法 = RM 默认
-   （散在 + 串联）的完整遮蔽。
+5. **TRF 两阶段内置**：PERFECT（2/7/7/80/10/50/10，拷贝>4）与 DIVERGED
+   （2/3/5/75/20/33/7，拷贝>5）按 RM `runTRFStage` 顺序内嵌在管道里，
+   阶段间用 X 掩蔽近似 RM 的切除；`pgr rept trf` 仍保留为独立的通用
+   串联重复命令（默认参数与 RM 两阶段不同）。
 
-预期与 RM 的差异（验证时量化）：无碎片连链 → 同一元件可能多段（合并后影响
-小）；无边界精修 → 端点略毛糙；无 edge 修复 → 仅分片模式下有边界假片段。
+预期与 RM 的差异（对拍实测确认）：无碎片连链 → 同一元件可能多段（合并后
+影响小）；无边界精修 → 端点略毛糙（10 株合计多出 ~0.6%，RM 的
+ProcessRepeats 边界精修会裁，我们保留原始跨度）；无 edge 修复 → 仅分片
+模式下有边界假片段。
 
-## 6. 验证
+## 6. 验证（2026-08-07 完成）
 
-1. 单元测试：18 列 tab 解析（正/负链、batch 偏移）、GC→矩阵映射、
-   minscore 折扣、`--cutoff` 覆盖。
-2. 集成测试（`tests/cli_rept.rs` 风格）：合成数据（400 bp 重复插入两次）检出；
-   `makeblastdb`/`rmblastn` 不在 PATH 时跳过（同 trf 测试）。
-3. 对拍（10 株 E. coli + TnCentral，沿用 `scripts/rm-gold-compare.sh` 流程）：
-   * rm vs RM 全量 .out（IS + Simple_repeat）：期望 100% 覆盖；
-   * rm（`--min-len 50`）vs RM-strict：验证阈值对齐；
-   * 与 e-align PGI(k31) / LASTZ 并列，补齐方法梯队。
-   指标：bp、片段数、`runlist statop` 双向覆盖、diff 平均长度。
-4. 结论写回 `notes/ecoli-repeats.md`（新增 §2.8）与 `docs/rept.md`。
+单元测试、集成测试（`tests/cli_rept.rs`）与 10 株 × TnCentral 对拍均通过，
+RM 全量 .out 被覆盖率 100.0%（2,204,874 / 2,204,952）；完整数字与逐株表见
+[ecoli-repeats.md](../ecoli-repeats.md) §2.8，用户用法见 [docs/rept.md](../../docs/rept.md)。
 
-## 7. 实施步骤
+## 7. 风险
 
-1. `src/libs/pl/repeat.rs`：tab 解析 + GC/矩阵 + minscore 折扣 + 管道
-   → 验证：`cargo test`
-2. `src/cmd_pgr/rept/rm.rs` + `mod.rs` 注册 + `--help`
-   → 验证：合成数据 e2e
-3. 矩阵内置（方案 B）→ 验证：无 RM 目录依赖下跑通
-4. 10 株对拍 → 写回 notes/docs
-5. `cargo fmt` + `cargo clippy -- -D warnings` clean
-
-## 8. 风险
-
-* RMBlast 版本：2.14.1 支持 tab 格式与全部参数（已验证）；旧版 2.13 才引入
-  tab，更老版本不可用——文档注明最低 2.13。
+* RMBlast 版本：当前验证/推荐为 CBP 编译的 2.14.1（`~/.cbp/bin`，glibc
+  ≤2.16，CentOS 7 可跑）；旧版 2.13 才引入 tab，更老版本不可用——文档注明
+  最低 2.13。官方预编译包要求 glibc ≥2.29；老系统部署细节见
+  [references/repeatmasker.md](../references/repeatmasker.md)。
 * 逐字节一致不可达：ProcessRepeats 的后处理（连链/精修）不做，目标定为
   **hit 集一致**（同一搜索参数下的 rmblastn 输出一致），区间层允许差异。
 * 性能：rmblastn 比 pgi 慢一个量级；细菌规模无压力，真核需 `--frag` + 并行。

@@ -14,12 +14,26 @@ TnCentral 的 FASTA（`~/data/repeats/tncentral.fa.gz`）完全走这条路，**
 ## 本地安装状态（2026-08-07）
 
 - 源码：`/home/wangq/Scripts/pgr/RepeatMasker/`，版本 4.2.4（官方最新）。
-- 搜索引擎：RMBlast 2.14.1，`/home/wangq/share/rmblast/bin`（默认引擎）。
+- 搜索引擎：RMBlast 2.14.1（CBP 编译版，`~/.cbp/bin`，要求 glibc ≤2.16，
+  CentOS 7 可跑），经合并目录
+  `/home/wangq/Scripts/pgr/RepeatMasker/rmblast-cbp-bin` 配置为默认引擎。
 - TRF：`/home/wangq/.cbp/bin/trf`（系统已有）。
 - FamDB：未配置（因此只有 `-lib` 模式可用；`-species` 不可用）。
-- 已通过 `perl ./configure` 完成配置（RMBLAST_DIR 指向 `~/share/rmblast/bin`），
+- 已通过 `perl ./configure` 完成配置（RMBLAST_DIR 指向 `rmblast-cbp-bin`），
   `./RepeatMasker -h` 可运行。RMBlast 的 tar 包仍在 `~/Downloads/`，/tmp 里
   的解压副本可删。
+
+> **为什么是合并目录**：configure 校验 RMBLAST_DIR 需同时存在
+> rmblastn / dustmasker / makeblastdb / blastdbcmd / blastdb_aliastool /
+> blastn 六个可执行文件（`RepeatMaskerConfig::validateParam` 逐个检查
+> `-x`），而 CBP 只装了前两个。合并目录里 rmblastn+makeblastdb 软链 CBP 版
+> （真正使用的引擎），其余四个软链官方包、仅为 configure 校验占位——
+> RepeatMasker 4.2.4 运行时只调 rmblastn 和 makeblastdb（源码核实：
+> dustmasker/blastdbcmd/blastdb_aliastool/blastn 除校验名单外无任何引用）。
+> **注意**：四个占位软链指向官方预编译包（glibc ≥2.29），在 CentOS 7 上
+> 本身跑不起来，只是不会被调用；若想彻底干净，可把这四个换成同年代老构建
+> （如 blast+ 2.2.28）或 bioconda 包里的对应二进制。搬到 CentOS 7 时软链
+> 目标路径需保持一致或改硬拷贝。
 
 ### 重新 configure（若以后目录再移动）
 
@@ -27,7 +41,7 @@ TnCentral 的 FASTA（`~/data/repeats/tncentral.fa.gz`）完全走这条路，**
 cd /home/wangq/Scripts/pgr/RepeatMasker
 perl ./configure -perlbin "$(which perl)" \
   -trf_prgm /home/wangq/.cbp/bin/trf \
-  -rmblast_dir /home/wangq/share/rmblast/bin \
+  -rmblast_dir /home/wangq/Scripts/pgr/RepeatMasker/rmblast-cbp-bin \
   -default_search_engine rmblast
 ```
 
@@ -73,28 +87,32 @@ CentOS 7 只有 glibc 2.17，直接跑不起来。
   18 列 outfmt 里 2.13+ 才新增的 kdiv/cpg 等列**没有被使用**。
 - RepeatMasker 4.2.4 自身对 rmblastn <2.13 也只是退回 legacy 解析
   （NCBIBlastSearchEngine.pm setPathToEngine 里的特性开关），并非硬性拒绝。
-- 因此若把 outfmt 收敛到 `6 qseqid qstart qend`（不影响命中集合），
-  理论上任意版本 rmblastn 都能配；但老引擎（2.2.28 等）与 2.14.1
-  在同样参数下的命中集合可能有差异，金标准对齐会打折扣。
 
 **可选方案**（按推荐顺序）：
-1. **bioconda rmblast 2.14.1**：linux-64 conda 包按 glibc 2.17 兼容构建，
+1. **CBP 安装的 rmblast 2.14.1（`~/.cbp/bin/rmblastn` + `makeblastdb`）**：
+   2026-08-07 实测，版本 2.14.1、要求的最高 glibc 符号仅 **GLIBC_2.16**
+   （官方预编译包是 2.29），CentOS 7（2.17）可直接运行。用它跑 60 kb MG1655
+   片段 × TnCentral：63 条原始命中 / 25 条去重区间，与官方 2.14.1 结果
+   完全一致；18 列 outfmt 与 v5 库格式均为正式行为，代码零改动。
+2. **bioconda rmblast 2.14.1**：linux-64 conda 包按 glibc 2.17 兼容构建，
    CentOS 7 可直接运行，版本与本地验证完全一致、零结果差异。
    服务器装 micromamba（单静态二进制，无需 root）：
    `micromamba create -p ~/rmblast-env -c conda-forge -c bioconda rmblast=2.14.1`，
    然后 `pgr rept masker ... --rmblast-dir ~/rmblast-env/bin`。
-2. **CentOS 7 源码编译 2.14.1**：需要 devtoolset-8+（C++14）与 boost、
+3. **CentOS 7 源码编译 2.14.1**：需要 devtoolset-8+（C++14）与 boost、
    zlib/bzip2 开发包，编译耗时长，只作无 conda 时的备选。
-3. **老预编译 `ncbi-rmblastn-2.2.28-x64-linux.tar.gz`**（NCBI FTP
-   `blast/executables/rmblast/2.2.28/`）：2015 年构建，面向当时主流系统
-   （glibc 2.12/2.14），CentOS 7 大概率可跑、体积小；但需把 outfmt
-   收到旧版支持的列，且命中集合与 2.14.1 有差异。
 
-**别忘了 pgr 本体**：Rust 二进制默认链接构建机的 glibc。若在 Ubuntu
-22.04 上编译，pgr 拿到 CentOS 7 同样会报 GLIBC_2.34 not found。
-要整套上 CentOS 7 需：在服务器上 rustup 编译，或本机
-`cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17`
-交叉编译，或直接 musl 静态。TRF 4.09 为静态二进制，无此问题。
+**pgr 本体**：glibc 兼容性由项目发布流程保证（`.github/workflows/publish.yml`
+用 `cargo zigbuild` 交叉到 glibc 2.17），此处不赘述。TRF 4.09 为静态二进制。
+
+## 相关笔记
+
+* [design/masker.md](../design/masker.md)：`pgr rept masker`
+  实现设计（参数表、TRF 两阶段、验证结果）
+* [design/repeat-masking.md](../design/repeat-masking.md)：重复标记总体方案与
+  RepeatMasker 源码梳理（附录 A）
+* [ecoli-repeats.md](../ecoli-repeats.md) §2.7/§2.8：RepeatMasker 金标准核对与
+  masker 复刻对拍
 
 ## 参考
 
