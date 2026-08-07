@@ -14,8 +14,17 @@ merges for distance computation and seed discovery.
 - **Complements**:
   - Upstream: `pgr fa to-2bit` (fastest index input), `pgr dist seq/hv`
     (sketch distances from sequences).
-  - Downstream: `pgr dist pgi` (exact merge distance), `pgr psl to-chain`
-    and `pgr pl chainnet` (chain the PSL blocks from `pgr align pgi`).
+  - Downstream: `pgr dist pgi` (merge distance on the index; secondary
+    consumer — see note below), `pgr psl to-chain` and `pgr pl chainnet`
+    (chain the PSL blocks from `pgr align pgi`).
+- **Storage note (2026-08-08)**: a `.pgi` is ~27× the gzipped FASTA
+  (e.g. MG1655: 37.6 MB index vs 1.4 MB FASTA; `.hv` is 16 KB). The index
+  exists for `align pgi` (chaining needs positions/strands); **distance
+  computation should not build `.pgi`** — use `dist seq` (FASTA, no index)
+  or `dist hv` (`.hv`, 1/87 of FASTA). `dist pgi` is a secondary consumer
+  for the "index already built" case and as a calibration reference for
+  `.hv`; its merge distance has syncmer sampling bias (see
+  `notes/benchmarks/dist-cohort-validation.md`).
 - **Design notes**: `notes/design/pbit.md` (index consumers)
   and `notes/design/pgi-align.md` (alignment pipeline).
 
@@ -78,7 +87,7 @@ Projects the index's k-mer set onto a fixed-dimension hypervector for fast
 pairwise comparison:
 
 ```
-pgr pgi to-hv in.pgi -o out.hv [--dim 4096] [--sparse 3]
+pgr pgi to-hv in.pgi -o out.hv [--dim 4096] [--sparse 1]
 ```
 
 The projection is sparse: each k-mer updates `--sparse` random dimensions,
@@ -103,7 +112,18 @@ explicit `.pgi` indexes.
 
 ## Examples
 
-1. Compute the exact merge distance between two indexes:
+1. Compute the merge distance between two indexes (see the bias note above):
    ```
    pgr dist pgi a.pgi b.pgi
    ```
+
+> **Bias note (2026-08-08)**: `dist pgi` merges the *syncmer-sampled*
+> k-mer sets, not the full k-mer sets. On closely related genomes (or any
+> pair rich in repeats/mobile elements) the syncmer positions drift apart,
+> so the intersection is underestimated and Jaccard/containment are biased
+> low (up to ~3% ANI; containment is slightly more stable than Jaccard,
+> ~34% vs ~39% relative error on a 5-strain test). Rankings stay roughly
+> usable. For unbiased numeric ANI use `pgr dist seq --sampler frachash`
+> (with `--ci`); `dist pgi` is for the "index already built" case and as a
+> calibration reference for `.hv`. Details:
+> `notes/benchmarks/dist-cohort-validation.md`.

@@ -8,6 +8,12 @@
 
 ## 1. 手头数据就能做
 
+- [x] **FracMinHash 采样器落地**（2026-08-08）：`dist seq --sampler frachash`
+      （canonical k-mer 保留 hash < u64::MAX/scale，`--scale` 默认 1000）
+      + `--ci` 输出 ANI 95% 置信区间（正态近似）。无偏验证：5 株 × 10 对
+      与全 k=40 集合真值排序 **Spearman 1.0**、Jaccard 0.417 vs 真值
+      0.451（`dist pgi` 仅 0.095——syncmer 偏差）；MG1655×Sakai ANI
+      97.7% vs 真值 97.3%（详见 `benchmarks/dist-cohort-validation.md`）。
 - [x] **pgi 引擎 SD 灵敏度优化**（2026-08-06 已实现）：`sd search` 透传
       pgi 参数，默认 `freq=50, kmer=31`——10 个 E. coli 整体漏检率
       **13.1% → 0.26%**（e2348_69 高拷贝重复 562→0、sakai/e24377a 的
@@ -26,15 +32,37 @@
 
 ## 2. 等数据/场景到位再启动
 
-- [ ] 重新审视 `.hv` 路径的稀疏选择（`design/hv.md` §2.7/§5.4）：稀疏是
-      历史性能优化压力下的产物（非有意设计）、无产品先例；实施方案前
-      权衡稠密 bit（1.11 ms，成熟）vs 稀疏 s=3（0.055 ms，~20× 快但
-      距离语义不同）。
-- [ ] FASTA `dist hv` 量纲问题（`design/hv.md` §3.4/§5.3）：
-      `load_hv_from_fasta` / `load_hv_from_fasta_syncmer` 仍走 `hash_hv_i8`，
-      直流偏置污染 Jaccard（N=3000/shared=500 模拟 reported 0.154 vs 真值
-      0.091，测试 `test_hash_hv_i8_jaccard_dc_bias`）；先用两株 E. coli
-      对照 `dist seq`/`dist pgi` 实测确认，再决定改 `hash_hv_bit`/稀疏投影。
+- [ ] `dist pgi` 的 syncmer 8/5 采样位置偏差（2026-08-08 发现，
+      `benchmarks/dist-cohort-validation.md`）：近缘/含共享重复元件的
+      基因组间 Jaccard 严重低估（e2348×cft073：0.095 vs 全 k=40 真值
+      0.451）。**注意（2026-08-08 用户提醒）**：这是采样集合交集的固有
+      行为，不是可"修复"的 bug——pgi 的 syncmer 是 align pgi（FastGA
+      兼容比对）的锚点基石，不能换 FracMinHash（双选概率 1/scale、
+      scale=1000 时锚点只剩 1/1000 且无窗口保证，链化失效）。正确分工：
+      pgi+syncmer = 比对/排序；**无偏数值 ANI 用 `dist seq --sampler
+      frachash`**（已实现 + CI）。补充（2026-08-08）：containment 略稳
+      于 jaccard（相对偏差 34% vs 39%、排序 ρ 0.66 vs 0.52，但仍不可靠）；
+      `.pgi` 约 FASTA 的 27×（37.6MB vs 1.4MB），**距离计算不应为它建
+      索引**（初筛用 `.hv`、数值用 frachash，见 docs/dist.md 分层建议）。
+- [ ] 稀疏 s=1 的完整 45 对 cohort 复测（2026-08-08 仅 5 株 10 对验证
+      ρ=0.988；原 s=3 是 10 株 45 对）：等 10 株数据到位后补全，确认
+      s=1 排序一致性（理论 + 10 对实测已支持，此为收尾验证）。
+- [ ] FracMinHash containment/ANI 偏差校正（2026-08-08 立项，等 Hera
+      论文：Hera et al. 2023, *Genome Res* 33(7):1061–1068,
+      doi:10.1101/gr.277651.123）：当前 `dist seq --sampler frachash`
+      的 containment 有 ~10% Jensen 偏差（实测与 scale 无关、增大采样
+      无效）；实现 Hera 校正公式消除到一阶/二阶，使 containment/ANI
+      数值精确（来源：`benchmarks/dist-cohort-validation.md`
+      FracMinHash containment 小节）。
+- [x] 重新审视 `.hv` 路径的稀疏选择（2026-08-08 已分析 + s=1 已落地）：
+      稀疏是历史性能优化产物（非有意设计）但理论已补齐（§2.7/§6.5/§6.6）；
+      权衡 = 编码瓶颈场景用稀疏 s=1（~50× 快 + 大 D 免费精度）、小规模
+      用稠密 bit；s=1 已落地且 cohort 复测（5 株 10 对 Spearman 0.988）
+      通过。剩余：实施方案层面的最终定夺（用户）。
+- [x] FASTA `dist hv` 量纲问题（2026-08-08 已修复，`design/hv.md` §3.4）：
+      `load_hv_from_fasta` / `load_hv_from_fasta_syncmer` 改用 `hash_hv_bit`；
+      模拟 Jaccard 0.102 vs 真值 0.091、两株 E. coli 实测输出合理
+      （测试 `test_hash_hv_bit_jaccard_accurate`）。
 - [ ] 4 万 E. coli cohort 端到端：pgr 核心步骤（PAF 索引/查询/图）已就绪，等真实 cohort 数据；
       到位后重跑 4 万规模基准，按 `paf-pangenome.md` §5.2 判断标准选优化项，再做应用层。
       上游去冗余/sparsify 在 pgr 外（Mash + FastGA）；远期可封装 `pgr pl dedup` / `sparsify`
@@ -50,6 +78,12 @@
 
 ## 3. 低风险审计记录项（可顺手修）
 
+- [x] `dist seq` / `dist hv` 的 minimizer 默认参数对 DNA 不充分
+      （2026-08-08 已修复）：默认 k=7 的 2-bit 编码仅 2^14 空间 →
+      unique minimizer ≈ 16383（4.6Mb 基因组饱和），采样严重不足；
+      `resolve_kmer_window` 现对 DNA minimizer 默认 k=21/w=5（与文档
+      docs/dist.md 一致），实测 MG1655×Sakai mash 0.023 → ANI 97.7%
+      （真值 97.3%）。
 - [ ] PAF 输出 `query_length` / `target_length` 恒 0：需改索引格式持久化 `src_size`，
       属跨格式变更，**待决策**：改 `.paf.idx` 持久化 src_size 才能填充，
       影响索引格式兼容性（来源：`audit/audit-paf.md`）。

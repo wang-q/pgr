@@ -191,6 +191,18 @@ pub fn set_distances(
     }
 }
 
+/// 95% confidence interval for ANI estimated from a Jaccard value
+/// (normal approximation on the Jaccard proportion; Hera et al. 2023 give
+/// tighter FracMinHash-specific bounds). Only meaningful for unbiased
+/// samplers (FracMinHash); minimizer/syncmer sketches have sampling bias.
+pub fn ani_ci_from_jaccard(jaccard: f64, union: usize, kmer: usize) -> (f64, f64) {
+    let se = (jaccard * (1.0 - jaccard) / union.max(1) as f64).sqrt();
+    let j_lo = (jaccard - 1.96 * se).max(0.0);
+    let j_hi = (jaccard + 1.96 * se).min(1.0);
+    let ani = |j: f64| 1.0 - mash_distance(j, kmer);
+    (ani(j_lo), ani(j_hi))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MinimizerInfo {
     pub hash: u64,
@@ -368,6 +380,82 @@ pub fn load_minimizers(
     Ok(entries)
 }
 
+/// FracMinHash sketch of a sequence: keep canonical k-mers whose hash is
+/// below `u64::MAX / scale` (Irber et al. 2022). Unlike minimizers/syncmers,
+/// every k-mer is sampled with the same independent probability (1/scale),
+/// so Jaccard/containment estimates are unbiased and comparable across
+/// differently-sized sets; Hera et al. 2023 give ANI bias correction and
+/// confidence intervals.
+pub fn seq_fracminhash(
+    seq: &[u8],
+    k: usize,
+    scale: usize,
+    is_protein: bool,
+) -> anyhow::Result<rapidhash::RapidHashSet<u64>> {
+    anyhow::ensure!(scale > 0, "scale must be positive: {scale}");
+    let threshold = u64::MAX / scale as u64;
+    let mut set = rapidhash::RapidHashSet::default();
+    if is_protein {
+        for kmer in seq.windows(k) {
+            let h = rapidhash::rapidhash(kmer);
+            if h < threshold {
+                set.insert(h);
+            }
+        }
+    } else {
+        // Canonical k-mers (min of fwd/rev 2-bit encoding) hashed with
+        // rapidhash: the raw 2-bit value is structured (see hv.md §1.4),
+        // so it must not be used as the FracMinHash key directly.
+        for key in crate::libs::nt::rolling_kmer_keys(seq, k) {
+            let Some(key) = key else { continue };
+            let canonical = key.min(crate::libs::nt::rc_key(key, k));
+            let h = rapidhash::rapidhash(&canonical.to_le_bytes());
+            if h < threshold {
+                set.insert(h);
+            }
+        }
+    }
+    Ok(set)
+}
+
+/// Read a FASTA file and build a `MinimizerEntry` per record (or one merged
+/// entry with `is_merge`) using FracMinHash sampling.
+pub fn load_fracminhash(
+    infile: &str,
+    k: usize,
+    scale: usize,
+    is_protein: bool,
+    is_merge: bool,
+) -> anyhow::Result<Vec<MinimizerEntry>> {
+    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut entries = vec![];
+    let mut all_set: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::default();
+
+    for result in fa_in.records() {
+        let record = result?;
+        let name = String::from_utf8(record.name().into())?;
+        let seq = record.sequence();
+        let set = seq_fracminhash(&seq[..], k, scale, is_protein)?;
+
+        if is_merge {
+            all_set.extend(set);
+        } else {
+            let entry = MinimizerEntry { name, set };
+            entries.push(entry);
+        }
+    }
+
+    if is_merge {
+        let entry = MinimizerEntry {
+            name: infile.to_string(),
+            set: all_set,
+        };
+        entries.push(entry);
+    }
+
+    Ok(entries)
+}
+
 /// Read a FASTA file and build a `MinimizerEntry` per record (or one merged
 /// entry with `is_merge`) using closed syncmers.
 ///
@@ -420,6 +508,77 @@ pub fn load_syncmers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use rand::SeedableRng;
+
+    fn rand_dna(len: usize, seed: u64) -> Vec<u8> {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        (0..len).map(|_| b"ACGT"[rng.random_range(0..4)]).collect()
+    }
+
+    #[test]
+    fn test_seq_fracminhash_sampling_rate() {
+        let seq = rand_dna(100_000, 42);
+        // scale=10 keeps ~1/10 of k-mers
+        let s10 = seq_fracminhash(&seq, 21, 10, false).unwrap();
+        let expected10 = 100_000 / 10;
+        assert!(
+            (s10.len() as i64 - expected10 as i64).abs() < expected10 as i64 / 5,
+            "scale=10 kept {} (expected ~{})",
+            s10.len(),
+            expected10
+        );
+        // scale=1000 keeps ~1/1000
+        let s1000 = seq_fracminhash(&seq, 21, 1000, false).unwrap();
+        let expected1000 = 100_000 / 1000;
+        assert!(
+            (s1000.len() as i64 - expected1000 as i64).abs() < 50,
+            "scale=1000 kept {} (expected ~{})",
+            s1000.len(),
+            expected1000
+        );
+    }
+
+    #[test]
+    fn test_fracminhash_jaccard_estimation() {
+        // A = 50kb random; B = first 40kb of A + 10kb random -> ~80% shared
+        // k-mers, so true Jaccard ~ 40/(50+50-40) = 0.667 (ignoring k-mer
+        // boundary effects). FracMinHash must estimate it unbiasedly.
+        let a = rand_dna(50_000, 7);
+        let mut b = a[..40_000].to_vec();
+        b.extend(rand_dna(10_000, 8));
+        let sa = seq_fracminhash(&a, 21, 10, false).unwrap();
+        let sb = seq_fracminhash(&b, 21, 10, false).unwrap();
+        let inter = sa.iter().filter(|h| sb.contains(h)).count() as f64;
+        let j = inter / (sa.len() + sb.len() - inter as usize) as f64;
+        assert!(
+            (j - 40.0 / 60.0).abs() < 0.1,
+            "FracMinHash Jaccard {} vs expected ~0.667",
+            j
+        );
+    }
+
+    #[test]
+    fn test_ani_ci() {
+        // Narrower CI with more samples; CI must bracket the ANI point
+        // estimate (1 - mash), not the raw Jaccard.
+        let ani_pt = 1.0 - mash_distance(0.4, 21);
+        let (lo, hi) = ani_ci_from_jaccard(0.4, 100, 21);
+        assert!(
+            lo < ani_pt && hi > ani_pt,
+            "CI must bracket ANI {}: {} {}",
+            ani_pt,
+            lo,
+            hi
+        );
+        let (lo2, hi2) = ani_ci_from_jaccard(0.4, 1000, 21);
+        assert!(
+            hi2 - lo2 < hi - lo,
+            "more samples => narrower CI: {} vs {}",
+            hi2 - lo2,
+            hi - lo
+        );
+    }
 
     #[test]
     fn test_seq_sketch_basic() {

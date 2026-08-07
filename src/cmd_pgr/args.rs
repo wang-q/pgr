@@ -812,6 +812,7 @@ pub fn sampler_arg() -> Arg {
         .value_parser([
             builder::PossibleValue::new("minimizer"),
             builder::PossibleValue::new("syncmer"),
+            builder::PossibleValue::new("frachash"),
         ])
         .default_value("minimizer")
         .help("Sequence sampler to use")
@@ -841,15 +842,26 @@ pub fn resolve_kmer_window(
     let kmer_cli = matches!(args.value_source("kmer"), Some(ValueSource::CommandLine));
     let window_cli = matches!(args.value_source("window"), Some(ValueSource::CommandLine));
     let (def_k, def_w) = if is_protein { (7, 5) } else { (8, 55) };
-    let k = if opt_sampler == "syncmer" && !kmer_cli {
-        def_k
-    } else {
-        *args.get_one::<usize>("kmer").unwrap()
+    // DNA minimizer defaults (k=21/w=5, matching docs/dist.md and Mash
+    // convention): k=7's 2-bit space (4^7 = 16384) saturates on megabase
+    // genomes (all unique 7-mers appear), giving useless sketches.
+    let (min_k, min_w) = if is_protein { (7, 1) } else { (21, 5) };
+    let k = match (opt_sampler, kmer_cli, is_protein) {
+        ("syncmer", false, _) => def_k,
+        ("minimizer", false, false) => min_k,
+        ("frachash", false, _) => {
+            if is_protein {
+                7
+            } else {
+                21
+            }
+        }
+        _ => *args.get_one::<usize>("kmer").unwrap(),
     };
-    let w = if opt_sampler == "syncmer" && !window_cli {
-        def_w
-    } else {
-        *args.get_one::<usize>("window").unwrap()
+    let w = match (opt_sampler, window_cli, is_protein) {
+        ("syncmer", false, _) => def_w,
+        ("minimizer", false, false) => min_w,
+        _ => *args.get_one::<usize>("window").unwrap(),
     };
     (k, w)
 }
@@ -873,6 +885,16 @@ pub fn kmer_arg_with_default(default: &'static str) -> Arg {
 /// `-w/--window` size argument (default: 1, for minimizers).
 pub fn window_arg() -> Arg {
     window_arg_with_default("1", "Window size for minimizers")
+}
+
+/// `--scale` argument for FracMinHash sampling (keep 1/scale of k-mers).
+pub fn scale_arg() -> Arg {
+    Arg::new("scale")
+        .long("scale")
+        .num_args(1)
+        .default_value("1000")
+        .value_parser(clap::value_parser!(usize))
+        .help("FracMinHash scale: keep k-mers with hash < u64::MAX/scale (smaller = denser)")
 }
 
 /// `--sim` flag (convert distance to similarity).

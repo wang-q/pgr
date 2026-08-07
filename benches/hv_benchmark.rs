@@ -821,6 +821,14 @@ fn bench_encode_hash_hd(c: &mut Criterion) {
     c.bench_function("hash_hv_sparse_s3_large", |b| {
         b.iter(|| hash_hv_sparse(black_box(&seed_vec_large), hv_d, 3))
     });
+    // Encoding time vs D at fixed s: sparse cost is O(n·s), independent of D
+    // (only the HV array grows). Key advantage over dense (O(n·D)) when
+    // pushing precision via larger D.
+    for d in [16384usize, 65536] {
+        c.bench_function(&format!("hash_hv_sparse_s1_d{}_medium", d), |b| {
+            b.iter(|| hash_hv_sparse(black_box(&seed_vec_medium), d, 1))
+        });
+    }
 
     // Large dataset (n=100k, D=4096)
     c.bench_function("encode_hash_hd_lib_large", |b| {

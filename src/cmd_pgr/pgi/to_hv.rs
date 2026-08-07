@@ -40,7 +40,7 @@ Examples:
             Arg::new("sparse")
                 .short('s')
                 .long("sparse")
-                .default_value("3")
+                .default_value("1")
                 .value_parser(value_parser!(usize))
                 .help("Dimensions updated per k-mer"),
         )

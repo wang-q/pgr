@@ -411,7 +411,7 @@ pub fn load_hv_from_fasta(
     }
 
     let seed_vec: Vec<u64> = file_set.into_iter().collect();
-    let hv: Vec<i32> = hash_hv_i8(&seed_vec, dim);
+    let hv: Vec<i32> = hash_hv_bit(&seed_vec, dim);
     let entry = HvEntry {
         name: infile.to_string(),
         set: hv,
@@ -451,7 +451,7 @@ pub fn load_hv_from_fasta_syncmer(
     }
 
     let seed_vec: Vec<u64> = file_set.into_iter().collect();
-    let hv: Vec<i32> = hash_hv_i8(&seed_vec, dim);
+    let hv: Vec<i32> = hash_hv_bit(&seed_vec, dim);
     Ok(HvEntry {
         name: infile.to_string(),
         set: hv,
@@ -561,6 +561,34 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_hv_bit_jaccard_accurate() {
+        // Regression for the FASTA `dist hv` dimension mismatch fix
+        // (hv.md §3.4/§5.3): `load_hv_from_fasta` now encodes with
+        // `hash_hv_bit` (±1, zero-mean per dim) instead of i8 (DC bias).
+        // The dense cardinality/dot formulas must give Jaccard ≈ truth.
+        let n = 3000usize;
+        let shared = 500usize;
+        let hv_d = 4096;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let pool: Vec<u64> = (0..(2 * n - shared)).map(|_| rng.random()).collect();
+        let set_a: Vec<u64> = pool[..n].to_vec();
+        let set_b: Vec<u64> = pool[..shared]
+            .iter()
+            .chain(pool[n..].iter())
+            .copied()
+            .collect();
+
+        let d = calc_distances(&hash_hv_bit(&set_a, hv_d), &hash_hv_bit(&set_b, hv_d), 21);
+        let true_j = shared as f32 / (2 * n - shared) as f32; // 500/5500 ≈ 0.0909
+        assert!(
+            (d.jaccard - true_j).abs() < 0.03,
+            "bit Jaccard {} should be near truth {} (was 0.154 with i8)",
+            d.jaccard,
+            true_j
+        );
+    }
+
+    #[test]
     fn test_hash_hv_sparse_jaccard_s_scan() {
         // Sparse projection: the expected cosine is shared/n (independent of
         // s — s only controls variance), matching the dense ±1 expectation.
@@ -647,6 +675,113 @@ mod tests {
             max_mae - min_mae < 0.01 && max_mae < 0.02,
             "MAE should be flat across s: {maes:?}"
         );
+    }
+
+    #[test]
+    fn test_hash_hv_sparse_d_error_scan() {
+        // Error vs D at fixed s=1: precision is decided by D (~1/√D), and
+        // sparse encoding cost is independent of D — so larger D buys
+        // precision at no encoding cost (only storage/comparison grow).
+        let n = 3000usize;
+        let shared = 500usize;
+        let trials = 50usize;
+        for d in [4096usize, 16384, 65536] {
+            let ideal = shared as f64 / n as f64;
+            let mut errs = Vec::with_capacity(trials);
+            for t in 0..trials {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(2000 + t as u64);
+                let pool: Vec<u64> = (0..(2 * n - shared)).map(|_| rng.random()).collect();
+                let set_a: Vec<u64> = pool[..n].to_vec();
+                let set_b: Vec<u64> = pool[..shared]
+                    .iter()
+                    .chain(pool[n..].iter())
+                    .copied()
+                    .collect();
+                let hv_a = hash_hv_sparse(&set_a, d, 1);
+                let hv_b = hash_hv_sparse(&set_b, d, 1);
+                let dot: i64 = hv_a
+                    .iter()
+                    .zip(&hv_b)
+                    .map(|(a, b)| (*a as i64) * (*b as i64))
+                    .sum();
+                let na: f64 = hv_a.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
+                let nb: f64 = hv_b.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
+                let cos = dot as f64 / (na * nb);
+                errs.push((cos - ideal).abs());
+            }
+            let mae = errs.iter().sum::<f64>() / trials as f64;
+            println!("D={:5} s=1 MAE={:.5}", d, mae);
+        }
+    }
+
+    #[test]
+    fn test_hash_hv_sparse_projection_variance() {
+        // Projection-randomness view (fixed set pair, independent random
+        // projections): DotHash-style theory predicts
+        //   Var(a·b) = shared/s + (|A||B| − 2·shared)/D   (normalized ψ)
+        // so s DOES reduce variance here (the shared/s term), unlike the
+        // cross-set view where relative error is s-independent. This test
+        // verifies the s-dependence of projection variance.
+        let n = 3000usize;
+        let shared = 500usize;
+        let d = 4096usize;
+        let trials = 300usize;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let pool: Vec<u64> = (0..(2 * n - shared)).map(|_| rng.random()).collect();
+        let set_a: Vec<u64> = pool[..n].to_vec();
+        let set_b: Vec<u64> = pool[..shared]
+            .iter()
+            .chain(pool[n..].iter())
+            .copied()
+            .collect();
+
+        // Independent projection for a fixed set: element id + projection
+        // seed t drive the splitmix stream (deterministic per (element, t)).
+        let project = |set: &[u64], s: usize, t: u64| -> Vec<i32> {
+            let mut hv = vec![0i32; d];
+            for &e in set {
+                let mut x = splitmix64(e.wrapping_add(t.wrapping_mul(0x9E37_79B9_7F4A_7C15)));
+                for _ in 0..s {
+                    x = splitmix64(x);
+                    let idx = (x % d as u64) as usize;
+                    if ((x >> 32) & 1) == 1 {
+                        hv[idx] += 1;
+                    } else {
+                        hv[idx] -= 1;
+                    }
+                }
+            }
+            hv
+        };
+
+        for s in [1usize, 3, 16, 64] {
+            let mut dots = Vec::with_capacity(trials);
+            for t in 0..trials as u64 {
+                let hv_a = project(&set_a, s, t);
+                let hv_b = project(&set_b, s, t);
+                // normalized dot: a·b / s (E = shared)
+                let dot: i64 = hv_a
+                    .iter()
+                    .zip(&hv_b)
+                    .map(|(a, b)| (*a as i64) * (*b as i64))
+                    .sum();
+                dots.push(dot as f64 / s as f64);
+            }
+            let mean = dots.iter().sum::<f64>() / trials as f64;
+            let var = dots.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / trials as f64;
+            // predicted: shared/s + (|A||B| − 2·shared)/D
+            let predicted =
+                shared as f64 / s as f64 + (n as f64 * n as f64 - 2.0 * shared as f64) / d as f64;
+            println!(
+                "s={:3} var={:.2} predicted={:.2} mean={:.1}",
+                s, var, predicted, mean
+            );
+            assert!(
+                var < predicted * 2.0 + 1.0,
+                "s={} var too large: {var} vs {predicted}",
+                s
+            );
+        }
     }
 
     #[test]

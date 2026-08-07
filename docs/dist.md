@@ -13,7 +13,7 @@
 
 ## 子命令详解
 
-### 1. `pgr dist seq`: 基于 Minimizer / Closed Syncmer 的序列距离
+### 1. `pgr dist seq`: 基于 Minimizer / Closed Syncmer / FracMinHash 的序列距离
 *利用采样策略快速计算序列间的 Mash 距离，适合大规模基因组比较。*
 
 - **核心算法**:
@@ -21,6 +21,10 @@
   - **Closed Syncmer** (Edgar 2021): 窗口内最小 s-mer 哈希出现在窗口首端或末端的
     $k$-mer 集合。与 minimizer 不同，syncmer 提供**稀疏但完整**的覆盖（平均深度约 2×），
     且序列与其反向互补得到相同哈希集（Mash/Jaccard 需要）。
+  - **FracMinHash** (Irber et al. 2022): 每个 canonical k-mer 以独立概率 $1/\text{scale}$
+    保留（`hash < u64::MAX/scale`）。与 minimizer/syncmer 不同，FracMinHash 的 Jaccard/
+    containment 估计**无偏**且可跨大小不同的集合比较，支持 ANI 偏差校正与置信区间
+    （Hera et al. 2023）。
   - **Mash Distance**: 基于 Jaccard Index 估算的突变距离（Mutation Distance）。公式：$D \approx -\frac{1}{k} \ln(\frac{2J}{1+J})$。
 - **支持指标**:
   - **Mash Distance**: 演化距离估计。
@@ -29,6 +33,8 @@
 - **采样器 (`--sampler`)**:
   - `minimizer` (默认): 见上。
   - `syncmer`: DNA 默认 `-k 8 -w 55`、蛋白默认 `-k 7 -w 5`（syng 默认参数，未显式指定时自动套用）。
+  - `frachash`: FracMinHash。DNA 默认 `-k 21`、蛋白默认 `-k 7`；`--scale` 控制采样密度
+    （默认 1000，越小越密、方差越低）。
 - **哈希算法 (`--hasher`)**:
   - `rapid`: RapidHash (默认，速度最快)。
   - `fx`: FxHash。
@@ -37,9 +43,12 @@
   - 注：`--hasher` 仅对 minimizer 生效；syncmer 使用 2-bit canonical rolling hash (DNA)
     或 RapidHash (蛋白)。
 - **主要参数**:
-  - `-k`/`--kmer`: k-mer 长度 (默认 7)。
-  - `-w`/`--window`: Minimizer 窗口大小 (默认 1)。
-  - `--sampler`: `minimizer` (默认) 或 `syncmer`。
+  - `-k`/`--kmer`: k-mer 长度 (CLI 默认 7；DNA minimizer 自动用 21、DNA syncmer 用 8)。
+  - `-w`/`--window`: Minimizer 窗口大小 (CLI 默认 1；DNA minimizer 自动用 5)。
+  - `--scale`: FracMinHash scale (默认 1000，仅 `--sampler frachash` 使用)。
+  - `--ci`: 追加 ANI 的 95% 置信区间（正态近似；仅对无偏采样器有效，
+    即 `--sampler frachash`。Hera et al. 2023 提供更紧的 FracMinHash 专属界）。
+  - `--sampler`: `minimizer` (默认)、`syncmer` 或 `frachash`。
   - `--protein`: 声明输入为蛋白序列（影响采样与哈希路径）。
   - `--merge`: 将文件内所有序列合并为一个集合计算（例如比较两个基因组）。
   - `--zero`: 输出 Jaccard 为 0 的结果（默认跳过）。
@@ -108,6 +117,18 @@ pgr dist seq genes.fa -p 4 > dist.tsv
 # 将每个文件的所有序列合并为一个 hypervector，计算两个基因组之间的距离
 pgr dist hv genome1.fa genome2.fa
 ```
+
+## 如何选择距离方法（2026-08-08 分层建议）
+
+| 需求 | 推荐 | 理由 |
+|---|---|---|
+| **超大规模初筛**（近邻过滤/聚类候选） | `dist hv`（`.hv` 路径） | O(D) 固定比较、`.hv` 仅 FASTA 的 1/87，最快的粗筛层 |
+| **无偏数值 ANI** | `dist seq --sampler frachash`（`--ci` 输出置信区间） | FracMinHash 独立随机采样，Jaccard 无偏（与全集合真值排序 Spearman 1.0） |
+| **已建 `.pgi` 时的距离** | `dist pgi` | 零额外 I/O，但注意 syncmer 采样偏差（重复元件株 ~3% ANI；containment 略稳于 Jaccard）；排序大致可用 |
+| **最终验证/排序** | `align pgi` | 精确比对（索引是 align 的必需品，`dist pgi` 只是其辅助消费者） |
+
+**要点**：`.pgi` 索引约 FASTA 的 27×（为链化比对设计），**距离计算不应为它建索引**；初筛用 `.hv`、数值 ANI 用 FracMinHash。详见
+`notes/benchmarks/dist-cohort-validation.md`。
 
 ## 未来规划 (Roadmap)
 

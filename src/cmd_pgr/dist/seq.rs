@@ -21,10 +21,16 @@ minimizers or closed syncmers.
       its minimal s-mer hash falls at the first or last position. This gives a sparse but
       complete cover and localizes indel/rearrangement perturbation better than minimizers.
       `-k` is the s-mer size; `-w` is the number of s-mers per window (span `k + w - 1`).
+    * `frachash`: FracMinHash per Irber et al. (2022). Every canonical k-mer is kept with
+      independent probability 1/scale (hash < u64::MAX/scale); Jaccard/containment
+      estimates are unbiased and comparable across differently-sized sets, and support
+      ANI bias correction with confidence intervals (Hera et al. 2023). `-k` is the
+      k-mer size (default 21 for DNA, 7 for protein); `--scale` controls density
+      (default 1000; smaller = denser = lower variance, slower).
 
 * We use these samplers to sample kmers
     * For proteins, the length is short, so the window size can be set as: `-k 7 -w 2`
-    * DNA (minimizer): `-k 21 -w 5`
+    * DNA (minimizer): `-k 21 -w 5` (applied automatically when not set)
     * DNA (syncmer): `-k 8 -w 55` (syng defaults; applied automatically when not set)
     * Protein (syncmer): `-k 7 -w 5` (applied automatically with --protein when not set;
       k=7 keeps random match prob negligible, w=5 gives ~33% density for short sequences)
@@ -91,6 +97,9 @@ Examples:
 3. Use closed syncmers for DNA (syng defaults applied automatically):
    pgr dist seq input.fa --sampler syncmer
 
+9. Use FracMinHash for unbiased ANI estimates:
+   pgr dist seq input.fa --sampler frachash -k 21 --scale 1000
+
 4. Use closed syncmers for proteins (defaults smer=7, window=5 applied automatically):
    pgr dist seq proteins.fa --sampler syncmer --protein
 
@@ -113,8 +122,15 @@ Examples:
         .arg(crate::cmd_pgr::args::hasher_arg())
         .arg(crate::cmd_pgr::args::kmer_arg())
         .arg(crate::cmd_pgr::args::window_arg())
+        .arg(crate::cmd_pgr::args::scale_arg())
         .arg(crate::cmd_pgr::args::protein_arg())
         .arg(crate::cmd_pgr::args::sim_arg())
+        .arg(
+            clap::Arg::new("ci")
+                .long("ci")
+                .action(clap::ArgAction::SetTrue)
+                .help("Append 95% ANI confidence interval (unbiased samplers only, e.g. --sampler frachash)"),
+        )
         .arg(
             clap::Arg::new("zero")
                 .long("zero")
@@ -141,8 +157,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         crate::cmd_pgr::args::resolve_kmer_window(args, opt_sampler, is_protein);
     anyhow::ensure!(opt_kmer > 0, "--kmer must be positive: {}", opt_kmer);
     anyhow::ensure!(opt_window > 0, "--window must be positive: {}", opt_window);
+    let opt_scale = *args.get_one::<usize>("scale").unwrap();
+    anyhow::ensure!(opt_scale > 0, "--scale must be positive: {}", opt_scale);
 
     let is_sim = args.get_flag("sim");
+    let is_ci = args.get_flag("ci");
     let is_zero = args.get_flag("zero");
     let is_merge = args.get_flag("merge");
     let is_list = args.get_flag("list_files");
@@ -168,6 +187,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 pgr::libs::hash::load_syncmers(p, opt_kmer, opt_window, is_protein, is_merge)
             })
         })?,
+        "frachash" => pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+            pgr::libs::par::load_entries(paths, |p| {
+                pgr::libs::hash::load_fracminhash(p, opt_kmer, opt_scale, is_protein, is_merge)
+            })
+        })?,
         _ => pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
             pgr::libs::par::load_entries(paths, |p| {
                 pgr::libs::hash::load_minimizers(p, opt_hasher, opt_kmer, opt_window, is_merge)
@@ -188,18 +212,46 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             d.mash
         };
 
+        let (ci_lo, ci_hi) = if is_ci {
+            pgr::libs::hash::ani_ci_from_jaccard(d.jaccard, d.union, opt_kmer)
+        } else {
+            (0.0, 0.0)
+        };
+
         let line = if is_merge {
+            if is_ci {
+                format!(
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\n",
+                    e1.name,
+                    e2.name,
+                    d.total1,
+                    d.total2,
+                    d.inter,
+                    d.union,
+                    dist,
+                    d.jaccard,
+                    d.containment,
+                    ci_lo,
+                    ci_hi
+                )
+            } else {
+                format!(
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
+                    e1.name,
+                    e2.name,
+                    d.total1,
+                    d.total2,
+                    d.inter,
+                    d.union,
+                    dist,
+                    d.jaccard,
+                    d.containment
+                )
+            }
+        } else if is_ci {
             format!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-                e1.name,
-                e2.name,
-                d.total1,
-                d.total2,
-                d.inter,
-                d.union,
-                dist,
-                d.jaccard,
-                d.containment
+                "{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\n",
+                e1.name, e2.name, dist, d.jaccard, d.containment, ci_lo, ci_hi
             )
         } else {
             format!(

@@ -136,8 +136,8 @@ k-mer 及其 1-错配变体归入同一桶），保持"桶集合计数"语义并
   跳步收益被稀释。
 * **AVX2 vs 标量**：bit ~8.1×、i8 ~5.5×（两块收益叠加）。
 
-**决策**：bit（±1）为主实现；i8 仅作为"保语义"变体保留（FASTA 路径当前
-仍走 i8，其量纲问题见 §3.4、修复计划见 §5.3）。
+**决策**：bit（±1）为主实现；i8 仅作为"保语义"变体保留（2026-08-08 起
+FASTA 路径已改用 bit，量纲问题修复见 §3.4；i8 不再有生产消费者）。
 
 ### 2.2 随机数生成速度
 
@@ -315,6 +315,13 @@ lane 宽度——该方向已被 i16/pshufb 实测否定，剩余杠杆在广播
 4. 与 §1.4 / §2.5 呼应：敏感度与偏差由**采样层**决定，投影层只负责
    精确计数——换编码路径救不回采样偏差。
 
+> **实证（2026-08-08，`dist seq --sampler frachash` 落地后）**：用全
+> k=40 集合（不经采样）对照，e2348 × cft073 的真值 Jaccard = 0.451，
+> FracMinHash 估计 0.417（**无偏**），而 `dist pgi`（syncmer 8/5）仅
+> 0.095——syncmer/minimizer 的位置采样在近缘（含共享重复元件）基因组间
+> 有系统性偏差，FracMinHash 的独立随机采样不受影响。**数值 ANI 必须用
+> FracMinHash**（详见 [[../benchmarks/dist-cohort-validation.md]]）。
+
 ### 2.7 稀疏投影（`.hv` v2 路径）
 
 > **定位说明（2026-08-08 澄清）**：稀疏编码**不是有意设计的产品方案**，
@@ -330,12 +337,24 @@ lane 宽度——该方向已被 i16/pshufb 实测否定，剩余杠杆在广播
 **理论依据（稀疏随机投影）**：每个元素经哈希映射到 s 个随机维度、±1
 计数，属于稀疏随机投影 / 特征哈希家族——Achlioptas (2003) 证明随机 ±1
 矩阵保持内积结构（JL 型保距）；Li, Hastie & Church (2006) 证明**稀疏化**
-随机投影仍保持该性质，稀疏度只放大方差；Weinberger et al. (2009)
-feature hashing 是同一模式的工业实践。无偏性可严格推导：设两集合共享
-`shared` 个元素，每个元素选某维概率 s/D、符号 ±1 均匀，则
-`E[dot] = shared·s`、`E[‖H‖²] = n·s`，余弦期望
-`cos ≈ shared·s / √(n₁s·n₂s) = shared/√(n₁·n₂)`——**与 s 无关**，
-s 只控制方差（近似质量）。
+随机投影仍保持该性质；Weinberger et al. (2009) feature hashing 是同一
+模式的工业实践。无偏性可严格推导：设两集合共享 `shared` 个元素，每个
+元素选某维概率 s/D、符号 ±1 均匀，则 `E[dot] = shared·s`、
+`E[‖H‖²] = n·s`，余弦期望 `cos ≈ shared/√(n₁·n₂)`；且固定 D 时
+误差需区分两个方差视角（完整推导见
+[[../references/hv.md]] §6.5，仿照 DotHash Theorem 2）：
+* **投影随机性视角**（固定集合、独立投影）：归一化后 `E = shared` 无偏，
+  `Var = shared/s + (|A||B| − 2·shared)/D`——**s 影响方差**（shared/s
+  项），但典型参数下占比 ≤18%（s=1）/ <7%（s≥3），且随 s 增大快速
+  消失；
+* **集合随机性视角**（不同集合对、单次投影——pgr 实际评估方式）：
+  相对方差 ≈ n²/(shared²·D)，**与 s 无关**（s 消去）；pgr 投影是确定性
+  的（seed 来自 k-mer hash），跨集合评估时集合随机性主导，s 的影响被
+  淹没——50 组扫描 MAE 平坦即此。
+* 结论：**s 对期望完全无影响、对方差有小的有限影响**（<20%）；"s 只
+  决定速度"在集合随机性视角下成立，投影随机性视角下 s 还有一个小
+  方差项。注：Li 2006 的"稀疏度放大方差"针对固定数据维度的 JL 降维
+  语境，与上述公式不同但方向一致（s 小方差大）。
 
 > **产品先例（诚实标注）**：该思想（稀疏随机投影 / feature hashing）
 > 在工业界有先例（Google feature hashing、SimHash、count sketch），但
@@ -368,12 +387,27 @@ cardinality 公式不成立；`.hv` v2 用**余弦 + 文件头存储的 n_kmer**
 cohort 验证（s=3）与 `dist pgi` mash 排序 Spearman 0.969、共享计数
 平均误差 2.39%（见 [[../benchmarks/dist-cohort-validation.md]] §2）。
 
-**决策**：**s=3 无精度依据**——它是历史实现（commit d967d16,
-2026-08-02）拍脑袋定的默认值；实测 s 不影响精度、只影响速度（线性）。
-按速度最优应取 s=1（0.022 ms）；提高精度应**增大 D**（误差 ~1/√D）
-而非 s。稀疏路径不受 §2.3 的累加器宽度问题与 §3.4 的直流偏置问题影响
-（每维小整数，i32 安全）。**注意**：此决策建立在"稀疏为主路径"的历史
-前提下；若 §5.4 重新审视后改回稠密 bit，s 参数决策需一并重估。
+**D 与编码成本的解耦（2026-08-08 关键实验）**：稀疏编码成本
+**O(n·s)，与 D 无关**（s=1 时 D=4096/16384/65536 编码 0.022/0.023/
+0.024 ms，几乎不变）；精度 `MAE ∝ 1/√D`（D×4 → MAE÷2.5，D×16 →
+MAE÷5.2，实测）。对照稠密 bit 编码 O(n·D)（D 翻 16 倍编码也 ~16×）。
+固化为 `test_hash_hv_sparse_d_error_scan`。
+
+**决策（2026-08-08 重估）**：
+
+* **s 取 1 而非 3（已落地 2026-08-08）**：s 不影响精度，s=3 是历史默认
+  （commit d967d16, 2026-08-02）无依据；`pgr pgi to-hv` 默认已改 1
+  （0.022 ms，s=3 的 2.5× 快）。cohort 复测（5 株 × 10 对，2026-08-08）：
+  s=1 与精确 `dist pgi` mash 排序 Spearman 0.988、最大差异 0.0025
+  （见 [[../benchmarks/dist-cohort-validation.md]]）。
+* **大 s 是错误用法**：s=64 时 1.62 ms，比稠密 bit（1.11 ms）还慢——
+  稀疏实现是随机内存访问（s 线性、缓存不友好），稠密是连续 SIMD；
+  s 大既不提精度又更慢，纯亏损。稀疏的有效区间是 s 小（1–3）。
+* **精度靠 D 而非 s**：MAE ≈ 常数/√D，D 可按精度需求标定；稀疏用大 D
+  免费换精度（编码不变），稠密不行。
+* **是否用稀疏**（§5.4 决策）：编码是瓶颈的大规模场景（4 万 cohort）→
+  稀疏 s=1 + 大 D 有实质优势；小规模 / 需 Jaccard 数值语义 → 稠密 bit。
+* 稀疏路径不受 §2.3 的累加器宽度问题与 §3.4 的直流偏置问题影响。
 
 ## 3. 实现现状（pgr 落地）
 
@@ -381,8 +415,9 @@ cohort 验证（s=3）与 `dist pgi` mash 排序 Spearman 0.969、共享计数
 > （块主序）、D=4096；FASTA 侧采样用 closed syncmer（`dist seq` 默认
 > k=8/w=5）；需要可标定 ANI 时优先 FracMinHash（§2.6）。⚠️ FASTA
 > `dist hv` 路径（`load_hv_from_fasta` / `load_hv_from_fasta_syncmer`）
-> 仍走 i8，量纲问题未修（§3.4）；`.hv` 索引路径走稀疏 s=3，其选择为
-> 历史产物、待 §5.4 重新审视。
+> 已改用 bit 编码（2026-08-08，量纲问题修复，§3.4）；`.hv` 索引路径走
+> 稀疏 s=1（2026-08-08 默认 3→1，s 不影响精度），其选择为历史产物、
+> 待 §5.4 重新审视。
 
 ### 3.1 `src/libs/hv.rs` 当前实现与分派
 
@@ -390,10 +425,10 @@ cohort 验证（s=3）与 `dist pgi` mash 排序 Spearman 0.969、共享计数
 |---|---|---|
 | `hash_hv_bit` | 稠密位编码 ±1，i32 | AVX2 主路径：跳步 RNG + 块主序 + 延迟 −N；每 64 维 1 次 RNG（用满 64 位，低 32 位→前 32 维、高 32 位→后 32 维） |
 | `hash_hv_i8` | 稠密 i8 累加，i32 | AVX2 路径：每 8 维 1 次 RNG；保留原语义（含直流偏置） |
-| `hash_hv_sparse` | 稀疏 ±1，i32 | splitmix64 派生，每 k-mer 只更新 `s`（默认 3）个随机维度；`.hv` v2 采用（历史产物，待 §5.4 重新审视） |
+| `hash_hv_sparse` | 稀疏 ±1，i32 | splitmix64 派生，每 k-mer 只更新 `s` 个随机维度；`.hv` v2 采用（历史产物，待 §5.4 重新审视；2026-08-08 默认 s 3→1） |
 | `hv_norm_l2_sq` / `hv_cardinality` / `hv_dot` | — | wide SIMD 范数；cardinality=‖H‖²/D；dot 按 √D 归一 |
 | `calc_distances` | — | jaccard / containment / mash 多口径输出 |
-| `load_hv_from_fasta(_syncmer)` | i8 | FASTA → minimizer / closed syncmer 集合 → `hash_hv_i8` |
+| `load_hv_from_fasta(_syncmer)` | bit | FASTA → minimizer / closed syncmer 集合 → `hash_hv_bit`（2026-08-08 由 i8 改） |
 
 分派链（x86-64）：`avx2` 运行时检测 → AVX2 intrinsics；否则 wide 可移植
 路径（aarch64 自动用 NEON，其余标量）。所有路径输出**逐位一致**（含
@@ -404,7 +439,7 @@ AVX-512 实现只保留在 `benches/hv_benchmark.rs` 作参考对照，不参与
 
 ### 3.2 消费链与 `.hv` 格式
 
-* `pgr dist hv`：FASTA 路径（minimizer/syncmer → `hash_hv_i8` →
+* `pgr dist hv`：FASTA 路径（minimizer/syncmer → `hash_hv_bit` →
   `calc_distances`）；`.hv` 路径（`pgi to-hv` 产物直接比较，稀疏余弦）。
 * `pgr pgi to-hv`：把 `.pgi` 的 unique k-mer keys 投影成**稀疏** HV；
   `.hv` v2 格式：`PGV1` magic + version 2 + `k/dim/sparse/n_kmer/name` +
@@ -425,16 +460,21 @@ AVX-512 实现只保留在 `benches/hv_benchmark.rs` 作参考对照，不参与
   mash 排序 Spearman 0.969、45 对 0.12 s、共享计数平均误差 2.39%）；
   `dist seq`（k=8 syncmer）仍是与身份率最贴近的草图层（ρ=0.616）。
 
-### 3.4 已知问题（待修）
+### 3.4 已知问题（FASTA 量纲问题已修复 2026-08-08）
 
-FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 的
-直流偏置所致）：`hv_cardinality = ‖H‖²/D` ≈ N·(E[b²]+(N−1)/4) 量级
-（N=3000 时 ≈ 6140·N，不是 N），点积被 ~N²/4 项主导，Jaccard 随 N 增大
-趋向只依赖集合大小的常数（等大时 ~0.5）。
-数值模拟（N=3000、shared=500）：reported 0.154 vs 真值 0.091（已固化为
-`test_hash_hv_i8_jaccard_dc_bias`）。稀疏 `.hv` 路径不受影响；该 FASTA
-路径应改用 bit 编码或稀疏投影，先用两株 E. coli 对照 `dist seq` /
-`dist pgi` 实测确认（§5.3）。
+FASTA 路径原走 `hash_hv_i8` + `calc_distances`，存在**量纲不匹配**
+（§2.1 的直流偏置所致）：`hv_cardinality = ‖H‖²/D` ≈ N·(E[b²]+(N−1)/4)
+量级（N=3000 时 ≈ 6140·N，不是 N），点积被 ~N²/4 项主导，Jaccard 随
+N 增大趋向只依赖集合大小的常数（等大时 ~0.5）。数值模拟（N=3000、
+shared=500）：reported 0.154 vs 真值 0.091（`test_hash_hv_i8_jaccard_dc_bias`
+记录该缺陷）。
+
+**已修复（2026-08-08）**：`load_hv_from_fasta` / `load_hv_from_fasta_syncmer`
+改用 `hash_hv_bit`（±1 平衡），量纲问题消失——bit 的 `‖H‖²/D ≈ N`，
+模拟实测 Jaccard 0.102 vs 真值 0.091（`test_hash_hv_bit_jaccard_accurate`）；
+两株 E. coli（MG1655 × Sakai）`dist hv --sampler syncmer` 实测输出合理
+（jaccard 0.927、containment 0.989、不再饱和）。顺带提速（bit 1.11 ms
+vs i8 2.11 ms）。稀疏 `.hv` 路径不受影响。
 
 ## 4. 外部参考（HyperGen / hdlib / 测距聚类文献）
 
@@ -464,8 +504,9 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
 
 ### 5.3 待验证 / 待办
 
-1. **FASTA `dist hv` 路径量纲问题**（§3.4）：先实测确认，再决定改
-   `hash_hv_bit` / 稀疏投影；
+1. **FASTA `dist hv` 路径量纲问题**（§3.4）：**已修复（2026-08-08）**——
+   `load_hv_from_fasta` / `_syncmer` 改用 `hash_hv_bit`，模拟 + 两株
+   E. coli 实测确认（见 §3.4）；
 2. HV 编码 SIMD 深挖（todo.md §4）：**已解决（2026-08-07，见 §2.2/§2.4）**；
 3. 若决策 B 立项，按 §5.1 做设计。
 
@@ -473,13 +514,16 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
 
 稀疏投影是历史性能优化压力下的产物（§2.7 定位说明），当前是 `.hv` v2
 实际路径但无产品先例、验证以 cohort 实测为主。作为实施方案前应重新
-权衡：稠密 bit（§2.1–2.5 全套调优 + 64 位用满，1.11 ms）vs 稀疏 s=3
-（0.055 ms，~20× 快，但距离语义不同、无先例）。决策点：
+权衡：稠密 bit（§2.1–2.5 全套调优 + 64 位用满，1.11 ms）vs 稀疏 s=1
+（0.022 ms，~50× 快，且编码成本与 D 无关——可用大 D 免费换精度，见
+§2.7 关键实验；代价是距离语义不同、无先例）。决策点：
 
-* 速度是否仍是刚需（稀疏 ~20× 的优势是否值得放弃稠密的成熟度）；
-* 稀疏的距离语义（余弦 + n_kmer）是否可接受，或改回稠密 Jaccard；
-* 若保留稀疏，s 的选择：实测 s 不影响精度（0.010–0.013 平坦），只影响
-  速度——s=3 是历史默认无依据，速度最优是 s=1，精度靠 D 而非 s。
+* **编码是否瓶颈**：大规模 cohort（4 万基因组，编码次数多）→ 稀疏 s=1
+  的 ~50× 编码优势 + 大 D 免费精度是实质性的；小规模 → 稠密更简单。
+* **距离语义**：稀疏的余弦 + n_kmer 是否可接受，或改回稠密 Jaccard
+  （数值 ANI / 可标定场景更倾向稠密或 FracMinHash）。
+* **若保留稀疏**：s=1（s 不影响精度，见 §2.7）；D 按 MAE ≈ 常数/√D
+  标定；不用中间 s（大 s 比稠密慢且无精度收益）。
 
 ### 5.5 文献驱动的未来方向（2026-08-08）
 
@@ -488,8 +532,12 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
 1. **DotHash 误差界 → D/s 选择理论**（Nunes 2023, §5.1）：把 DotHash 的
    误差概率界引入 pgr，推导"给定误差容忍度所需的 D"（替换 D=4096 的
    经验默认），并评估"每元素 s 个随机 ±1 桶"与 s=1 / 稠密的误差对比。
-2. **FracMinHash 落地**（Irber 2022 / Hera 2023）：按 Hera 校正公式实现
-   数值 ANI（dist seq 的 FracMinHash 采样器 + 置信区间）。
+2. **FracMinHash 落地**（Irber 2022 / Hera 2023）：**已实现（2026-08-08）**——
+   `dist seq --sampler frachash`（FracMinHash 采样器：canonical k-mer 保留
+   hash < u64::MAX/scale，k 默认 21/7、`--scale` 默认 1000）；MG1655×Sakai
+   ANI 估计 97.7% vs 真值 97.3%，scale=1000/100 一致；排序与全 k=40
+   集合真值 Spearman 1.0（见 [[../benchmarks/dist-cohort-validation.md]]）；
+   **`--ci` 输出 ANI 95% 置信区间**（正态近似；Hera 校正公式留作后续）。
 3. **minmer 替代 minimizer**（Kille 2023）：无偏 Jaccard + MashMap 10×
    快；`seq_mins` 的 minimizer 采样（dist seq / fa）可升级，消除 §2.6
    的 minimizer 偏差。
@@ -516,7 +564,7 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
 | 4 | srlv 展开 | 无理论（工程） | i16/pshufb 实测否决，实验闭环 |
 | 5 | 幅度无关 | 强 | Jaccard 比值度量 + DotHash 点积框架 |
 | 6 | syncmer + FracMinHash | 最强 | 8 篇文献；缺口：Yu 2022 未引用、minmer 仅一句 |
-| 7 | 稀疏 s=3 | 中 | **DotHash Theorem 2 支持核心**（点积无偏）；s/D 无依据、误差界缺失 |
+| 7 | 稀疏（默认 s=1） | **强（理论已补齐）** | **仿 DotHash 推导完整：无偏 + Var = shared/s + (|A||B|−2·shared)/D**（references/hv.md §6.5）；s/D 选择可标定，默认已改 1 |
 
 ### 6.1 逐条详情
 
@@ -537,10 +585,17 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
    Kille（minmer 无偏）、Shibuya（closed syncmer 无偏）、Hera（FracMinHash
    校正）。缺口：**Yu et al. 2022（conservation 理论，minimap2 实证
    8.2%）未引用**；minmer 条目可强化（无偏 + 10× 快）。
-7. **稀疏投影 s=3**：DotHash Theorem 2 直接支持"随机超向量叠加点积无偏
-   估计交集"（含误差概率界）；稀疏随机投影（Achlioptas 2003 / Li 2006）
-   支持稀疏化不破坏保距。缺口：s=3 无文献依据（DotHash 稀疏版为每元素
-   1 个标准基维度、稠密版全维，未讨论中间稀疏度）；误差界与 D 选择缺失。
+7. **稀疏投影（s 默认已改 1）**：DotHash Theorem 2 直接支持"随机超向量叠加点积无偏
+   估计交集"。**2026-08-08 已仿照 Theorem 2 为 pgr 的 s 桶 ±1 构造补全
+   理论**（references/hv.md §6.5）：无偏性 E = shared（√s 归一化后）、
+   方差 Var = shared/s + (|A||B|−2·shared)/D、Chebyshev 误差界可直接套用
+   （`Pr(|est−shared| ≥ ε) ≤ Var/ε²`）——**稀疏投影现在有 DotHash 级
+   推导**，非仅有实测。**文献家族确认（references/hv.md §6.6）**：Li
+   2006 稀疏分布（±√s、非零概率 1/s）与 pgr 期望等价、Weinberger 2009
+   特征哈希指数尾界、Count-Min Sketch 桶结构与 pgr 同构、Achlioptas
+   2001 稀疏保距奠基——s 桶构造不是孤立方案。s 的影响是小方差项
+   （典型参数 <20%）；D 是精度主导（1/√D）。原缺口（无偏/误差界）
+   已闭合；s 的历史默认已按 §2.7 决策改为 1（2026-08-08），按需标定 D。
 
 ## 参考
 
