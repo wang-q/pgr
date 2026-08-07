@@ -1090,9 +1090,9 @@ mod tests {
             if hashes.len() >= window {
                 let mut min4 = hashes[0];
                 let mut pos4 = 0usize;
-                for i in 1..soff {
-                    if hashes[i] < min4 {
-                        min4 = hashes[i];
+                for (i, &h) in hashes.iter().enumerate().take(soff).skip(1) {
+                    if h < min4 {
+                        min4 = h;
                         pos4 = i;
                     }
                 }
@@ -1106,9 +1106,9 @@ mod tests {
                     } else if pos4 == i - soff {
                         pos4 += 1;
                         min4 = hashes[pos4];
-                        for j in pos4 + 1..=i {
-                            if hashes[j] < min4 {
-                                min4 = hashes[j];
+                        for (j, &h) in hashes.iter().enumerate().take(i + 1).skip(pos4 + 1) {
+                            if h < min4 {
+                                min4 = h;
                                 pos4 = j;
                             }
                         }
@@ -1327,11 +1327,11 @@ mod tests {
             .sum::<usize>();
         let pgr_qcov = pgr_psls
             .iter()
-            .map(|p| (p.q_end - p.q_start).abs() as usize)
+            .map(|p| (p.q_end - p.q_start).unsigned_abs() as usize)
             .sum::<usize>();
         let gix_qcov = gix_psls
             .iter()
-            .map(|p| (p.q_end - p.q_start).abs() as usize)
+            .map(|p| (p.q_end - p.q_start).unsigned_abs() as usize)
             .sum::<usize>();
         println!(
             "pgr: hits={} blocks={} tcov={} qcov={} | gix: hits={} blocks={} tcov={} qcov={} (k={k} smer={smer} window={window})",
