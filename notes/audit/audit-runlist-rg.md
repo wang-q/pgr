@@ -23,75 +23,67 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
 * 行首/尾空白与 `|Species=Yeast` 等后缀：`Range::from_str` 最左匹配天然
   容忍，各命令一致。
 * coitrees 会内部排序，`RgIndex`/`rg merge` 按行序喂入不排序区间不会错乱。
-* `stat`/`statop` 的 `--all` 表头字段数在 multi/single 形态下一致。
-* `rg span` 饱和在 Range 层保留、CLI 层 `clamp_to_domain`，职责分开。
-* `rg span` pad 越过坐标 1 输出空行、`1:-100` 回退整行作 chr：与
-  vendored crate/rgr 一致，未改。
-* `stat`/`statop` 的 `--all` 表头与数据行在多/single 双形态下字段数一致
-  （实测：stat multi/single 各 4/3 列，statop multi/single 各 8/7 列，均与
-  数据行吻合）。
-* `rg count` 的 COITree 区间为**闭区间** `[start, end]`，目标与索引区间仅
-  端点相接（`chr1:10-20` 对 `chr1:20-20`）仍计为重叠。此前无测试覆盖此
-  边界；新增回归 `command_rg_count_touching_endpoints_are_overlaps`。
-* `depth_runs` 扫描线对相邻/相接区间的深度合并正确（`[0,10)`+`[10,20)`
-  → `0-19` 深度 1）。
-* `Range` 扫描器 unicode/缺省/溢出语义与参考正则一致（既有 fuzz 覆盖）。
+* `rg span` 饱和在 Range 层保留、CLI 层 `clamp_to_domain`，职责分开；pad
+  越过坐标 1 输出空行、`1:-100` 回退整行作 chr，与 vendored crate/rgr 一致。
+* `stat`/`statop` 单/多 × `--all` 四态表头与数据字段数一致（stat
+  multi/single 各 5/4 列、`--all` 下 4/3；statop multi/single 各 9/8 列、
+  `--all` 下 8/7）。
+* `rg count` 的 COITree 区间为**闭区间** `[start, end]`，仅端点相接
+  （`chr1:10-20` 对 `chr1:20-20`）仍计为重叠；回归
+  `command_rg_count_touching_endpoints_are_overlaps`。
+* `depth_runs` 扫描线：事件合并、`run_depth` 归属、`pos>s` 关段、尾部开口
+  区间收尾正确；相邻/相接区间深度合并正确，逐事件推导 0-14/5-9 与
+  [0,15)∪[20,25) 用例一致；`by_level` 键为精确深度串，深度受 `>= min_depth`
+  过滤不会为负。
+* `Range` 扫描器（`decode`/`match_at`/`rest_match`/`tail_match`/
+  `parse_i32`）与参考正则一致：最左匹配、贪婪分组、`end=0` 缺省、溢出即无效、
+  回退取首个空白 token、Unicode/UTF-8 字宽（含 40k fuzz）。
 * 逐命令实测：`runlist compare` 以 multi 文件作"other"报友好错误（"runlist
-  value for a is not a string"）；`rg span` 对 `I(-)` 链 `trim`/`flank` 结果
-  正确；`stat` 对 sizes 缺失染色体报友好错误；空 runlist 转换产物为空；
-  `rg coverage -m 0` 按 1 处理；`rg merge` 对 5'链/`(-)` 链及同名不同链区间
-  聚类正确（合并代表 `chr(+):min-max`）。
+  value for a is not a string"）；`rg span` 对 `I(-)` 链 `trim`/`flank` 正确；
+  `stat` 对 sizes 缺失染色体报友好错误；空 runlist 转换产物为空；`rg merge`
+  对 5'链/`(-)` 链及同名不同链区间聚类正确（合并代表 `chr(+):min-max`）。
 * 全量扫描 `cmd_pgr/rg` 与 `cmd_pgr/runlist` 的 `unwrap()`/`unreachable!`：
   全部为 clap `required` 参数或 `value_parser` 约束枚举，运行期不可达，无
-  潜在 panic（符合"稳定性原则"）。
+  潜在 panic。
 * 复核 `IntSpan::runlist_to_ranges` 解析器：负数坐标、`i32::MIN` 累积、
-  `POS_INF-1` 上界、`lower>upper` 报错、`add_ranges` 边合并均正确（含
-  既有 fuzz 覆盖）。
-* 追加深审（跨轮）复核无新增问题的项：
-  * 逐命令通读全部 8 个 rg 与 10 个 runlist 命令的 `execute`：`#` 注释跳过、
-    无效行跳过、输出前打开校验、`clamp_to_domain`/`saturating_neg` 溢出
-    收敛，均一致。
-  * `-o` 覆盖保护覆盖情况：rg 的 `count`/`prop`/`span`/`runlist`/`merge`/
-    `cover`/`coverage` 与全部 runlist 命令均调用 `ensure_outfile_distinct`；
-    例外仅 `rg sort`（先读全量再写，原地排序安全，有意为之）与 `split`
-    （已记录限制）。
-  * `Range` 扫描器（`decode`/`match_at`/`rest_match`/`tail_match`/
-    `parse_i32`）与参考正则的最左匹配、贪婪分组、`end=0` 缺省、溢出即无效、
-    回退取首个空白 token 语义一致（含 40k fuzz 与 UTF-8 字宽）。
-  * `depth_runs` 扫描线：事件合并、`run_depth` 归属、`pos>s` 关段、尾部
-    开口区间收尾正确；`by_level` 键为精确深度串，深度受 `>= min_depth`
-    过滤不会为负。
-  * `rg_merge_mapping` 的 DSU/COITree 聚类正确、`part == merged` 自映射跳过、
-    HashSet 判重、f32 比例判据；成员经传递连通均触及共同区间，合并代表恒为
-    连续单段，`chr(+):min-max` 文档描述准确。
-  * `IntSpan::add_pair`/`inset`/`excise`/`holes` 的边界坐标受 `POS_INF-1`
-    约束，`upper+1`/`edge-1` 均不溢出；`covered` 两次二分 + i64 累加 + 饱和，
-    `holes` 直接取相邻 span 空隙（不构造补集），`find_pos` 二分无误。
-  * `stat`/`statop` 四种 `--all`×单/多 组合的表头与数据字段数一致
-    （multi/single 各 5/4 与 9/8 列，`--all` 下 4/3 与 8/7 列）。
-  * 追加深审（2026-08-07，本轮）复核无新增问题：
-    * 复跑 `cargo test --test cli_rg`（36 通过）、`--test cli_runlist`（19
-      通过）、`--lib runlist`（19 通过），全部通过。
-    * 逐命令重读全部 8 个 rg 命令（cover/coverage/count/merge/prop/
-      runlist/sort/span）与 10 个 runlist 命令（combine/compare/convert/
-      genome/merge/some/span/split/stat/statop）的 `execute`：`#` 注释跳过、
-      无效行跳过、先开输入后建 writer、`clamp_to_domain`/`saturating_neg`
-      溢出收敛、`--all`×单/多 表头与数据字段数一致，均验证无误。
-    * 重读 `libs/runlist`（`depth_runs` 扫描线归并对、`rg_merge_mapping`
-      聚类/f32 判据/`part==merged` 自映射跳过、`stat_lines`/`statop_lines`
-      `all` 行剔除标签逻辑）、`libs/ds/intspan`（`from_pairs` 边合并、
-      `covered` 二分 + i64 累加饱和、`holes` 直接取间隙、`inset`/`excise`/
-      `fill` 边界、`banish` 的 i64 平移）、`libs/ds/range`（`decode`/
-      `match_at`/`tail_match`/`parse_i32` 最左匹配与溢出即无效）——均通过。
-    * `rg runlist`/`rg prop`/`rg count` 的 `length = end - start + 1` 在
-      `usable_range` 约束下（start ≥ 1、end ≤ POS_INF-1）不会溢出 i32；
-      `rg merge --coverage` 超出 [0,1] 区间时仅退化为"不合并/全合并"，无
-      panic。
-    * **范围外（未改动）**：`cargo clippy --all-targets -- -D warnings` 与
-      `cargo fmt --check` 在无关模块 `src/libs/syncmer.rs`（`needless_range
-      _loop`）与 `tests/cli_fas.rs`（格式）存在既有告警/差异；grep 确认
-      `runlist`/`rg`/`intspan`/`range`/`io` 相关文件全部干净，与 `runlist
-      rg` 审核范畴无关。
+  `POS_INF-1` 上界、`lower>upper` 报错、`add_ranges` 边合并均正确（含 fuzz）。
+* 逐命令通读全部 8 个 rg 与 10 个 runlist 命令的 `execute`/`make_subcommand`
+  及 `mod.rs` 分发：`#` 注释跳过、无效行跳过、先开输入后建 writer、
+  `clamp_to_domain`/`saturating_neg` 溢出收敛、`rg span` 空输入前 op/mode
+  校验（越序坍缩 (0,0)）、`rg count` 先建索引再开 writer、`rg prop`/`runlist`
+  双输入 `ensure_outfile_distinct`，均验证一致。
+* `-o` 覆盖保护：rg 的 `count`/`prop`/`span`/`runlist`/`merge`/`cover`/
+  `coverage` 与全部 runlist 命令均调用 `ensure_outfile_distinct`（跳过
+  `stdout`/`stdin` 哨兵）；例外仅 `rg sort`（先读全量原地排序，安全，有意为之）
+  与 `split`（已记录限制）。
+* `rg_merge_mapping` 的 DSU/COITree 聚类正确、`part == merged` 自映射跳过、
+  HashSet 判重、f32 比例判据；合并代表恒为连续单段 `chr(+):min-max`。
+* `IntSpan` 边界：`add_pair`/`inset`/`excise`/`fill`/`holes` 坐标受
+  `POS_INF-1` 约束，`upper+1`/`find_pos(upper+1)`/`edge-1` 均不溢出；`covered`
+  两次二分 + i64 累加 + 饱和；`holes` 直接取空隙；`from_pairs` 边合并；
+  `banish` 的 i64 平移。
+* `rg runlist`/`rg prop`/`rg count` 的 `length = end - start + 1` 在
+  `usable_range` 约束下（start ≥ 1、end ≤ POS_INF-1）不溢出 i32；`rg merge
+  --coverage` 超出 [0,1] 仅退化为"不合并/全合并"，无 panic。
+* `libs/runlist` 的 `range_prop`/`convert_set`/`some_json`/`split_json` 与
+  `stat_lines`/`statop_lines` 的 `all` 行剔除、prefix 插入正确；`libs/io`
+  （`reader` 拒绝目录、`writer`/`PgrWriter` drop-flush、`same_path`
+  canonicalize + dev/inode）与 `cmd_pgr/args`（哨兵跳过）一致。
+* 交叉核对 `docs/rg.md` 与 `docs/runlist.md` 的 18 个命令文档与各命令
+  `after_help`：操作清单、参数名、示例、`--op`/`--mode`/`--all` 语义与代码
+  一致。
+* 有意差异复核：`rg coverage -m 0` 按 1 处理；`rg span` excise 输出空行、而
+  trim/pad/shift/flank 越序坍缩保留 chr 串（与 rgr 对拍一致）；`__single__`
+  哨兵碰撞、`runlist split` 键名覆盖输入、`runlist merge` 同 stem 覆盖、
+  `-o stdin` 字面文件名等均维持既有记录。
+* 复跑 `cargo test --test cli_rg`（36）、`--test cli_runlist`（19）、`--lib`
+  （595，其中 runlist 19）全部通过；`cargo clippy --all-targets` 在
+  runlist/rg/intspan/range/io 相关文件零告警；`cargo fmt --check` 干净。
+* **范围外（未改动）**：`cargo clippy --all-targets -- -D warnings` 与
+  `cargo fmt --check` 在无关模块 `src/libs/syncmer.rs`（`needless_range_loop`）
+  与 `tests/cli_fas.rs`（格式）存在既有告警/差异；`IntSpan::find_islands_n`
+  的 `val + 1` 溢出仅由 `fas slice`（坐标受序列长度约束）可达（详见
+  "记录项"）。
 
 ## 记录项（未改，低风险 / 待决策）
 
@@ -219,7 +211,7 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
     `--all` 行为无测试覆盖，`sample.a.json`/`sample.b.json` 在 `--all` 下
     不再因共享 `sample` 前缀而碰撞）。
 
-**`runlist split -o stdout` 丢弃键名**（2026-08-06 从记录项移入）：原逐行
+**`runlist split -o stdout` 丢弃键名**（从记录项移入）：原逐行
     打印各键 JSON 值，无法区分同值不同键。修复：stdout 模式输出
     `key\tvalue`，新增集成测试 `command_runlist_split_stdout_keeps_keys`；
     `docs/runlist.md` 同步更新。
@@ -337,15 +329,10 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 * 性能：`rg merge` 100k 37.8 s → 0.28 s；criterion 10k ≈ 2.7 ms、
   50k ≈ 18 ms；`rg runlist` 20 万行 × 5 万 span 0.29 s。
 * `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净；全部测试
-  + doctest 通过；docs 示例逐一执行通过。
-* 复审轮（2026-08-05）复跑 `cargo test`（36 cli_rg、18 cli_runlist、
-  19 lib runlist、31 lib intspan 等全部通过）、`cargo clippy --all-targets
-  -- -D warnings` 与 `cargo fmt --check`，均干净。
-* 复审轮（2026-08-07）复跑 `cargo test --test cli_rg`（36 通过）、
-  `--test cli_runlist`（19 通过）、`--lib runlist`（19 通过）；逐命令与核心
-  库重读复核，未发现新问题（详见"排除的疑点"本轮追加项）。`runlist`/`rg`
-  相关文件 `clippy`/`fmt` 干净；`syncmer.rs` 与 `cli_fas.rs` 的告警/差异为
-  范围外既有问题。
+  + doctest 通过（36 cli_rg、19 cli_runlist、19 lib runlist、31 lib intspan
+  等）；docs 示例逐一执行通过。逐命令与核心库重读复核，未发现新问题
+  （详见"排除的疑点"）；`runlist`/`rg` 相关文件 `clippy`/`fmt` 干净，
+  `syncmer.rs` 与 `cli_fas.rs` 的告警/差异为范围外既有问题。
 * 新增回归测试（主要）：runlist 阶段 14 个函数；rg 阶段
   `command_rg_span_extreme_no_panic`、`command_rg_comments_skipped`、
   `extreme_ops_do_not_overflow`、`overflow_end_is_invalid_not_start`、
@@ -372,8 +359,7 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 ## 结论
 
 `rg`/`runlist` 两个命令族审核完成（累计修复 48 处缺陷、补回归测试与文档
-澄清），并经多轮纵深复审（`libs/runlist`、`libs/ds/intspan`、`libs/ds/range`
+澄清），并经纵深复审（`libs/runlist`、`libs/ds/intspan`、`libs/ds/range`
 与全部 8 个 rg、10 个 runlist 命令的执行路径、集合运算、`depth_runs` 扫描线、
 `rg_merge_mapping` 聚类、`covered` 二分、`stat`/`statop` 表头一致性、`-o`
-覆盖保护）复核，未再发现新问题，审核收敛。2026-08-07 复审轮再次逐命令与
-核心库重读、复跑测试，确认无新增问题，收敛结论保持不变。
+覆盖保护）复核，未再发现新问题，审核收敛。
