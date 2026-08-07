@@ -50,10 +50,11 @@
 
 ## 4. 技术债（有空再议）
 
-- [ ] HV 矢量化提速不明显（作者长期疑虑，2026-08-06 记录）：`hash_hv_bit` /
-      `hash_hv_i8` 用 SIMD 后相对标量只有 ~1.5–2×，8-lane 向量理论上应有更高
-      收益——疑点可能在 RNG 生成、字节→向量转换或内存带宽，待深挖
-      （基准见 `benchmarks/bench-simd-hv-jaccard.md` §2）。
+- [x] HV 矢量化提速不明显（2026-08-07 已解决）：`hash_hv_bit` / `hash_hv_i8`
+      以 AVX2（256-bit）为主实现（跳步 RapidRng + 块主序 + 位展开），
+      bit ±1 编码实测 ~4.8×（相对旧 bit）/ ~3.1×（相对旧 i8）、
+      i8 保语义 ~2.1×；AVX-512 仅作基准参考不参与分派，无 AVX2 自动降级
+      （基准见 `benchmarks/bench-simd-hv-jaccard.md` §2/§5）。
 - [ ] 命令树三跳 dispatch 宏简化，防新增命令漏注册（来源：§8.3）。
 - [ ] `fas` 模块职责过重（20 子命令），`fas multiz` 等复杂逻辑考虑拆分（来源：§8.6）。
 

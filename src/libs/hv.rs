@@ -2,6 +2,116 @@ use rand::{RngCore, SeedableRng};
 use rapidhash::RapidRng;
 use wide::{bytemuck, i32x8, u16x8, u32x8, u8x16};
 
+#[cfg(target_arch = "x86_64")]
+mod rng_jump {
+    // RapidRng's state is a counter advanced by a constant step, so output j
+    // of a seed (1-based) is mix(seed + j*SECRET0, ...): cheap random access
+    // enables a block-major loop that keeps a chunk of the HV in registers
+    // while sweeping all seeds over it, and lets independent seed streams
+    // overlap in the CPU.
+    pub(super) const RAPID_SECRET0: u64 = 0x2d358dccaa6c78a5;
+    pub(super) const RAPID_SECRET1: u64 = 0x8bb84b93962eacc9;
+
+    #[inline(always)]
+    pub(super) fn rapid_mix(a: u64, b: u64) -> u64 {
+        let r = (a as u128) * (b as u128);
+        (r as u64) ^ ((r >> 64) as u64)
+    }
+
+    #[inline(always)]
+    pub(super) fn rnd_at(seed: u64, j: u64) -> u64 {
+        let s = seed.wrapping_add(j.wrapping_mul(RAPID_SECRET0));
+        rapid_mix(s, s ^ RAPID_SECRET1)
+    }
+}
+#[cfg(target_arch = "x86_64")]
+use rng_jump::rnd_at;
+
+/// AVX2 bit encoding, block-major. Bit-identical to the scalar `hash_hv_bit`
+/// (each 32-dim chunk consumes the low 32 bits of one u64 of the RapidRng
+/// stream; ±1 values accumulated in four 8-lane registers per chunk). The −N
+/// offset is deferred: per seed only `2·bit` is accumulated (values balance
+/// around 0), and N is subtracted once per chunk when storing — one vector op
+/// less per seed per group.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn hash_hv_bit_avx2(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+    use std::arch::x86_64::*;
+    let n = seed_vec.len() as i32;
+    let mut hv = vec![0i32; hv_d];
+    let num_chunk = hv_d / 32;
+    let one = _mm256_set1_epi32(1);
+    let s0 = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+    let s1 = _mm256_set_epi32(15, 14, 13, 12, 11, 10, 9, 8);
+    let s2 = _mm256_set_epi32(23, 22, 21, 20, 19, 18, 17, 16);
+    let s3 = _mm256_set_epi32(31, 30, 29, 28, 27, 26, 25, 24);
+    let nv = _mm256_set1_epi32(n);
+    for b in 0..num_chunk {
+        let j = b as u64 + 1;
+        let mut a0 = _mm256_setzero_si256();
+        let mut a1 = _mm256_setzero_si256();
+        let mut a2 = _mm256_setzero_si256();
+        let mut a3 = _mm256_setzero_si256();
+        for &seed in seed_vec {
+            let r = rnd_at(seed, j) as u32;
+            let v = _mm256_set1_epi32(r as i32);
+            let b0 = _mm256_and_si256(_mm256_srlv_epi32(v, s0), one);
+            a0 = _mm256_add_epi32(a0, _mm256_slli_epi32(b0, 1));
+            let b1 = _mm256_and_si256(_mm256_srlv_epi32(v, s1), one);
+            a1 = _mm256_add_epi32(a1, _mm256_slli_epi32(b1, 1));
+            let b2 = _mm256_and_si256(_mm256_srlv_epi32(v, s2), one);
+            a2 = _mm256_add_epi32(a2, _mm256_slli_epi32(b2, 1));
+            let b3 = _mm256_and_si256(_mm256_srlv_epi32(v, s3), one);
+            a3 = _mm256_add_epi32(a3, _mm256_slli_epi32(b3, 1));
+        }
+        let base = b * 32;
+        _mm256_storeu_si256(
+            hv[base..base + 8].as_mut_ptr() as *mut _,
+            _mm256_sub_epi32(a0, nv),
+        );
+        _mm256_storeu_si256(
+            hv[base + 8..base + 16].as_mut_ptr() as *mut _,
+            _mm256_sub_epi32(a1, nv),
+        );
+        _mm256_storeu_si256(
+            hv[base + 16..base + 24].as_mut_ptr() as *mut _,
+            _mm256_sub_epi32(a2, nv),
+        );
+        _mm256_storeu_si256(
+            hv[base + 24..base + 32].as_mut_ptr() as *mut _,
+            _mm256_sub_epi32(a3, nv),
+        );
+    }
+    // Tail dims (hv_d not a multiple of 32) keep the −N offset, matching the
+    // portable fallback exactly.
+    for v in &mut hv[num_chunk * 32..] {
+        *v = -n;
+    }
+    hv
+}
+
+/// AVX2 i8 encoding, block-major. Bit-identical to the scalar `hash_hv_i8`:
+/// one u64 (8 dims) is sign-extended to 32-bit lanes with a single
+/// `vpmovsxbd` per seed.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn hash_hv_i8_avx2(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+    use std::arch::x86_64::*;
+    let mut hv = vec![0i32; hv_d];
+    let num_chunk = hv_d / 8;
+    for b in 0..num_chunk {
+        let j = b as u64 + 1;
+        let mut acc = _mm256_setzero_si256();
+        for &seed in seed_vec {
+            let bytes = rnd_at(seed, j).to_ne_bytes();
+            let v = _mm256_cvtepi8_epi32(_mm_loadl_epi64(bytes.as_ptr() as *const __m128i));
+            acc = _mm256_add_epi32(acc, v);
+        }
+        _mm256_storeu_si256(hv[b * 8..b * 8 + 8].as_mut_ptr() as *mut _, acc);
+    }
+    hv
+}
+
 /// Generates a hypervector (HV) from a set of k-mer hash values using a SIMD-optimized implementation.
 ///
 /// # Arguments
@@ -21,6 +131,13 @@ use wide::{bytemuck, i32x8, u16x8, u32x8, u8x16};
 /// # Notes
 /// This function uses SIMD instructions to process 8 bits at a time, improving performance over the serial implementation.
 pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+    // Platform policy: AVX2 (256-bit) is the primary x86-64 path; other
+    // targets/CPUs (aarch64 NEON, scalar, ...) fall through to the portable
+    // wide implementation below. All paths are bit-identical.
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx2") {
+        return unsafe { hash_hv_bit_avx2(seed_vec, hv_d) };
+    }
     let num_seed = seed_vec.len();
     let num_chunk = hv_d / 32;
     let mut hv = vec![-(num_seed as i32); hv_d];
@@ -83,6 +200,12 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
 /// but requires more RNG calls (1 u64 per 8 dimensions) compared to the bit-based approach.
 /// It uses SIMD to process 8 dimensions at a time.
 pub fn hash_hv_i8(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+    // Platform policy: same AVX2 dispatch as `hash_hv_bit`, portable wide
+    // fallback elsewhere; results are bit-identical.
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx2") {
+        return unsafe { hash_hv_i8_avx2(seed_vec, hv_d) };
+    }
     // Initialize HV with 0.
     // We accumulate random i8 values (-128..=127) directly.
     let mut hv = vec![0i32; hv_d];
@@ -355,6 +478,22 @@ mod tests {
     use rand::Rng;
     use rapidhash::RapidHashSet;
 
+    /// Serial ±1 reference for `hash_hv_bit` (AVX-512 path parity check).
+    fn hash_hv_bit_serial(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+        let num_seed = seed_vec.len();
+        let mut hv = vec![-(num_seed as i32); hv_d];
+        for hash in seed_vec {
+            let mut rng = RapidRng::seed_from_u64(*hash);
+            for i in 0..(hv_d / 32) {
+                let rnd_bits = rng.next_u32();
+                for j in 0..32 {
+                    hv[i * 32 + j] += (((rnd_bits >> j) & 1) << 1) as i32;
+                }
+            }
+        }
+        hv
+    }
+
     #[test]
     fn test_hash_hv() {
         // Generate random input data
@@ -416,6 +555,59 @@ mod tests {
             result_serial, result_simd,
             "SIMD version does not match serial version for i8 implementation!"
         );
+    }
+
+    #[test]
+    fn test_hash_hv_bit_serial_vs_simd() {
+        let mut rng = rand::rng();
+        let kmer_hash_set: RapidHashSet<u64> = (0..2000).map(|_| rng.random::<u64>()).collect();
+        let seed_vec: Vec<u64> = kmer_hash_set.into_iter().collect();
+        for hv_d in [1024usize, 4096, 16384] {
+            assert_eq!(
+                hash_hv_bit_serial(&seed_vec, hv_d),
+                hash_hv_bit(&seed_vec, hv_d),
+                "AVX-512 bit encoding mismatch at dim {hv_d}"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_hash_hv_bit_avx2_serial_vs_simd() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let mut rng = rand::rng();
+        let kmer_hash_set: RapidHashSet<u64> = (0..2000).map(|_| rng.random::<u64>()).collect();
+        let seed_vec: Vec<u64> = kmer_hash_set.into_iter().collect();
+        // 1056 = 33×32 + 0 tail; 1064 = 33×32 + 8 tail (tail keeps −N).
+        for hv_d in [1024usize, 4096, 16384, 1056, 1064] {
+            let simd = unsafe { hash_hv_bit_avx2(&seed_vec, hv_d) };
+            assert_eq!(
+                hash_hv_bit_serial(&seed_vec, hv_d),
+                simd,
+                "AVX2 bit encoding mismatch at dim {hv_d}"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_hash_hv_i8_avx2_serial_vs_simd() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let mut rng = rand::rng();
+        let kmer_hash_set: RapidHashSet<u64> = (0..2000).map(|_| rng.random::<u64>()).collect();
+        let seed_vec: Vec<u64> = kmer_hash_set.into_iter().collect();
+        for hv_d in [1024usize, 4096, 16384] {
+            let simd = unsafe { hash_hv_i8_avx2(&seed_vec, hv_d) };
+            assert_eq!(
+                hash_hv_i8_serial(&seed_vec, hv_d),
+                simd,
+                "AVX2 i8 encoding mismatch at dim {hv_d}"
+            );
+        }
     }
 
     #[test]
