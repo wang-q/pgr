@@ -537,6 +537,40 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_hv_i8_jaccard_dc_bias() {
+        // Regression for the FASTA `dist hv` dimension mismatch (hv.md §3.4):
+        // i8 bytes have mean -0.5, so each dimension accumulates a DC bias
+        // (~ -N/2) that dominates the dot product and inflates the Jaccard
+        // estimate towards a set-size-dependent constant instead of the true
+        // shared-seed fraction.
+        let n = 3000usize;
+        let shared = 500usize;
+        let hv_d = 4096;
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let pool: Vec<u64> = (0..(2 * n - shared)).map(|_| rng.random()).collect();
+
+        let set_a: Vec<u64> = pool[..n].to_vec();
+        let set_b: Vec<u64> = pool[..shared]
+            .iter()
+            .chain(pool[n..].iter())
+            .copied()
+            .collect();
+        assert_eq!(set_b.len(), n);
+
+        let d = calc_distances(&hash_hv_i8(&set_a, hv_d), &hash_hv_i8(&set_b, hv_d), 21);
+
+        let true_j = shared as f32 / (2 * n - shared) as f32; // 500/5500 ≈ 0.0909
+                                                              // The DC bias lifts the estimate far above the truth (~0.154, hv.md §3.4).
+        assert!(
+            (d.jaccard - 0.154).abs() < 0.02,
+            "i8 Jaccard estimate {} should reproduce the DC-bias inflation (truth {})",
+            d.jaccard,
+            true_j
+        );
+    }
+
+    #[test]
     fn test_hash_hv_i8_serial_vs_simd() {
         // Generate random input data
         let mut rng = rand::rng();

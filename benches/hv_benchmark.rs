@@ -107,6 +107,109 @@ pub fn i8_avx512_ref(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     hash_hv_i8(seed_vec, hv_d)
 }
 
+// ---------------------------------------------------------------------------
+// RNG candidate comparison (2026-08-08): block-major AVX2 bit encoding with
+// alternative jump-ahead RNGs vs the RapidRng baseline (`hash_hv_bit`). The
+// three candidates share the counter + mix structure required for O(1) jump
+// ahead: constant (zero-cost upper bound), splitmix64, wyrand. Bodies are
+// instruction-identical to `hash_hv_bit_avx2` except for the RNG line.
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn rnd_const(_seed: u64, _j: u64) -> u64 {
+    0x9E37_79B9_7F4A_7C15
+}
+
+#[inline(always)]
+fn rnd_splitmix(seed: u64, j: u64) -> u64 {
+    let mut x = seed.wrapping_add(j.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
+}
+
+#[inline(always)]
+fn rnd_wyrand(seed: u64, j: u64) -> u64 {
+    let mut s = seed.wrapping_add(j.wrapping_mul(0xA076_1D64_78BD_642F));
+    s ^= s >> 32;
+    s.wrapping_mul(0xE703_7ED1_A0B4_28DB)
+}
+
+#[inline(always)]
+fn rnd_raw_seed(seed: u64, _j: u64) -> u64 {
+    // No mix: isolates whether the RNG mix itself or the per-seed broadcast
+    // data-flow is the dominant cost (invalid as a real RNG, measurement only).
+    seed
+}
+
+macro_rules! bit_avx2_rng_variant {
+    ($name:ident, $rnd:expr) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+            use std::arch::x86_64::*;
+            let n = seed_vec.len() as i32;
+            let mut hv = vec![0i32; hv_d];
+            let num_chunk = hv_d / 32;
+            let one = _mm256_set1_epi32(1);
+            let s0 = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+            let s1 = _mm256_set_epi32(15, 14, 13, 12, 11, 10, 9, 8);
+            let s2 = _mm256_set_epi32(23, 22, 21, 20, 19, 18, 17, 16);
+            let s3 = _mm256_set_epi32(31, 30, 29, 28, 27, 26, 25, 24);
+            let nv = _mm256_set1_epi32(n);
+            for b in 0..num_chunk {
+                let j = b as u64 + 1;
+                let mut a0 = _mm256_setzero_si256();
+                let mut a1 = _mm256_setzero_si256();
+                let mut a2 = _mm256_setzero_si256();
+                let mut a3 = _mm256_setzero_si256();
+                for &seed in seed_vec {
+                    // black_box prevents the compiler from hoisting the
+                    // broadcast for constant RNGs (LICM), so every variant
+                    // pays the per-seed `set1` cost like a real RNG stream.
+                    let r = black_box($rnd(seed, j)) as u32;
+                    let v = _mm256_set1_epi32(r as i32);
+                    let b0 = _mm256_and_si256(_mm256_srlv_epi32(v, s0), one);
+                    a0 = _mm256_add_epi32(a0, _mm256_slli_epi32(b0, 1));
+                    let b1 = _mm256_and_si256(_mm256_srlv_epi32(v, s1), one);
+                    a1 = _mm256_add_epi32(a1, _mm256_slli_epi32(b1, 1));
+                    let b2 = _mm256_and_si256(_mm256_srlv_epi32(v, s2), one);
+                    a2 = _mm256_add_epi32(a2, _mm256_slli_epi32(b2, 1));
+                    let b3 = _mm256_and_si256(_mm256_srlv_epi32(v, s3), one);
+                    a3 = _mm256_add_epi32(a3, _mm256_slli_epi32(b3, 1));
+                }
+                let base = b * 32;
+                _mm256_storeu_si256(
+                    hv[base..base + 8].as_mut_ptr() as *mut _,
+                    _mm256_sub_epi32(a0, nv),
+                );
+                _mm256_storeu_si256(
+                    hv[base + 8..base + 16].as_mut_ptr() as *mut _,
+                    _mm256_sub_epi32(a1, nv),
+                );
+                _mm256_storeu_si256(
+                    hv[base + 16..base + 24].as_mut_ptr() as *mut _,
+                    _mm256_sub_epi32(a2, nv),
+                );
+                _mm256_storeu_si256(
+                    hv[base + 24..base + 32].as_mut_ptr() as *mut _,
+                    _mm256_sub_epi32(a3, nv),
+                );
+            }
+            for v in &mut hv[num_chunk * 32..] {
+                *v = -n;
+            }
+            hv
+        }
+    };
+}
+
+bit_avx2_rng_variant!(bit_avx2_rnd_const, rnd_const);
+bit_avx2_rng_variant!(bit_avx2_rnd_splitmix, rnd_splitmix);
+bit_avx2_rng_variant!(bit_avx2_rnd_wyrand, rnd_wyrand);
+bit_avx2_rng_variant!(bit_avx2_rnd_raw_seed, rnd_raw_seed);
+bit_avx2_rng_variant!(bit_avx2_rnd_rapid, rnd_at);
+
 pub fn encode_hash_hd_rapid(seed_vec: &[u64], hv_d: usize) -> Vec<i16> {
     let mut hv = vec![-(seed_vec.len() as i16); hv_d];
 
@@ -178,9 +281,11 @@ fn bench_encode_hash_hd(c: &mut Criterion) {
     // Create test datasets of different sizes
     let kmer_hash_set_small = generate_kmer_hash_set(1000); // Small dataset
     let kmer_hash_set_medium = generate_kmer_hash_set(10_000); // Medium dataset
+    let kmer_hash_set_large = generate_kmer_hash_set(100_000); // Large dataset
 
     let seed_vec_small: Vec<u64> = kmer_hash_set_small.iter().cloned().collect();
     let seed_vec_medium: Vec<u64> = kmer_hash_set_medium.iter().cloned().collect();
+    let seed_vec_large: Vec<u64> = kmer_hash_set_large.iter().cloned().collect();
 
     let hv_d = 4096; // Hypervector dimension
 
@@ -228,6 +333,68 @@ fn bench_encode_hash_hd(c: &mut Criterion) {
     });
     c.bench_function("avx512_ref_i8_medium", |b| {
         b.iter(|| i8_avx512_ref(black_box(&seed_vec_medium), hv_d))
+    });
+
+    // Large dataset (n=100k, D=4096)
+    c.bench_function("encode_hash_hd_lib_large", |b| {
+        b.iter(|| hash_hv_bit(black_box(&seed_vec_large), hv_d))
+    });
+    c.bench_function("encode_hash_hd_simd_i8_large", |b| {
+        b.iter(|| hash_hv_i8(black_box(&seed_vec_large), hv_d))
+    });
+    c.bench_function("avx512_ref_bit_large", |b| {
+        b.iter(|| bit_avx512_ref(black_box(&seed_vec_large), hv_d))
+    });
+    c.bench_function("avx512_ref_i8_large", |b| {
+        b.iter(|| i8_avx512_ref(black_box(&seed_vec_large), hv_d))
+    });
+
+    // D = 16384 variants on the medium (10k) seed set
+    let hv_d_16k = 16384;
+    c.bench_function("encode_hash_hd_lib_d16k", |b| {
+        b.iter(|| hash_hv_bit(black_box(&seed_vec_medium), hv_d_16k))
+    });
+    c.bench_function("encode_hash_hd_simd_i8_d16k", |b| {
+        b.iter(|| hash_hv_i8(black_box(&seed_vec_medium), hv_d_16k))
+    });
+    c.bench_function("avx512_ref_bit_d16k", |b| {
+        b.iter(|| bit_avx512_ref(black_box(&seed_vec_medium), hv_d_16k))
+    });
+    c.bench_function("avx512_ref_i8_d16k", |b| {
+        b.iter(|| i8_avx512_ref(black_box(&seed_vec_medium), hv_d_16k))
+    });
+
+    // RNG candidate comparison vs the RapidRng baseline (`hash_hv_bit`):
+    // constant (zero-cost upper bound), splitmix64 and wyrand jump-ahead.
+    c.bench_function("bit_avx2_rng_const_medium", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_const(black_box(&seed_vec_medium), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_splitmix_medium", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_splitmix(black_box(&seed_vec_medium), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_wyrand_medium", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_wyrand(black_box(&seed_vec_medium), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_const_large", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_const(black_box(&seed_vec_large), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_splitmix_large", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_splitmix(black_box(&seed_vec_large), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_wyrand_large", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_wyrand(black_box(&seed_vec_large), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_raw_seed_medium", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_raw_seed(black_box(&seed_vec_medium), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_raw_seed_large", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_raw_seed(black_box(&seed_vec_large), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_rapid_medium", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_rapid(black_box(&seed_vec_medium), hv_d) })
+    });
+    c.bench_function("bit_avx2_rng_rapid_large", |b| {
+        b.iter(|| unsafe { bit_avx2_rnd_rapid(black_box(&seed_vec_large), hv_d) })
     });
 }
 

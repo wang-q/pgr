@@ -26,6 +26,11 @@
 
 ## 2. 等数据/场景到位再启动
 
+- [ ] FASTA `dist hv` 量纲问题（`design/hv.md` §3.4/§5.3）：
+      `load_hv_from_fasta` / `load_hv_from_fasta_syncmer` 仍走 `hash_hv_i8`，
+      直流偏置污染 Jaccard（N=3000/shared=500 模拟 reported 0.154 vs 真值
+      0.091，测试 `test_hash_hv_i8_jaccard_dc_bias`）；先用两株 E. coli
+      对照 `dist seq`/`dist pgi` 实测确认，再决定改 `hash_hv_bit`/稀疏投影。
 - [ ] 4 万 E. coli cohort 端到端：pgr 核心步骤（PAF 索引/查询/图）已就绪，等真实 cohort 数据；
       到位后重跑 4 万规模基准，按 `paf-pangenome.md` §5.2 判断标准选优化项，再做应用层。
       上游去冗余/sparsify 在 pgr 外（Mash + FastGA）；远期可封装 `pgr pl dedup` / `sparsify`
