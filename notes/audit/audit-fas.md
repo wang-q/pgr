@@ -416,3 +416,61 @@ range 共享坐标）、`link --best`（`pair_d` 等长/可比碱基前提，不
 `cli_fas_multiz`（2）全部通过。注：`cargo clippy --all-targets` 报出的 6 处 warning
 全部位于 `src/libs/pgi/align.rs` 与 `src/libs/syncmer.rs`（`gix_matchmer`/syncmer
 工作区），与 `fas` 无关、非本次改动引入，不在 `fas` 审核范围内。
+
+## 第五轮复审（2026-08-08）
+
+对 `fas` 命令族再做一轮纵深复审，聚焦此前各轮未逐一重查的库函数与潜在 panic 疑点，
+经核验**未发现需要修复的新缺陷**。逐项核验如下：
+
+* **POA 回溯 `curr_j - 1` 下溢疑点**（`poa/align.rs` E 态）：E 态分支访问
+  `e[curr_i][curr_j-1]` 前无显式 `curr_j > 0` 守卫。经核验，进入 E 态时恒有
+  `curr_j >= 1`：所有模式（global/local/semi）下 `e[*][0]` 均为 `neg_inf`，而任何
+  转移进 E 态（M 态 `e[u][j-1]==target`、F 态 `e[u][j]==target`、E 态延伸
+  `e[i][j-1]+extend==target`）在 `curr_j==1→0` 处都要求 `e[*][0]` 等于一个真实分值，
+  恒不可能；E 态 else 分支无条件 `curr_j -= 1` 只会转移到 F 态（不越界）。用 3000 余
+  个随机图 × 3 模式 × 随机序列（含经 `add_alignment` 构建的真管线拓扑）fuzz，无一
+  panic。判定为不可达，不加守卫（避免推测性防御代码）。
+* **`write_vcf_block` 的 `pos_idx`**：`checked_sub(1)` 与 `pos_idx >= seqs[0].len()`
+  双重校验，越界返回友好错误，无 panic。
+* **`merge.rs` `cut`/`map_a`/`map_b` 越界疑点**：`banded_align_refs` 在返回前强制
+  `map_a.len() == map_b.len() && !map_a.is_empty()`（banded_align.rs L425），且裁剪后
+  同区间切片保持等长；`col()` 用 `seq.get(idx)` 带边界，无越界。
+* **`slice.rs` `ss_start`/`seq_len_i32`**：`i32::try_from` + `ss_start < 1 || ss_end >
+  seq_len_i32` 边界检查，`start_idx = ss_start-1`、`end_idx = ss_end` 均在界内。
+* **`variation.rs` `uniq_indel_seqs` `min_by_key`**：`indel_seqs` 恒非空（至少 1 条
+  序列），`unique` 后非空，`.ok_or_else` 为防御性代码，不 panic。
+* **`align_seqs_quick` 负 pad / 下溢**：`pad`/`fill` 经 `i32::try_from` 校验；`pad >
+  align_len` 时 `align_len - pad` 为负，`add_pair(负, align_len)` 非倒置区间被接受，但
+  随后与 `IntSpan::from_pair(1, align_len)` 相交，负坐标被裁掉，最终 `lower>=1`、切片
+  越界前有 `intersect` 兜底，无 panic。
+* **`consensus_block` 保留空序列 / `refine_block` 外群校验**：`seqs.retain` 剔除非全
+  gap 序列，空序列（len 0）在 POA 中不产生节点；`refine` 外群要求 `n >= 3` 为显式
+  校验，属正当行为。
+* **`Range::from_str` 大坐标溢出**：生产路径 `decode`→`match_at`→`tail_match`→
+  `parse_i32` 对溢出数字串返回 `None`（不匹配，不 panic）；带 `.unwrap()` 的
+  `from_str_regex` 仅用于单测对照（坐标受限），不在发布二进制可达路径。
+
+> 说明：第五轮逐命令复核全部 20 个子命令执行路径，并逐一验证并行搜索代理返回的全部
+> 候选疑点（`write_vcf_block`/`merge.rs`/`slice.rs`/`variation.rs`/`msa.rs`/
+> `consensus_block`/`Range` 解析），全部为已守卫或不可达，未产生新修复。既有已知限制
+> 保持不修复。
+
+## 第六轮确认（2026-08-08）
+
+再做一轮最终确认，聚焦此前各轮已修复点与库边界的回归稳定性，经核验**未发现需要修复的
+新缺陷**：
+
+* **回归验证**：`cargo test --lib fas`（36 通过）、`cli_fas`（48）、`cli_fas_vars`
+  （15）、`cli_fas_poa`（12）、`cli_fas_multiz`（2）全部通过；含历轮全部回归测试
+  （`command_to_xlsx_many_sequences_no_overflow`、`command_variation_outgroup_
+  unequal_length_no_panic`、`command_fas_stat_unequal_length_no_panic`、
+  `command_create_output_not_overwrite_loc_index`、`command_fas_refine_unequal_length_
+  no_panic`、`command_to_xlsx_outgroup_ambiguity_no_error` 等）。
+* **代码质量**：`cargo fmt --check` 对 `fas` 相关文件零 diff（`pbit` 工作区的 9 处
+  fmt diff 为并行 `pbit` 任务独立工作区，与 `fas` 无关）；`cargo clippy --all-targets
+  -- -D warnings` 无任何 `fas` 相关 warning（仅 `pgi/align.rs`/`syncmer.rs` 的既有
+  `gix_matchmer` 工作区 warning，非 `fas`、非本次改动引入）。
+* **结论**：第六轮复核确认无新缺陷，`fas` 审核收敛，无需再开新一轮。
+
+> 审核收敛标准：自第四轮起连续两轮（第五、六轮）未发现需修复的新缺陷，仅复验既有
+> 已修复点与已知限制，符合"直到没有审核出问题为止"的终止条件。
