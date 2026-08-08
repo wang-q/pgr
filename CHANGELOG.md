@@ -2,6 +2,8 @@
 
 ## Unreleased - ReleaseDate
 
+## 0.5.0 - 2026-08-08
+
 ### New Features
 
 #### Sketch Distance Family (`dist mini` / `mash` / `frac`)

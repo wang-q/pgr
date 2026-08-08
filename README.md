@@ -28,7 +28,7 @@ High-level capabilities include:
 
 ## Install
 
-Current release: 0.4.0
+Current release: 0.5.0
 
 ```bash
 cargo install --path . --force #--offline
