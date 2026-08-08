@@ -16,6 +16,12 @@ minimizers or closed syncmers, projected onto hypervectors.
   sketch-distance family (`pgr dist mini` / `pgr dist frac`). Syncmer defaults
   (DNA smer=8/window=55, protein smer=7/window=5) are applied automatically
   when --sampler syncmer is used without explicit -k/-w.
+* With `--sampler syncmer`, `-k` is the **s-mer length** (the short substring
+  used to decide the window's minimum endpoint), not the full k-mer size of
+  the minimizer/FracMinHash paths; `-w` is the number of s-mers per window
+  and the sampled span is `k + w - 1` bases (e.g. DNA defaults smer=8/w=55 ->
+  span 62). With `--sampler minimizer`, `-k`/`-w` mean k-mer size and window
+  size as in `dist mini`.
 * `--sampler syncmer` is kept as an experimental option: closed syncmer
   sampling is not uniform, so its Jaccard/containment estimates are biased
   (see notes/benchmarks/dist-cohort-validation.md). Use it to compare against

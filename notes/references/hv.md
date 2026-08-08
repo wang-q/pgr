@@ -7,8 +7,8 @@
 > [[../design/hv.md]] §1/§2 与 §6 审计为准。
 >
 > 来源：
-> * HyperGen 论文：Xu et al., *Bioinformatics* 2024, 40(7), btae452
->   （PDF 见 `~/Downloads/Bioinformatics - 2024 - HyperGen compact and efficient genome s.pdf`）；
+> * HyperGen 论文：**Bioinformatics 2024（HyperGen）**
+>   （PDF 见 `~/sync/zotero/bacteria/clustering/Bioinformatics - 2024 - HyperGen compact and efficient genome s.pdf`）；
 > * HyperGen 参考代码：仓库根目录 `Hyper-Gen-main/`（Rust，MIT，v0.2.2）；
 > * hdlib 参考代码：仓库根目录 `hdlib-2.0.0/`（VSA 通用库，Python，JOSS 2023）。
 
@@ -87,7 +87,7 @@ fast 模式再快 1.8–2.7×。
 
 ## 4. hdlib 参考（VSA 通用库，Python）
 
-hdlib（Cumbo et al., JOSS 2023，仓库根目录 `hdlib-2.0.0/`）是通用
+hdlib（JOSS 2023，仓库根目录 `hdlib-2.0.0/`）是通用
 VSA/HDC 库：`Space`（随机向量容器）、`Vector`（binary/bipolar 随机向量 +
 cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
 `model.graph`（图编码，Poduval 2022）、`model.classification/clustering`。
@@ -119,53 +119,53 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
 
 | 文献 | 定位 | 与 pgr 的关系 |
 |---|---|---|
-| Irber et al. 2022, bioRxiv 2022.01.11.475838（FracMinHash） | FracMinHash 采样 + 最小 metagenome cover | [[../design/hv.md]] §2.6 数值 ANI 的推荐采样器 |
-| Liu & Koslicki 2023, bioRxiv 2023.11.09.566463 | open syncmer 与 FracMinHash 在 Jaccard/containment 意义上等价 | hv.md §2.6 已有引用 |
-| Belbasi et al. 2022, ISMB, *Bioinformatics* 38:i169–i176 | minimizer Jaccard 估计**有偏且不一致** | hv.md §2.6 已有引用 |
-| Edgar 2021, *PeerJ* 9:e10805（syncmer） | closed syncmer 定义，比 minimizer 更敏感 | pgr syncmer 采样来源（见 [[syng.md]]） |
-| Kille et al. 2023, *Bioinformatics* 39(9):btad512（minmer） | minmer 泛化 minimizer，修正其偏差 | hv.md §2.6 已有引用 |
-| **Nunes et al. 2023, KDD'23（DotHash）** | 超维向量（HDC）估计集合相似度：**Theorem 2 证明点积无偏估计交集 + 误差概率界** | 与 pgr HV 最直接：稀疏/稠密投影的同类工作，§6 审计的核心依据 |
-| Ertl 2020/2022, IEEE TKDE（ProbMinHash） | 概率 Jaccard（带权重集合）的 LSH 族 | 若未来支持多重度/加权 k-mer（hv.md §4.4 weighted bundle 方向）可参考 |
-| Marçais et al. 2019, ISMB, *Bioinformatics* 35:i127–i135 | edit distance 的 LSH（Order Min Hash） | pgr 距离方向的 LSH 参考 |
-| Sahlin 2021, *Genome Res* 31（strobemers） | 成组短 k-mer 采样，抗 indel | 采样层候选（对比 syncmer/minimizer） |
-| Ndiaye et al. 2024, *Genome Biol* 25:270 | minimizer sketching 综述（何时用、理论、局限） | 采样方法全景，补 hv.md §2.6 背景 |
-| Yu et al. 2022, *Bioinformatics* 38:4659–4669 | local k-mer selection 理论：conservation 精确表达式 + syncmer 闭式解 + minimap2 实证 8.2% | 采样器选择的定量理论框架（§6 审计指出 hv.md 未引用） |
-| Pibiri 2022, ISMB, *Bioinformatics* 38:i185–i194 | 基于 minimizer 统计性质的压缩 k-mer 字典 | k-mer 集合压缩存储方向 |
-| **Achlioptas 2001/2003, PODS/JCSS** | 数据库友好随机投影：±1 / 稀疏（2/3 零）矩阵保距（Theorem 2） | 稀疏随机投影奠基（§6.6） |
-| **Li, Hastie & Church 2006, KDD** | very sparse random projections：±√s、非零概率 1/s，保距只需零均值+单位方差 | **与 pgr 稀疏 s 桶期望等价**（§6.6） |
-| **Weinberger et al. 2009, ICML** | feature hashing：元素→桶+符号，指数尾界 | pgr 稀疏 s=1 的直接对应（§6.6） |
-| **Cormode & Muthukrishnan 2005, J. Algorithms** | Count-Min Sketch：每元素多桶，内积查询 (ε,δ) 保证 | 与 pgr 稀疏结构同构（§6.6） |
+| **bioRxiv 2022（FracMinHash, Irber）** | FracMinHash 采样 + 最小 metagenome cover | [[../design/hv.md]] §2.6 数值 ANI 的推荐采样器 |
+| **bioRxiv 2023（open syncmer ≡ FracMinHash, Koslicki）** | open syncmer 与 FracMinHash 在 Jaccard/containment 意义上等价 | hv.md §2.6 已有引用 |
+| **Bioinformatics 2022（minimizer Jaccard 有偏）** | minimizer Jaccard 估计**有偏且不一致** | hv.md §2.6 已有引用 |
+| **PeerJ 2021（closed syncmer, Edgar）** | closed syncmer 定义，比 minimizer 更敏感 | pgr syncmer 采样来源（见 [[syng.md]]） |
+| **Bioinformatics 2023（minmer）** | minmer 泛化 minimizer，修正其偏差 | hv.md §2.6 已有引用 |
+| **KDD 2023（DotHash）** | 超维向量（HDC）估计集合相似度：**Theorem 2 证明点积无偏估计交集 + 误差概率界** | 与 pgr HV 最直接：稀疏/稠密投影的同类工作，§6 审计的核心依据 |
+| **IEEE TKDE 2020/2022（ProbMinHash）** | 概率 Jaccard（带权重集合）的 LSH 族 | 若未来支持多重度/加权 k-mer（hv.md §4.4 weighted bundle 方向）可参考 |
+| **Bioinformatics 2019（Order Min Hash, Marçais）** | edit distance 的 LSH（Order Min Hash） | pgr 距离方向的 LSH 参考 |
+| **Genome Res 2021（strobemers, Sahlin）** | 成组短 k-mer 采样，抗 indel | 采样层候选（对比 syncmer/minimizer） |
+| **Genome Biol 2024（minimizer sketching 综述）** | minimizer sketching 综述（何时用、理论、局限） | 采样方法全景，补 hv.md §2.6 背景 |
+| **Bioinformatics 2022（local k-mer selection 理论）** | local k-mer selection 理论：conservation 精确表达式 + syncmer 闭式解 + minimap2 实证 8.2% | 采样器选择的定量理论框架（§6 审计指出 hv.md 未引用） |
+| **Bioinformatics 2022（压缩 k-mer 字典）** | 基于 minimizer 统计性质的压缩 k-mer 字典 | k-mer 集合压缩存储方向 |
+| **PODS/JCSS 2001/2003（随机投影, Achlioptas）** | 数据库友好随机投影：±1 / 稀疏（2/3 零）矩阵保距（Theorem 2） | 稀疏随机投影奠基（§6.6） |
+| **KDD 2006（very sparse random projections, Li）** | very sparse random projections：±√s、非零概率 1/s，保距只需零均值+单位方差 | **与 pgr 稀疏 s 桶期望等价**（§6.6） |
+| **ICML 2009（feature hashing）** | feature hashing：元素→桶+符号，指数尾界 | pgr 稀疏 s=1 的直接对应（§6.6） |
+| **J. Algorithms 2005（Count-Min Sketch, Cormode）** | Count-Min Sketch：每元素多桶，内积查询 (ε,δ) 保证 | 与 pgr 稀疏结构同构（§6.6） |
 
 ### 5.2 大规模聚类与搜索（测距的消费者）
 
 | 文献 | 定位 | 与 pgr 的关系 |
 |---|---|---|
-| **Xu et al. 2023, *Genome Biol* 24:121（RabbitTClust）** | 百万细菌基因组快速聚类（含 k-mer 距离 + 聚类） | pgr 4 万 E. coli cohort 聚类的直接对标 |
-| Bradley et al. 2019, *Nat Biotechnol* 37:152–159（BIGSI） | 全部已公开细菌/病毒基因组索引与搜索 | 大规模索引搜索的里程碑 |
-| Shen et al. 2025, *Nat Biotechnol*（LexicMap） | 百万原核基因组高效比对（k-mer + 索引） | 大规模 pairwise 比对的工程参考 |
-| Zhao et al. 2024, *NAR* 52:e74（GSearch） | k-mer hashing + HNSW 图做基因组搜索 | pgr dist 的近似搜索（ANN）方向 |
-| Malkov & Yashunin 2020, IEEE TPAMI（HNSW） | 分层可导航小世界图 ANN 搜索 | 距离矩阵之外的图式近邻搜索经典 |
-| Steinegger & Söding 2018, *Nat Commun* 9（MMseqs2 聚类） | 线性时间蛋白序列聚类（Linclust） | 蛋白侧聚类（若 pgr 扩展蛋白距离） |
-| Zhao et al. 2024, NAR Genom Bioinform 6:lqae172 | 近似近邻图 + 嵌入，大规模生物数据 | embedding + ANN 结合方向 |
-| Roy et al. 2023, *Bioinformatics* 39:btad101（MetaProFi） | chunked Bloom filter 存储查询蛋白/核酸序列 | 大规模集合存储查询方向 |
+| **Genome Biol 2023（RabbitTClust）** | 百万细菌基因组快速聚类（含 k-mer 距离 + 聚类） | pgr 4 万 E. coli cohort 聚类的直接对标 |
+| **Nat Biotechnol 2019（BIGSI）** | 全部已公开细菌/病毒基因组索引与搜索 | 大规模索引搜索的里程碑 |
+| **Nat Biotechnol 2025（LexicMap）** | 百万原核基因组高效比对（k-mer + 索引） | 大规模 pairwise 比对的工程参考 |
+| **NAR 2024（GSearch）** | k-mer hashing + HNSW 图做基因组搜索 | pgr dist 的近似搜索（ANN）方向 |
+| **IEEE TPAMI 2020（HNSW）** | 分层可导航小世界图 ANN 搜索 | 距离矩阵之外的图式近邻搜索经典 |
+| **Nat Commun 2018（MMseqs2 聚类）** | 线性时间蛋白序列聚类（Linclust） | 蛋白侧聚类（若 pgr 扩展蛋白距离） |
+| **NAR Genom Bioinform 2024（近似近邻图嵌入）** | 近似近邻图 + 嵌入，大规模生物数据 | embedding + ANN 结合方向 |
+| **Bioinformatics 2023（MetaProFi）** | chunked Bloom filter 存储查询蛋白/核酸序列 | 大规模集合存储查询方向 |
 
 ### 5.3 k-mer 哈希与采样
 
 | 文献 | 定位 | 与 pgr 的关系 |
 |---|---|---|
-| Mohamadi et al. 2016, *Bioinformatics* 32:3492（ntHash） | 递归核苷酸哈希（滚动） | pgr syncmer 乘性滚动哈希的对照 |
-| Kazemi et al. 2022, *Bioinformatics* 38:4812（ntHash2） | 递归 spaced seed 哈希 | spaced seed 采样方向 |
-| aaHash 2023, *Bioinformatics Advances*（递归氨基酸哈希） | 蛋白 k-mer 滚动哈希 | 蛋白距离（dist seq protein）方向 |
-| Groot Koerkamp & Pibiri 2024, WABI（mod-minimizer） | 长 k-mer 的简单高效采样 | 采样器候选（长 k-mer 场景） |
-| Seeding with minimized subsequence 2023, *Bioinformatics* | 最小化子序列做种子 | 采样理论补充 |
-| Moeckel et al. 2024, CSBJ 23:2289（k-mer 方法综述） | k-mer 方法与应用全景 | 方向总览入口 |
+| **Bioinformatics 2016（ntHash）** | 递归核苷酸哈希（滚动） | pgr syncmer 乘性滚动哈希的对照 |
+| **Bioinformatics 2022（ntHash2）** | 递归 spaced seed 哈希 | spaced seed 采样方向 |
+| **Bioinformatics Advances 2023（aaHash）** | 蛋白 k-mer 滚动哈希 | 蛋白距离（dist seq protein）方向 |
+| **WABI 2024（mod-minimizer）** | 长 k-mer 的简单高效采样 | 采样器候选（长 k-mer 场景） |
+| **Bioinformatics 2023（seeding with minimized subsequence）** | 最小化子序列做种子 | 采样理论补充 |
+| **CSBJ 2024（k-mer 方法综述）** | k-mer 方法与应用全景 | 方向总览入口 |
 
 ### 5.4 超维计算
 
 | 文献 | 定位 | 与 pgr 的关系 |
 |---|---|---|
-| **Kanerva 2009, *Cogn Comput* 1:139–159** | HDC 奠基：高维随机向量准正交 + bind/bundle/permute | pgr HV（§1–§4 对照）的理论源头 |
-| **Imani et al. 2019, IEEE ICCD（SparseHD）** | 稀疏超维计算：训练后模型稀疏化 90%、质量损失 <1%，FPGA 加速 48.5× 低能耗 | 稀疏 HD 方向；与 pgr 编码阶段稀疏机制不同（§6.6） |
+| **Cogn Comput 2009（HDC 奠基, Kanerva）** | HDC 奠基：高维随机向量准正交 + bind/bundle/permute | pgr HV（§1–§4 对照）的理论源头 |
+| **IEEE ICCD 2019（SparseHD）** | 稀疏超维计算：训练后模型稀疏化 90%、质量损失 <1%，FPGA 加速 48.5× 低能耗 | 稀疏 HD 方向；与 pgr 编码阶段稀疏机制不同（§6.6） |
 
 ### 5.5 未收录（相关性弱或重复）
 
@@ -189,7 +189,7 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
 
 ### 6.1 第一批：HV 编码与集合距离核心
 
-#### DotHash（Nunes et al. 2023, KDD'23）—— 完整精读
+#### DotHash（KDD 2023）—— 完整精读
 
 **核心构造**：元素经随机映射 ψ: S → R^d 到 **d 维超立方体顶点**（unit
 向量，即 ±1/√d 的稠密随机向量），集合 sketch = 元素向量之和。
@@ -217,7 +217,7 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
 3. 扩展：可估计 Adamic-Adar 等族（通过调整元素向量幅度）——pgr 若做
    泛基因组图/链路预测可借鉴。
 
-#### Kanerva 2009（HDC 奠基）—— 完整精读
+#### HDC 奠基（Kanerva, Cogn Comput 2009）—— 完整精读
 
 **核心内容**：高维随机向量空间的统计性质 + bind/bundle/permute 操作。
 
@@ -232,14 +232,14 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
 §2.1/§2.5 的理论源头（为什么点积能分离共享/非共享信号）。Kanerva 未
 提供集合相似度的估计理论（那是 DotHash 补的）。
 
-#### HyperGen（Xu et al. 2024）—— 已在 §1–3 详细分析
+#### HyperGen（Bioinformatics 2024）—— 已在 §1–3 详细分析
 
 要点回顾：FracMinHash 采样 + **稠密** ±1 编码（i16，WyRng）+ Jaccard→ANI；
 i16 值域 [−N,N] 溢出风险；无 magic/版本。**与 pgr 稀疏无关**（它是
 稠密），但 pgr 稠密 bit 与其同源（实现不同：RapidRng 跳步 vs WyRng、
 i32 vs i16）。
 
-#### ProbMinHash（Ertl 2020/2022）—— 完整精读
+#### ProbMinHash（IEEE TKDE 2020/2022）—— 完整精读
 
 **核心**：概率 Jaccard JP（带权集合的 Jaccard 推广）+ P-MinHash 无偏
 估计（方差 JP(1−JP)/k）+ ProbMinHash 一类 one-pass LSH（4 种算法：
@@ -250,7 +250,7 @@ minwise hashing。
 （对应 hv.md §4.4 的 weighted bundle 方向）；其"降低估计方差"的技巧
 （引入统计依赖）对 pgr 的 D/s 选择有参考意义。
 
-#### Order Min Hash（Marçais et al. 2019）—— 完整精读
+#### Order Min Hash（Bioinformatics 2019, Marçais）—— 完整精读
 
 **核心**：edit distance 的 LSH（OMH），minHash 的改进——不仅看 k-mer
 内容还看**相对顺序**，有 gapped LSH 理论保证；现有做法用 Jaccard/Hamming
@@ -262,7 +262,7 @@ minwise hashing。
 
 ### 6.2 第二批：采样理论
 
-#### Minimizer Jaccard 有偏（Belbasi et al. 2022）—— 完整精读
+#### Minimizer Jaccard 有偏（Bioinformatics 2022）—— 完整精读
 
 **核心**：严格证明 minimizer sketch 的 Jaccard 估计**有偏且不一致**——
 偏差不为零，且不随序列长度增长消失（估计收敛到与真实 J 不同的值）；
@@ -275,7 +275,7 @@ minhash（随机采样）估计无偏（Broder 1997），minimizer（窗口内�
 有偏**；pgr 的 FracMinHash 属随机采样类（无偏类），syncmer 属局部
 选择类（需 Shibuya 2022 另证无偏）。minmer（Kille）是修正方案。
 
-#### Syncmers（Edgar 2021, PeerJ）—— 完整精读
+#### Syncmers（PeerJ 2021, Edgar）—— 完整精读
 
 **核心**：syncmer 家族定义——通过 k-mer 内**最小 s-mer 的位置**选 k-mer；
 closed syncmer = 最小 s-mer 在 k-mer 首或尾。**同步性**：syncmer 由序列
@@ -285,7 +285,7 @@ closed syncmer = 最小 s-mer 在 k-mer 首或尾。**同步性**：syncmer 由�
 
 **对 pgr**：pgr closed syncmer 采样（§2.6、`libs/syncmer.rs`）的直接来源。
 
-#### FracMinHash（Irber et al. 2022, bioRxiv）—— 完整精读
+#### FracMinHash（bioRxiv 2022, Irber）—— 完整精读
 
 **核心**：FracMinHash = modulo hash 的变体，支持**不同大小集合**的
 Jaccard **containment** 估计（MinHash 对大小悬殊集合有偏）；sourmash
@@ -295,7 +295,7 @@ Jaccard **containment** 估计（MinHash 对大小悬殊集合有偏）；sourma
 **对 pgr**：§2.6 数值 ANI 推荐采样器的实现参考（sourmash 的工程实践）；
 containment 语义对 pgr 的"参考 vs 查询"场景（4 万 cohort）有价值。
 
-#### Syncmer ≡ FracMinHash（Liu & Koslicki 2023, bioRxiv）—— 完整精读
+#### Syncmer ≡ FracMinHash（bioRxiv 2023, Koslicki）—— 完整精读
 
 **核心**：**open syncmer sketch 与 FracMinHash sketch 在 k-mer 相似度
 意义上等价**（注意：是 open 不是 closed）；open syncmer 有更好的距离
@@ -306,7 +306,7 @@ containment 语义对 pgr 的"参考 vs 查询"场景（4 万 cohort）有价值
 需注意差异——closed 的无偏性由 Shibuya 2022 另证）；truncation 多分辨率
 思路可参考。
 
-#### Minmers（Kille et al. 2023）—— 完整精读
+#### Minmers（Bioinformatics 2023）—— 完整精读
 
 **核心**：minmer = minimizer 的泛化——每窗口用 **rolling minhash 采样
 多个 k-mer**（作者：Kille, Garrison, Treangen, **Phillippy**——MashMap
@@ -317,7 +317,7 @@ Jaccard estimation"）；MashMap3 默认 ANI 阈值下比 minimizer 版快 **10�
 **对 pgr**：§5.5 方向 3（minmer 替代 `seq_mins` 的 minimizer）的完整依据；
 消除 §2.6 minimizer 偏差的现成方案。
 
-#### Local k-mer selection 理论（Yu et al. 2022）—— 完整精读
+#### Local k-mer selection 理论（Bioinformatics 2022）—— 完整精读
 
 **核心**：local k-mer selection 的形式化（q-local 方法，Theorem 1：
 共享 k+q−1 长区域的两序列，局部选择的 k-mer 互保）；conservation 的
@@ -329,7 +329,7 @@ conserved 的 k-mer 更重复 → 运行时增加（速度-质量权衡）。
 **对 pgr**：采样器选择的定量理论框架（§2.6 未引用，§6 审计指出的缺口）；
 "conservation 与重复性权衡"对 syncmer 参数选择有直接指导。
 
-#### mod-minimizer（Groot Koerkamp & Pibiri 2024, WABI）—— 完整精读
+#### mod-minimizer（WABI 2024）—— 完整精读
 
 **核心**：窗口保证 + 密度的形式化（密度下界 1/w）；random minimizer 密度
 接近下界 2 倍；**mod-sampling** 两步骤采样（找最小 t-mer 位置 p，采
@@ -339,7 +339,7 @@ p mod w 处 k-mer）；**mod-minimizer（t ≡ k mod w）在 k→∞ 达到最�
 **对 pgr**：长 k-mer 场景的采样器候选（§5.5 方向 7）；密度最优性对
 大规模索引（4 万 cohort）有存储/查询收益。
 
-#### Strobemers（Sahlin 2021, Genome Res）—— 完整精读
+#### Strobemers（Genome Res 2021, Sahlin）—— 完整精读
 
 **核心**：2+ 个链式短 k-mer 的组合（哈希决定），替代单一 k-mer；对
 突变率更不敏感、匹配分布更均匀、覆盖更高（vs k-mer 和 spaced k-mer）；
@@ -348,7 +348,7 @@ StrobeMap 验证聚类/比对场景。
 **对 pgr**：采样层抗突变候选（§5.5 方向 7）；与 syncmer 互补（strobemer
 解决 indel 敏感，syncmer 解决上下文依赖）。
 
-#### Minimizer sketching 综述（Ndiaye et al. 2024, Genome Biol）—— 完整精读
+#### Minimizer sketching 综述（Genome Biol 2024）—— 完整精读
 
 **核心**：minimizer 入门 + 方法进展 + 应用全景（组装/宏基因组/比对/
 纠错/泛基因组）+ 替代技术（universal hitting sets、syncmers、
@@ -357,7 +357,7 @@ strobemers）。
 **对 pgr**：§2.6 采样方法的背景总览；UHS（universal hitting sets）是
 未评估的候选。
 
-#### Sparse and skew hashing of K-mers（Pibiri 2022, ISMB）—— 完整精读
+#### Sparse and skew hashing of K-mers（Bioinformatics 2022）—— 完整精读
 
 **核心**：压缩关联 k-mer 字典（MPHF 分配唯一 ID），利用 **minimizer
 统计性质**压缩，支持数十亿 k-mer 的成员查询。
@@ -367,7 +367,7 @@ k-mer 索引需要压缩存储可参考。
 
 ### 6.3 第三批：大规模聚类与搜索
 
-#### RabbitTClust（Xu et al. 2023, Genome Biol）—— 完整精读
+#### RabbitTClust（Genome Biol 2023）—— 完整精读
 
 **核心**：sketch-based 距离估计（Mash 距离）+ **两条聚类管线**：
 **clust-mst**（MST 单链层次聚类，动态生成/合并部分聚类、不存全距离
@@ -381,7 +381,7 @@ GenBank 细菌基因组（4.0 TB）34 分钟（128 核）；MinHash sketching +
 "sketch 距离 → 降维 → 图聚类（MST）"管线是 pgr 可借鉴的端到端方案；
 冗余检测（完全相同基因组）与 pgr 的 4 万 cohort 去冗余需求吻合。
 
-#### GSearch（Zhao et al. 2024, NAR）—— 完整精读
+#### GSearch（NAR 2024）—— 完整精读
 
 **核心**：k-mer hashing 概率数据结构（**ProbMinHash / SuperMinHash /
 Densified MinHash / SetSketch**）估计基因组距离 + **HNSW 图搜索**；
@@ -396,7 +396,7 @@ SetSketch（最低内存 2 变体）；"MinHash/SetSketch 距离 + HNSW 近邻"
 **对 pgr**：pgr dist 的 **ANN 搜索方向（§5.5 方向 6）**的完整工程参考——
 特别是"概率草图距离 + HNSW"的组合，以及 SetSketch 的低内存变体。
 
-#### HNSW（Malkov & Yashunin 2020, IEEE TPAMI）—— 完整精读
+#### HNSW（IEEE TPAMI 2020）—— 完整精读
 
 **核心**：分层可导航小世界图（Hierarchical NSW）：多层近邻图，元素层数
 按指数衰减概率随机分配；从顶层开始搜索 + 尺度分离 → **对数复杂度**；
@@ -405,7 +405,7 @@ SetSketch（最低内存 2 变体）；"MinHash/SetSketch 距离 + HNSW 近邻"
 **对 pgr**：任何"距离矩阵之外的图式近邻搜索"的经典底座（GSearch 用它，
 pgr 若做 dist 的 ANN 也用它）；与 pgr 的 `dist` O(D) 逐对比较互补。
 
-#### BIGSI（Bradley et al. 2019, Nat Biotechnol）—— 完整精读
+#### BIGSI（Nat Biotechnol 2019）—— 完整精读
 
 **核心**：Bitsliced Genomic Signature Index——把 web 搜索的位切片方法
 用于微生物基因组；索引**全部 447,833 个已公开细菌/病毒 WGS 数据集**，
@@ -419,7 +419,7 @@ pgr 若做 dist 的 ANN 也用它）；与 pgr 的 `dist` O(D) 逐对比较互�
 **对 pgr**：大规模索引搜索的里程碑（§5.2）；位切片（bitsliced）索引
 思路对 pgr 的 .paf.idx / .pgi 索引设计有参考价值。
 
-#### LexicMap（Shen, Lees & Iqbal 2025, Nat Biotechnol）—— 完整精读
+#### LexicMap（Nat Biotechnol 2025）—— 完整精读
 
 **核心**：探针 k-mer（probe k-mers）子集高效采样数据库——保证每个
 250 bp 窗口含多个种子、与探针共享前缀；层次索引低内存比对；**百万级
@@ -429,7 +429,7 @@ SOTA 相当、速度更快内存更低。
 **对 pgr**：大规模 pairwise 比对的工程参考（§5.2）；"探针 k-mer 采样 +
 层次索引"对 pgr 的 pgi/lastz 混合管线（align fill/rest）有启发。
 
-#### Linclust / MMseqs2 聚类（Steinegger & Söding 2018, Nat Commun）—— 完整精读
+#### Linclust / MMseqs2 聚类（Nat Commun 2018）—— 完整精读
 
 **核心**：**第一个运行时线性于 N（独立于聚类数 K）**的序列聚类算法；
 关键技巧：每序列选 **m 个最低哈希值 k-mer** → 排序找共享 k-mer 的
@@ -441,7 +441,7 @@ SOTA 相当、速度更快内存更低。
 **对 pgr**：蛋白侧聚类（若 pgr 扩展蛋白距离）的算法模板（§5.2）；
 "分桶降复杂度"思想对 4 万 cohort 的聚类管线有直接借鉴。
 
-#### annembed（Zhao et al. 2024, NAR Genom Bioinform）—— 完整精读
+#### annembed（NAR Genom Bioinform 2024）—— 完整精读
 
 **核心**：改进 UMAP 类降维：t-SNE+UMAP 结合 + **HNSW 替换 K-NNG
 限速步骤** + **MinHash LSH 做序列距离估计**；Rust 实现、全并行；
@@ -451,7 +451,7 @@ SOTA 相当、速度更快内存更低。
 **对 pgr**：embedding + ANN 结合方向（§5.2）——特别是"MinHash 距离 +
 HNSW + 降维"的完整链路，与 pgr dist 的可视化/聚类下游相关。
 
-#### MetaProFi（Roy et al. 2023, Bioinformatics）—— 完整精读
+#### MetaProFi（Bioinformatics 2023）—— 完整精读
 
 **核心**：**第一个蛋白级 Bloom filter 索引**——氨基酸序列索引 + 氨基酸/
 核苷酸双查询；共享内存、chunked 存储、高效压缩。
@@ -459,7 +459,7 @@ HNSW + 降维"的完整链路，与 pgr dist 的可视化/聚类下游相关。
 **对 pgr**：大规模集合存储查询方向（§5.2）；蛋白级索引若 pgr 扩展
 蛋白距离（dist seq protein）可参考。
 
-#### Phylogenetic profiling with MinHash（Moi et al. 2020, PLoS Comput Biol）—— 完整精读
+#### Phylogenetic profiling with MinHash（PLoS Comput Biol 2020）—— 完整精读
 
 **核心**：MinHash 用于系统发育谱（phylogenetic profiling）——把基因
 的物种分布谱转成可扩展的相似度计算，发现真核有性生殖相关基因。
@@ -471,11 +471,11 @@ pgr 的"集合相似度"框架同源（MinHash vs pgr HV 是两种草图路线�
 
 #### k-mer 哈希家族
 
-* **ntHash（Mohamadi et al. 2016）**：DNA/RNA 的**递归哈希**
+* **ntHash（Bioinformatics 2016）**：DNA/RNA 的**递归哈希**
   （`H(kmer_i) = f(H(kmer_{i−1}), r[i+k−1], r[i−1])`，相邻 k-mer O(1)
   更新），比替代方案快一个数量级；pgr syncmer 的乘性滚动哈希的同类
   对照。
-* **ntHash2（Kazemi et al. 2022）**：**spaced seed** 递归哈希，比旧版
+* **ntHash2（Bioinformatics 2022）**：**spaced seed** 递归哈希，比旧版
   快 2.1×、比朴素适配快 3.8×；改进长 k-mer 碰撞率与哈希分布均匀性
   （修改 canonical hashing）；spaced seed 采样方向（§5.3）。
 * **aaHash（2023）**：氨基酸**递归哈希**（多级哈希）；蛋白距离方向
@@ -498,9 +498,9 @@ pgr 的"集合相似度"框架同源（MinHash vs pgr HV 是两种草图路线�
 
 #### 图 / k-mer 集表示
 
-* **Simplitigs（Břinda et al. 2021）**：de Bruijn 图的紧凑表示（比
+* **Simplitigs（Genome Biol 2021）**：de Bruijn 图的紧凑表示（比
   unitigs 更短更少）；BWT 索引时内存/查询更优。
-* **Matchtigs（Schmidt et al. 2023）**：k-mer 集**最小明文表示**
+* **Matchtigs（Genome Biol 2023）**：k-mer 集**最小明文表示**
   （多项式算法 + 贪心，建模为 **minimum-cost flow / Chinese postman
   problem**），比 unitigs 压缩 59%、字符串数减 97%、SSHash-Lite 查询
   快 4.26×。
@@ -526,9 +526,9 @@ pgr 的"集合相似度"框架同源（MinHash vs pgr HV 是两种草图路线�
   关键：**ABC order**（特定序）下最小子序列可多项式计算，碰撞概率
   接近 Jaccard；read mapping/比对/overlap 三场景碾压子串种子——采样层
   抗错方向（§5.5 方向 7 的补充候选）。
-* **k-mer 方法综述（Moeckel et al. 2024）**：k-mer 方法与应用全景
+* **k-mer 方法综述（CSBJ 2024）**：k-mer 方法与应用全景
   （方向总览入口，§5.3）。
-* **Manifold Learning 综述（Meilă & Zhang 2024）**：非线性降维方法
+* **Manifold Learning 综述（Annu Rev Stat Appl 2024）**：非线性降维方法
   原理与统计基础——若 pgr 聚类下游需要可视化/嵌入（annembed 也基于
   此方向），可作背景；与测距本身弱相关。
 * **Wheat pangenome（2024）**：k-mer 泛基因组在植物上的应用案例，
@@ -605,7 +605,7 @@ s=64: 2330 vs 2205，s 大时第二项主导）。
 > 稀疏随机投影 / 特征哈希 / count sketch 家族的**期望等价形式**，理论
 > 支撑比之前判断的更充分。
 
-#### Database-friendly random projections（Achlioptas, PODS 2001 / JCSS 2003）—— 完整精读
+#### Database-friendly random projections（PODS/JCSS 2001/2003, Achlioptas）—— 完整精读
 
 **核心定理（Theorem 2）**：任意 n 个 d 维点可嵌入 k 维
 （`k₀ = (4+2β)/(ε²/2 − ε³/3) · log n`），**嵌入矩阵元素可来自两个极简
@@ -622,7 +622,7 @@ s=64: 2330 vs 2205，s 大时第二项主导）。
 仍保距"的直接证明。与 pgr 的关系：Achlioptas 是**数据点投影**矩阵
 稀疏；pgr 是**元素嵌入**向量稀疏——结构不同但同属稀疏随机投影家族。
 
-#### Very sparse random projections（Li, Hastie & Church, KDD 2006）—— 完整精读
+#### Very sparse random projections（KDD 2006, Li）—— 完整精读
 
 **核心**：把 Achlioptas 的稀疏分布推广为**通用稀疏度参数 s**：
 
@@ -639,7 +639,7 @@ r_ji = √s · {+1 概率 1/(2s)、0 概率 1−1/s、−1 概率 1/(2s)}
 pgr 稀疏投影最直接的文献理论支撑。两者差异：Li 是非零数泊松式可变，
 pgr 是固定 s 个（方差更小，理论更好）；Li 是数据投影、pgr 是元素嵌入。
 
-#### Feature hashing（Weinberger et al., ICML 2009）—— 完整精读
+#### Feature hashing（ICML 2009）—— 完整精读
 
 **核心**：特征哈希（每特征哈希到桶 + 符号）做降维/降存储；**提供指数
 尾界**（exponential tail bounds）——随机子空间交互可忽略（高概率）；
@@ -648,7 +648,7 @@ pgr 是固定 s 个（方差更小，理论更好）；Li 是数据投影、pgr 
 **对 pgr**：特征哈希通常每元素 1 桶（pgr 的 s=1 特例）；其指数尾界是
 "元素→哈希桶 + 内积近似"的理论保证（pgr 稀疏 s=1 的直接对应）。
 
-#### Count-Min Sketch（Cormode & Muthukrishnan, J. Algorithms 2005）—— 完整精读
+#### Count-Min Sketch（J. Algorithms 2005, Cormode）—— 完整精读
 
 **核心**：数据流汇总的**子线性空间结构**——每元素哈希到 d 个桶（每行
 1 个），点/范围/**内积**查询近似，误差 ε 概率 δ；从 1/ε² 改进到 1/ε。
@@ -658,7 +658,7 @@ pgr 是固定 s 个（方差更小，理论更好）；Li 是数据投影、pgr 
 CMS 提供内积查询的 (ε, δ) 保证——pgr 稀疏投影的近似保证可参考 CMS
 的分析框架（虽然 CMS 是频率估计、pgr 是相似度，但桶结构相同）。
 
-#### SparseHD（Imani et al., IEEE ICCD 2019）—— 完整精读
+#### SparseHD（IEEE ICCD 2019）—— 完整精读
 
 **核心**：稀疏超维计算（HDC 分类）：二进制（1-bit）超向量精度不足
 （>50% 损失）、多 bit 提高精度但牺牲能效；**SparseHD 把训练好的 HD
@@ -674,10 +674,10 @@ s 维）；两者都证明"稀疏 + 低质量损失"可行。SparseHD 的"1-bit 
 
 与 Journal of Algorithms 2005 版同一文献（Count-Min Sketch），已覆盖。
 
-### 6.7 Hera et al. 2023（FracMinHash 偏差校正与 ANI 置信区间，用户补充 PDF）
+### 6.7 Genome Res 2023（FracMinHash 校正与 ANI 置信区间，用户补充 PDF）
 
-> Hera, Pierce-Ward & Koslicki, *Genome Res* 33(7):1061–1068,
-> doi:10.1101/gr.277651.123。完整精读，是 [[../design/hv.md]] §2.6
+> Genome Res 2023, 33(7):1061–1068, doi:10.1101/gr.277651.123
+> （Hera, Pierce-Ward & Koslicki）。完整精读，是 [[../design/hv.md]] §2.6
 > "FracMinHash 校正 + CI"引用的原始出处。本地 PDF：
 > `~/sync/zotero/bacteria/clustering/Genome Res - 2023 - Deriving confidence intervals for mutati.pdf`。
 

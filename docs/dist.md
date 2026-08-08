@@ -11,6 +11,43 @@
   - 上游：`pgr fa`/`pgr fq` (序列处理), `pgr fa six-frame` (蛋白翻译)。
   - 下游：聚类/构树工具。
 
+## 核心概念（Concepts）
+
+距离计算的输入是序列，但直接比较全部内容太慢，所有子命令都先做一件事：
+**采样（sketch）**——从序列中挑出一小部分"代表性 k-mer"组成一个紧凑的
+指纹，再比较指纹。代价是结果变为近似（由采样方式决定偏差与速度的权衡）。
+
+**k-mer**：序列中长度为 k 的连续子串，是序列比较的基本单位。`-k` 越大，
+子串越独特（区分度越高），但对变异越敏感。
+
+**采样器（各子命令的区别所在）**：
+
+- **MinHash（`dist mash`）**：对所有 k-mer 哈希后，保留最小的若干个
+  （bottom-k）。两个指纹共享的 MinHash 比例估算集合相似度。Mash 工具
+  即此法，`dist mash` 与其输出逐字节一致。
+- **Minimizer / 最小子（`dist mini`）**：每个滑动窗口里取哈希最小的
+  k-mer。采样密集、速度最快，适合排序/粗筛；但估计有偏，数值 ANI 不可用。
+- **FracMinHash（`dist frac`）**：每个 k-mer 独立按 1/scale 概率保留。
+  是**无偏**随机子集，Jaccard/containment 可直接换算 ANI（推荐数值用）。
+- **Syncmer / 同步子（`dist hv --sampler syncmer`、`dist pgi`）**：当窗口
+  内**最短的子串（s-mer）**出现在窗口端点时才采样。保证覆盖但稀疏；
+  缺点是位置随突变漂移，距离估计有偏（仅作实验/排序，见下）。
+
+**度量（输出列的含义）**：
+
+- **Jaccard index**：交集 ÷ 并集，衡量两个指纹重叠程度。
+- **Containment**：交集 ÷ 第一个集合大小，衡量 B 覆盖 A 的比例（有方向）。
+- **Mash distance / ANI**：由 Jaccard（或 containment）按模型换算的进化
+  距离；`1 − distance` 近似平均核苷酸一致性（ANI，百分比）。
+
+**Hypervector / HV（`dist hv`）**：把序列的 k-mer 投影到固定维度（默认
+4096）的高维随机向量并叠加成一个向量。比较两个向量（点积/余弦）即可
+近似距离，与序列长度无关、速度极快，适合超大规模初筛；精度低于直接
+集合比较。
+
+> 详细数学与文献（采样器偏差、FracMinHash 无偏性、syncmer 位置漂移等）
+> 见 `notes/design/hv.md` 与 `notes/references/hv.md`。
+
 ## 子命令详解
 
 草图距离命令族（`mini` / `mash` / `frac`）界面统一：输入（单/双文件、
@@ -81,7 +118,11 @@ syncmer）映射为固定维度的向量。*
 - **参数**（与草图命令族共享 sampler/hash 参数，含义与默认值相同）:
   - `--dim`: 向量维度 (默认 4096，需为 32 的倍数)。
   - `--sampler`: `minimizer` (默认) 或 `syncmer`（syncmer 默认 DNA `-k 8 -w 55`、
-    蛋白 `-k 7 -w 5`）。`syncmer` 作为实验选项保留：closed syncmer 采样
+    蛋白 `-k 7 -w 5`）。**syncmer 的 `-k` 是 s-mer 长度**（判定窗口端点最小的
+    短子串），`-w` 是窗口内 s-mer 数，实际采样跨度 = k+w−1 碱基（如 DNA
+    默认 k=8/w=55 → 跨度 62），与 mini/mash/frac 的 k-mer 语义不同；
+    `--sampler minimizer` 时 `-k`/`-w` 与草图家族一致。`syncmer` 作为实验
+    选项保留：closed syncmer 采样
     非均匀，Jaccard/containment 估计有偏（详见
     `notes/benchmarks/dist-cohort-validation.md`），用于与 minimizer /
     FracMinHash 结果对照体验偏差；数值 ANI 用 `dist frac`。

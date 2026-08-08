@@ -125,6 +125,45 @@ containment 列），**期望无偏**（共享 k-mer 判定一致，分子分母
 > 无需 Hera 校正**，`dist frac` 的 containment/ANI 保持现状（数据见
 > `benchmarks/bench-dist-mash-compat.md` 同 k 对照节）。
 
+### `dist hv --sampler syncmer` 偏差对照（2026-08-08，5 株 × 10 对）
+
+此前 syncmer 偏差数据只覆盖 `dist pgi`（k=40 smer=8/w=5）。补上 `dist hv
+--sampler syncmer`（smer=8/w=55，HV 投影）的对照，让 syncmer 偏差在两个
+实验入口都可体验（hv 为 FASTA 直算、pgi 需先建索引）：
+
+| 对 | hv syncmer jac | frac jac | 真值 k=21 jac | hv con | frac con | 真值 con |
+|---|---:|---:|---:|---:|---:|---:|
+| cf×e2 | 0.9467 | 0.5219 | 0.6680 | 0.9673 | 0.6772 | 0.5150 |
+| cf×mg | 0.9175 | 0.3398 | 0.4819 | 0.9328 | 0.4861 | 0.3393 |
+| cf×sa | 0.9190 | 0.3108 | 0.4875 | 0.9594 | 0.4823 | 0.3132 |
+| cf×se | 0.9292 | 0.3180 | 0.4844 | 0.9605 | 0.4795 | 0.3217 |
+| e2×mg | 0.9204 | 0.3484 | 0.4976 | 0.9394 | 0.5012 | 0.3462 |
+| e2×sa | 0.9198 | 0.3246 | 0.5168 | 0.9652 | 0.5049 | 0.3301 |
+| e2×se | 0.9216 | 0.3309 | 0.5021 | 0.9617 | 0.5004 | 0.3294 |
+| mg×sa | 0.9269 | 0.4486 | 0.6690 | 0.9894 | 0.6591 | 0.4494 |
+| mg×se | 0.9452 | 0.5471 | 0.7474 | 0.9947 | 0.7347 | 0.5535 |
+| sa×se | 0.9281 | 0.4259 | 0.5884 | 0.9583 | 0.5840 | 0.4327 |
+
+**发现**：hv syncmer 的 jaccard（0.92–0.95）远高于 k=21 真值（0.48–0.75），
+看似"虚高"，但这不是 HV 方法的缺陷——**k=8 全集合真值本身 jaccard≈0.999**
+（8-mer 空间 65536 基本饱和，近缘基因组 8-mer 几乎全重合），hv syncmer
+相对 k=8 基线**低估 ~5–8%**（syncmer 位置漂移使共享 8-mer 丢失），与
+`dist pgi`（k=40 锚定）的偏差**机制相同、方向一致**（都是交集低估），
+只是 k=8 基线极高掩盖了量级。
+
+**排序一致性**（10 对距离排序 Spearman）：
+
+| 对照 | ρ |
+|---|---:|
+| hv syncmer vs 真值 | 0.636 |
+| frac vs 真值 | 0.782 |
+| hv syncmer vs frac | 0.612 |
+
+结论强化：syncmer 家族（`dist pgi` 与 `dist hv --sampler syncmer`）数值
+均不可信（pgi 严重低估、hv 因 k=8 饱和无区分度），排序也弱于 `dist frac`
+（ρ 0.64 vs 0.78）。体验入口：`dist hv --sampler syncmer`（FASTA 直算）与
+`dist pgi`（索引）；数值 ANI 一律 `dist frac`。
+
 **syncmer 家族（dist pgi 与 dist seq --sampler syncmer 同机制）**
 **（2026-08-08 补充）**：两者都是 closed syncmer 采样，位置偏差同源。
 k=21 时 `dist seq syncmer` 比 frachash 低 ~2%（e2-cf 0.5075 vs

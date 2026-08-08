@@ -270,28 +270,28 @@ lane 宽度——该方向已被 i16/pshufb 实测否定，剩余杠杆在广播
 **三种采样器在文献中的定位**：
 
 * **FracMinHash**（HyperGen 使用）：保留 `h(x) < 阈值` 的 canonical
-  k-mer（Irber 等 2022 提出，bioRxiv 2022.01.11.475838）。每个 k-mer 的
-  保留概率相同且独立 → 保留集合近似均匀随机子集。Hera 等 2023（Genome
-  Res 33(7):1061–1068）证明其 Jaccard / containment 估计的偏差很小且
+  k-mer（bioRxiv 2022 提出，Irber）。每个 k-mer 的
+  保留概率相同且独立 → 保留集合近似均匀随机子集。Genome Res 2023 证明
+  其 Jaccard / containment 估计的偏差很小且
   **可精确校正**（给出校正公式），并据此为突变率（即 ANI 语义）推导
   **点估计 + 置信区间**（论文演示参数 k=21、scale 0.1）。
 * **minimizer**（pgr FASTA 路径的另一选项）：窗口内保留最小 hash。
   保留概率与 k-mer 在窗口中的哈希排名 / 局部序列结构相关，不是均匀子
-  采样。Belbasi 等 2022（ISMB, *Bioinformatics* 38:i169–i176）证明
+  采样。Bioinformatics 2022 证明
   minimizer 的 Jaccard 估计**有偏且不一致**——偏差不随序列长度增长
   消失，估计收敛到与真实 J 不同的值。MashMap 旧版（minimizer 版）的
-  ANI 估计即受此影响，Kille 等 2023 的 minmer 方案（*Bioinformatics*
-  39(9):btad512）专门为修正它而提出。
+  ANI 估计即受此影响，minmer 方案（Bioinformatics 2023）专门为修正它
+  而提出。
 * **closed syncmer**（pgr 主力）：窗口内最小 s-mer 落在首/末位
-  （Edgar 2021, *PeerJ* 9:e10805；syng 移植，见
+  （PeerJ 2021, Edgar；syng 移植，见
   [[../references/syng.md]]）。文献支持分两层：
-  * **open syncmer 与 FracMinHash 等价**（Liu & Koslicki 2023,
-    bioRxiv 2023.11.09.566463）：在 k-mer 集合相似度（Jaccard /
+  * **open syncmer 与 FracMinHash 等价**（bioRxiv 2023, Koslicki）：
+    在 k-mer 集合相似度（Jaccard /
     containment）意义上等价，且距离分布与保守性更好。关键假设：
     syncmer 的采样对**重叠 k-mer 有依赖**（共享子串影响被选概率），
     FracMinHash 则完全独立，等价性正由此论证；
   * **closed syncmer 的无偏性有同行评审直接证据**：Shibuya 等 2022
-    （WABI, LIPIcs 242:14，doi:10.4230/LIPIcs.WABI.2022.14）用与 pgr
+    （WABI 2022）用与 pgr
     同规则的 closed syncmer 做集合比对，称其为 minimizer 的
     "上下文无关"替代、给出无偏 Jaccard 估计；作者博士论文实验里
     minimizer 明显有偏，syncmer 与随机采样在无偏性上重合。注意：
@@ -335,9 +335,9 @@ lane 宽度——该方向已被 i16/pshufb 实测否定，剩余杠杆在广播
 （`pgi to-hv` → `dist hv`）。
 
 **理论依据（稀疏随机投影）**：每个元素经哈希映射到 s 个随机维度、±1
-计数，属于稀疏随机投影 / 特征哈希家族——Achlioptas (2003) 证明随机 ±1
-矩阵保持内积结构（JL 型保距）；Li, Hastie & Church (2006) 证明**稀疏化**
-随机投影仍保持该性质；Weinberger et al. (2009) feature hashing 是同一
+计数，属于稀疏随机投影 / 特征哈希家族——Achlioptas (2003, PODS/JCSS)
+证明随机 ±1 矩阵保持内积结构（JL 型保距）；Li 等 (2006, KDD)
+证明**稀疏化**随机投影仍保持该性质；feature hashing (ICML 2009) 是同一
 模式的工业实践。无偏性可严格推导：设两集合共享 `shared` 个元素，每个
 元素选某维概率 s/D、符号 ±1 均匀，则 `E[dot] = shared·s`、
 `E[‖H‖²] = n·s`，余弦期望 `cos ≈ shared/√(n₁·n₂)`；且固定 D 时
@@ -580,10 +580,12 @@ vs i8 2.11 ms）。稀疏 `.hv` 路径不受影响。
 4. **srlv 展开**：纯 SIMD 工程；i16 / pshufb 替代实测否决，无理论缺口。
 5. **幅度与区分度无关**：Jaccard 比值度量的数学性质；DotHash 的点积/
    范数框架支持"点积估计交集、范数估计基数"。
-6. **采样方法**：最强文献支撑——Belbasi（minimizer 有偏）、Edgar
-   （syncmer）、Irber（FracMinHash）、Liu & Koslicki（syncmer≡FracMinHash）、
-   Kille（minmer 无偏）、Shibuya（closed syncmer 无偏）、Hera（FracMinHash
-   校正）。缺口：**Yu et al. 2022（conservation 理论，minimap2 实证
+6. **采样方法**：最强文献支撑——Bioinformatics 2022（minimizer 有偏）、
+   PeerJ 2021（syncmer, Edgar）、bioRxiv 2022（FracMinHash, Irber）、
+   bioRxiv 2023（syncmer≡FracMinHash, Koslicki）、Bioinformatics 2023
+   （minmer 无偏）、WABI 2022（closed syncmer 无偏）、Genome Res 2023
+   （FracMinHash 校正）。缺口：**Yu 2022（Bioinformatics, local
+   k-mer selection conservation 理论，minimap2 实证
    8.2%）未引用**；minmer 条目可强化（无偏 + 10× 快）。
 7. **稀疏投影（s 默认已改 1）**：DotHash Theorem 2 直接支持"随机超向量叠加点积无偏
    估计交集"。**2026-08-08 已仿照 Theorem 2 为 pgr 的 s 桶 ±1 构造补全
@@ -605,14 +607,10 @@ vs i8 2.11 ms）。稀疏 `.hv` 路径不受影响。
 * [[../todo.md]]（§4 HV SIMD 疑虑）
 * [[../references/hv.md]]（外部参考：HyperGen / hdlib（§1–4）+ 测距聚类
   文献（§5），§2.6 采样方法与 §6 审计的文献链）
-* 采样方法文献（§2.6）：Edgar 2021, *PeerJ* 9:e10805（syncmer 定义）；
-  Belbasi et al. 2022, *Bioinformatics* 38(Suppl 1):i169–i176,
-  doi:10.1093/bioinformatics/btac244（minimizer Jaccard 有偏且不一致）；
-  Irber et al. 2022, bioRxiv 2022.01.11.475838（FracMinHash）；
-  Hera et al. 2023, *Genome Res* 33(7):1061–1068,
-  doi:10.1101/gr.277651.123（FracMinHash 校正 + 置信区间 / ANI）；
-  Liu & Koslicki 2023, bioRxiv 2023.11.09.566463（open syncmer ≡
-  FracMinHash，且重叠 k-mer 采样有依赖）；Shibuya et al. 2022, WABI,
-  LIPIcs 242:14, doi:10.4230/LIPIcs.WABI.2022.14（closed syncmer
-  无偏 Jaccard）；Kille et al. 2023, *Bioinformatics* 39(9):btad512
-  （minmer：minimizer 偏差修正）。
+* 采样方法文献（§2.6）：PeerJ 2021（syncmer 定义, Edgar）；
+  Bioinformatics 2022（minimizer Jaccard 有偏且不一致）；
+  bioRxiv 2022（FracMinHash, Irber）；
+  Genome Res 2023（FracMinHash 校正 + 置信区间 / ANI）；
+  bioRxiv 2023（open syncmer ≡ FracMinHash, Koslicki；且重叠 k-mer 采样
+  有依赖）；WABI 2022（closed syncmer 无偏 Jaccard）；Bioinformatics
+  2023（minmer：minimizer 偏差修正）。

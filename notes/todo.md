@@ -2,139 +2,72 @@
 
 > 依据 `project-understanding.md`、各设计笔记与审计记录整理。
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
-> 已完成的条目（fill/rest 拆分、wide 迁移、审计项批量修复等）详见
-> `design/pgi-lastz-hybrid.md`、`benchmarks/bench-simd-hv-jaccard.md` 与
-> `project-understanding.md`，此处只留未完成项。
+> 已完成条目只留一行结论，细节见链接文档。
 
 ## 1. 手头数据就能做
 
-- [x] **dist 命令族拆分 + Mash 兼容**（2026-08-08）：`dist seq` 删除，拆为
-      `dist mini`（Minimizer 草图，默认 k=21/w=5）/ `dist mash`（bottom-k
-      MinHash，**与 Mash 字节级兼容**，Mash-master/test 三对 + 5 株 E. coli
-      20 对全部一致，见 `benchmarks/bench-dist-mash-compat.md`）/
-      `dist frac`（FracMinHash + `--ci`）；`dist pgi`/`dist hv` 保留；
-      `pl prefilter` 改用 `dist mini`。syncmer 从 dist 侧移除，仅保留在
-      `pgi build` 作比对锚点。**收尾（2026-08-08 审计 + 并行）**：
-      (1) Jaccard/union 改用 Mash 的 merge `denom` 语义（未满 sketch 时
-      与 mash dist 一致，如 2/2→0、0/92→1）；(2) containment 用完整集合
-      交集/第一个集合大小（Mash `within` 语义，原为 merge-common 系统性
-      低估 25–35%）；(3) sketch 构建流式化（滚动 O(k) 窗口 + 增量
-      bottom-k），内存从 O(基因组长度) 降到 O(sketch size)（4.6 Mb 基因组
-      峰值 RSS 90 MB→15.8 MB）；(4) 空集不再输出 NaN；(5) sketch 加载
-      文件级并行 + bottom-k 预筛（4 对场景 -p4：1.34 s→0.23 s，Mash
-      参照 0.18 s）。默认输出过滤差异（Mash 输出 shared=0 行、pgr 默认
-      过滤需 `--zero`）已在 docs/dist.md 说明。
-- [x] **FracMinHash 采样器落地**（2026-08-08）：`dist seq --sampler frachash`
-      → 现为独立命令 `dist frac`（canonical k-mer 保留 hash < u64::MAX/scale，
-      `--scale` 默认 1000）
-      + `--ci` 输出 ANI 95% 置信区间（正态近似）。无偏验证：5 株 × 10 对
-      与全 k=40 集合真值排序 **Spearman 1.0**、Jaccard 0.417 vs 真值
-      0.451（`dist pgi` 仅 0.095——syncmer 偏差）；MG1655×Sakai ANI
-      97.7% vs 真值 97.3%（详见 `benchmarks/dist-cohort-validation.md`）。
-- [x] **pgi 引擎 SD 灵敏度优化**（2026-08-06 已实现）：`sd search` 透传
-      pgi 参数，默认 `freq=50, kmer=31`——10 个 E. coli 整体漏检率
-      **13.1% → 0.26%**（e2348_69 高拷贝重复 562→0、sakai/e24377a 的
-      90–93% 分歧漏检归零）；剩余 11 个边缘个案（低复杂度结构）记为
-      已知限制（详见 `design/sd.md` §4.9）。
-- [x] repeat masking 闭环（2026-08-06）：e2e 回归已固化 + **遮蔽版验证完成**——
-      10 个 E. coli 基因组跑 `rept e-kmer` 三库 → `fa mask --hard` → `sd search`：
-      遮蔽 ~1.2%（IS 元件主导），遮蔽后 pgi/lastz 引擎 SD 检出收敛
-      （互相漏检 3.2%/6.0%，未遮蔽时 pgi 漏检 13.1%）；标准 SD 流程 =
-      先遮蔽再 `sd search --engine pgi`（默认 freq=50/k=31）
+- [x] **dist 命令族拆分 + Mash 兼容收尾**（2026-08-08）：`dist seq` 删除，
+      拆为 mini/mash/frac；denom/containment 语义、流式内存、空集、文件级
+      并行 + bottom-k 预筛全部对齐 Mash（详见
+      `benchmarks/bench-dist-mash-compat.md`、docs/dist.md）。
+- [x] **FracMinHash 采样器落地**（2026-08-08）：独立命令 `dist frac` + `--ci`，
+      无偏验证 Spearman 1.0（详见 `benchmarks/dist-cohort-validation.md`）。
+- [x] **pgi 引擎 SD 灵敏度优化**（2026-08-06）：默认 freq=50/k=31，漏检率
+      13.1%→0.26%（详见 `design/sd.md` §4.9）。
+- [x] **repeat masking 闭环**（2026-08-06）：先遮蔽再 `sd search --engine pgi`
       （详见 `design/sd.md` §4.10）。
-- [x] tube 工作流"库 vs 基因组"失效重测（2026-08-06）：greedy 已移除、tube
-      唯一流程；MG1655 vs TnCentral `rept e-align` 正常检出（71.6 kb，
-      79% 与 e-kmer 重叠），**失效未复现**（随 syncmer/排序键修复消失），
-      无需改动（来源：`audit/audit-rept-sd.md`）。
+- [x] **tube 工作流失效重测**（2026-08-06）：未复现，无需改动
+      （来源：`audit/audit-rept-sd.md`）。
 
 ## 2. 等数据/场景到位再启动
 
-- [ ] `dist pgi` 的 syncmer 8/5 采样位置偏差（2026-08-08 发现，
-      `benchmarks/dist-cohort-validation.md`）：近缘/含共享重复元件的
-      基因组间 Jaccard 严重低估（e2348×cft073：0.095 vs 全 k=40 真值
-      0.451）。**注意（2026-08-08 用户提醒）**：这是采样集合交集的固有
-      行为，不是可"修复"的 bug——pgi 的 syncmer 是 align pgi（FastGA
-      兼容比对）的锚点基石，不能换 FracMinHash（双选概率 1/scale、
-      scale=1000 时锚点只剩 1/1000 且无窗口保证，链化失效）。正确分工：
-      pgi+syncmer = 比对/排序；**无偏数值 ANI 用 `dist seq --sampler
-      frachash` → 现为 `dist frac`**（已实现 + CI）。补充（2026-08-08）：containment 略稳
-      于 jaccard（相对偏差 34% vs 39%、排序 ρ 0.66 vs 0.52，但仍不可靠）；
-      `.pgi` 约 FASTA 的 27×（37.6MB vs 1.4MB），**距离计算不应为它建
-      索引**（初筛用 `.hv`、数值用 frachash，见 docs/dist.md 分层建议）。
-- [ ] 稀疏 s=1 的完整 45 对 cohort 复测（2026-08-08 仅 5 株 10 对验证
-      ρ=0.988；原 s=3 是 10 株 45 对）：等 10 株数据到位后补全，确认
-      s=1 排序一致性（理论 + 10 对实测已支持，此为收尾验证）。
-- [x] FracMinHash containment/ANI 偏差校正评估（2026-08-08 完成，Hera
-      2023 论文已读：Hera et al., *Genome Res* 33(7):1061–1068,
-      doi:10.1101/gr.277651.123）：原"~10% Jensen 偏差"是 **k 不匹配
-      假象**（frachash k=21 vs 全 k=40 真值）；同 k=21 对照（5 株 × 10
-      对）偏差仅 0.3–2.3%（正负对称 = 采样方差）。Hera 校正因子
-      (1−(1−s)^|A|) 对 |A|≥10⁵ ≈ 1，大肠杆菌/默认 scale 场景无校正
-      效果；Theorem 8 CI 需对 p 数值求解、与现有正态近似差异小。
-      **结论：不实现**，`dist frac` containment/ANI 保持现状（数据见
-      `benchmarks/bench-dist-mash-compat.md` 同 k 对照节；触发条件 =
-      极短序列 |A|<~100 + 大 scale 场景出现时再评估）。
-- [x] 重新审视 `.hv` 路径的稀疏选择（2026-08-08 已分析 + s=1 已落地）：
-      稀疏是历史性能优化产物（非有意设计）但理论已补齐（§2.7/§6.5/§6.6）；
-      权衡 = 编码瓶颈场景用稀疏 s=1（~50× 快 + 大 D 免费精度）、小规模
-      用稠密 bit；s=1 已落地且 cohort 复测（5 株 10 对 Spearman 0.988）
-      通过。剩余：实施方案层面的最终定夺（用户）。
-- [x] FASTA `dist hv` 量纲问题（2026-08-08 已修复，`design/hv.md` §3.4）：
-      `load_hv_from_fasta` / `load_hv_from_fasta_syncmer` 改用 `hash_hv_bit`；
-      模拟 Jaccard 0.102 vs 真值 0.091、两株 E. coli 实测输出合理
-      （测试 `test_hash_hv_bit_jaccard_accurate`）。
-- [ ] 4 万 E. coli cohort 端到端：pgr 核心步骤（PAF 索引/查询/图）已就绪，等真实 cohort 数据；
-      到位后重跑 4 万规模基准，按 `paf-pangenome.md` §5.2 判断标准选优化项，再做应用层。
-      上游去冗余/sparsify 在 pgr 外（Mash + FastGA）；远期可封装 `pgr pl dedup` / `sparsify`
+- [x] **syncmer 采样位置偏差**（2026-08-08 量化收尾）：pgi（k=40）与
+      `dist hv --sampler syncmer`（s-mer=8）同为 syncmer 位置漂移导致的交集
+      低估，数值不可信、排序弱于 frac；**不可修复**（pgi syncmer 是 align
+      锚点基石）。分工：pgi+syncmer=比对/排序、数值 ANI=`dist frac`；
+      体验入口 = `dist hv --sampler syncmer` / `dist pgi`
+      （详见 `benchmarks/dist-cohort-validation.md`）。
+- [ ] 稀疏 s=1 完整 45 对 cohort 复测：等 10 株数据（5 株 10 对已验 ρ=0.988）。
+- [x] **FracMinHash containment 偏差评估**（2026-08-08）：原 10% 偏差是
+      k 不匹配假象，同 k 偏差 1–2%（采样方差）；Hera 校正对大基因组无效，
+      **不实现**（详见 `benchmarks/bench-dist-mash-compat.md` 同 k 对照节）。
+- [x] **`.hv` 稀疏选择**（2026-08-08 已落地 s=1）：理论补齐 + cohort 复测
+      通过；剩余实施方案定夺（用户）（详见 `design/hv.md` §2.7）。
+- [x] **FASTA `dist hv` 量纲问题**（2026-08-08 已修复）：改用 `hash_hv_bit`
+      （详见 `design/hv.md` §3.4）。
+- [ ] 4 万 E. coli cohort 端到端：核心步骤就绪，等真实 cohort 数据
       （来源：`ecoli-cohort.md`）。
-- [ ] 人类规模（GRCh38/CHM13）验证：核对 `.pgi` 字段上限、构建/比对内存与耗时，与 FastGA
-      对照；同时决定 `--sym` 在真核场景是否值得做（来源：`design/pgi-align.md` §7.2）。
-- [ ] pbit 自动路由：留待多样性 cohort 数据证明收益（来源：`design/pbit.md` 顶部决策）。
-- [ ] pbit HV sketch 内嵌（决策 B）：触发条件 = "无源 FASTA、仅归档、需距离粗筛"的真实工作流。
-- [ ] `--sym` 场景开关：先量化方向偏差（45 对 cohort 抽 5–10 对跑 (A,B) vs (B,A)），
-      并确认 `sd cross` 是否需要双向全量；量化完再实现（来源：`design/pgi-align.md` §7.4.1）。
-- [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项；当前非优先级
-      （来源：`design/pgi-query-layer.md` 目标 4）。
-- [ ] `dist mash` 序列级并行（单文件多 record，对齐 Mash `sketchFileBySequence`）：
-      需流式背压管道（有界 channel，避免物化记录使内存回归 O(基因组长度)）；
-      触发条件 = 单文件多 contig 的大规模草图场景（当前文件级并行已覆盖
-      多文件用例，见 `benchmarks/bench-dist-mash-compat.md` 性能节）。
+- [ ] 人类规模（GRCh38/CHM13）验证：`.pgi` 字段上限、内存/耗时与 FastGA
+      对照（来源：`design/pgi-align.md` §7.2）。
+- [ ] pbit 自动路由：等多样性 cohort 数据证明收益（来源：`design/pbit.md`）。
+- [ ] pbit HV sketch 内嵌（决策 B）：触发 = 无源 FASTA 归档需距离粗筛。
+- [ ] `--sym` 场景开关：先量化方向偏差再实现（来源：`design/pgi-align.md` §7.4.1）。
+- [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项
+      （来源：`design/pgi-query-layer.md`）。
+- [ ] `dist mash` 序列级并行：等单文件多 contig 大规模场景（文件级并行
+      已覆盖多文件，见 `benchmarks/bench-dist-mash-compat.md` 性能节）。
 
 ## 3. 低风险审计记录项（可顺手修）
 
-- [x] `dist mini`（原 `dist seq`）/ `dist hv` 的 minimizer 默认参数对 DNA 不充分
-      （2026-08-08 已修复）：默认 k=7 的 2-bit 编码仅 2^14 空间 →
-      unique minimizer ≈ 16383（4.6Mb 基因组饱和），采样严重不足；
-      `resolve_kmer_window` 现对 DNA minimizer 默认 k=21/w=5（与文档
-      docs/dist.md 一致），实测 MG1655×Sakai mash 0.023 → ANI 97.7%
-      （真值 97.3%）。
-- [ ] PAF 输出 `query_length` / `target_length` 恒 0：需改索引格式持久化 `src_size`，
-      属跨格式变更，**待决策**：改 `.paf.idx` 持久化 src_size 才能填充，
-      影响索引格式兼容性（来源：`audit/audit-paf.md`）。
-- [ ] `syncmer.rs` 参考实现与 `collect_one_contig` 重复发射同一位置，消费方已去重，
-      可合并——**暂缓**：涉及 pgi build 种子发射核心，收益小风险高，消费方已去重
+- [x] minimizer 默认参数对 DNA 不充分（2026-08-08 已修复）：DNA 默认
+      k=21/w=5（`resolve_kmer_window`）。
+- [ ] PAF `query_length`/`target_length` 恒 0：**待决策**——改 `.paf.idx`
+      持久化 src_size，影响索引格式兼容性（来源：`audit/audit-paf.md`）。
+- [ ] `syncmer.rs` 重复发射同一位置：**暂缓**——消费方已去重，收益小风险高
       （来源：`audit/audit-rept-sd.md`）。
 
 ## 4. 技术债（有空再议）
 
-- [x] HV 矢量化提速不明显（2026-08-07 已解决）：`hash_hv_bit` / `hash_hv_i8`
-      以 AVX2（256-bit）为主实现（跳步 RapidRng + 块主序 + 位展开），
-      bit ±1 编码实测 ~4.8×（相对旧 bit）/ ~3.1×（相对旧 i8）、
-      i8 保语义 ~2.1×；AVX-512 仅作基准参考不参与分派，无 AVX2 自动降级
-      （基准见 `benchmarks/bench-simd-hv-jaccard.md` §2/§5）。
-- [ ] 命令树三跳 dispatch 宏简化，防新增命令漏注册（来源：§8.3）。
-- [ ] `fas` 模块职责过重（20 子命令），`fas multiz` 等复杂逻辑考虑拆分（来源：§8.6）。
+- [x] HV 矢量化提速不明显（2026-08-07 已解决）：AVX2 为主，bit ±1 ~4.8×
+      （详见 `benchmarks/bench-simd-hv-jaccard.md`）。
+- [ ] `fas` 模块职责过重（20 子命令）考虑拆分（来源：§8.6）。
 
 ## 5. 明确不做（避免重复立项）
 
-- Gap_Improver、完整 LCP、`.1aln`、trace points、ALNchain、GDB/GIX 分片：已裁定不做
-  （来源：`design/pgi-align.md` §6）。
-- 多 mask union：暂缓，低优先便利（§7.5）。
-- `-S` 对称 adaptamer：默认不做，仅场景开关候选（§7.4.1）。
-- hybrid 逻辑留在 `cmd_pgr/`（commit `d5281bc`，作者 2026-08-06 确认有意为之，
-  消除跨模块导入开销、代码仅该命令使用；不回迁 libs，不再作为技术债讨论）。
-- sd 边界扩展（BISER MAX_EXTEND 移植）：**已评估后不做**（2026-08-06，与 lastz
-  比较：pgi hit 左边界仅短 2–6 bp、右边界一致，收益边际；且灵敏度优化
-  freq=50/k=31 已解决更实质的漏检问题——详见 `design/sd.md` §4.8/§4.9）。
-- `dist mash` murmur3 SIMD/换实现优化：**已评估后不做**（2026-08-08）——单对
-  已对齐 Mash 1.3×（0.24 vs 0.18 s），换哈希实现需重验字节级兼容，风险大于收益。
+- Gap_Improver、完整 LCP、`.1aln`、trace points、ALNchain、GDB/GIX 分片
+  （`design/pgi-align.md` §6）；多 mask union（§7.5）；`-S` 对称 adaptamer
+  （§7.4.1）；hybrid 逻辑留 `cmd_pgr/`（commit `d5281bc`，有意为之）。
+- sd 边界扩展（BISER MAX_EXTEND）：已评估不做（`design/sd.md` §4.8/§4.9）。
+- `dist mash` murmur3 SIMD：已评估不做（1.3× 差距可接受，风险大于收益）。
+- 命令树 dispatch 宏简化：已评估不做（用户裁定——宏抹消对注册/分发代码
+  的显式理解；`tests/cli_consistency.rs` 已核对注册一致性）。
