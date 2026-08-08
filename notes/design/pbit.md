@@ -877,8 +877,8 @@ Reference Table 上补二分查找即可，无需格式变更。
 
 ## 参考资料
 
-- 多参考扩展设计过程与 .pgi 消费者规划：旧 `pbit-index-extension.md` 已并入
-  本文（该文件现为跳转 stub）；
+- 多参考扩展设计过程与 .pgi 消费者规划：早期设计稿已并入本文（详见
+  "多参考"章节与"附录：早期开放项决策稿"）；
 - 距离消费者验证数据：`notes/design/hv.md`；
 - pgi 比对管线（`.pgi` 的消费者）：`notes/design/pgi-align.md`；
 - AGC 算法参考：`notes/references/agc-cpp.md`。

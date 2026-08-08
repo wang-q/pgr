@@ -109,6 +109,10 @@ explicit `.pgi` indexes.
 * 2bit inputs are preferred for speed and random access.
 * `.pgi` files are not gzip-compressed.
 * Both indexes in a comparison must use identical `-k/--smer/--window`.
+* `dist pgi` distance is **not reliable for near-identity pairs** (≥95%
+  ANI): the merge-distance correlation with ANI is weak (ρ ≈ −0.71), due to
+  syncmer sampling drift. Use it for coarse distance/indexing, not for ANI
+  ranking (use `dist frac`/`dist mash` for numeric ANI).
 
 ## Examples
 

@@ -130,6 +130,11 @@ The output feeds directly into
   bases are replaced by N and produce no seeds or blocks, so a lowercase
   (soft-masked) copy is not aligned against its uppercase twin. Use
   `pgr pgi build --mask` for the same behavior on explicitly built indexes.
+* **Chain granularity vs pbit**: `align pgi` emits PSL blocks directly
+  (median span ~1 kb on real genomes), far below pbit's 4 kb segment size.
+  For pbit's PAF-driven CIGAR encoding, chain the blocks first
+  (`pgr pl chainnet --t-name '' --q-name ''` → `pgr maf to-paf`); the
+  resulting big chains cover pbit segments well.
 
 ## Examples
 

@@ -1,17 +1,18 @@
 # pgr pbit
 
-> **状态**：pbit 处于开发早期、未对外发布；多参考等新特性正在设计评审中
-> （设计决策见 `notes/design/pbit.md` 顶部的开放项），命令接口
-> 和文件格式可能变化。
+> **状态**：pbit 格式 v1010；多参考、PAF 驱动 CIGAR/Identity 编码、
+> `to-paf` 无损还原均已落地，`create`/`append` 强制要求 PAF
+> （设计决策见 `notes/design/pbit.md`）。
 
 `pgr pbit` 用于管理 **pbit**（population 2bit + delta）归档文件。pbit 是 pgr 原生的群体基因组压缩格式，
-它将参考基因组以标准 2bit 记录存储，并将每个样本以 LZ-diff 或 PAF 驱动的 CIGAR delta 编码压缩存储，
+它将参考基因组以标准 2bit 记录存储，并将每个样本以 **PAF 驱动的 CIGAR delta 编码**压缩存储
+（纯匹配段为零开销 Identity 引用）；PAF 未覆盖或无匹配的段用 LZ-diff/Raw 兜底，
 适合在保留随机访问能力的同时压缩大量同源样本。
 
 ## 核心定位
 
 - **定位**：群体基因组序列压缩与随机访问工具。
-- **输入**：参考 FASTA 文件、样本 FASTA 文件（支持 plain 或 `.gz`），可选 PAF 比对文件。
+- **输入**：参考 FASTA 文件、样本 FASTA 文件（支持 plain 或 `.gz`），**PAF 比对文件（必需）**。
 - **输出**：`.pbit` 二进制归档文件，或从归档中提取的 FASTA 文件。
 - **互补**：
   - 上游：`pgr fa`、`pgr fa gz`（准备 FASTA），`minimap2`、`wfmash`（生成 PAF）。
@@ -48,10 +49,11 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
 
 *   `-r, --ref <file>`: 参考 FASTA 文件（必需，可重复指定多个参考，支持 plain 或 `.gz`）。
 *   `-i, --infile <file>`: 样本 FASTA 文件，可多次指定（与 `--name` 互斥）。
-*   `--name <file>`: TSV 文件，每行格式为 `sample_name<TAB>fasta_path[<TAB>paf_path]`
-    `[<TAB>ref_name]`（第 4 列选择参考，名或序号，默认 0；与 `-i/--infile` 和 `--paf` 互斥）。
-*   `-p, --paf <file>`: 与 `-i` 顺序对应的 PAF 文件；有 PAF 的样本使用 CIGAR delta 编码，
-    无 PAF 的样本使用 LZ-diff（与 `--name` 互斥）。
+*   `--name <file>`: TSV 文件，每行格式为 `sample_name<TAB>fasta_path<TAB>paf_path`
+    `[<TAB>ref_name]`（第 3 列 PAF **必需**；第 4 列选择参考，名或序号，默认 0；
+    与 `-i/--infile` 和 `--paf` 互斥）。
+*   `-p, --paf <file>`: 与 `-i` 顺序对应的 PAF 文件（**必需**，与 `--name` 互斥）；
+    传**空 PAF 文件**可禁用 CIGAR 编码（所有段走 LZ-diff/Raw 兜底）。
 *   `-s, --segment-size <int>`: 参考序列分段大小，默认 4096 bp。
 *   `-k, --kmer-len <int>`: LZ-diff 哈希 k-mer 长度，默认 15。
 *   `-l, --min-match-len <int>`: LZ-diff 最小匹配长度，默认 18。
@@ -66,38 +68,39 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
    存进存出一致（v1005+）。
 *   `--paf` 与 `--name` 互斥；如需为每个样本指定不同 PAF，请使用 `--name` 的第三列。
 *   PAF 文件需包含 `cg:Z:` CIGAR，建议使用 `--eqx` 输出（如 `minimap2 -cx asm20 --eqx`）。
+*   无 `cg:Z` 的 PAF 记录跳过 CIGAR 编码、原样存行还原（`to-paf` 仍可输出）。
+*   从 MAF 建立归档（chainnet 输出为 MAF）：
+    `pgr maf to-paf in.maf | pgr pbit create -r ref.fa -i sample.fa -p stdin -o out.pbit`
+    （`-p stdin` 从管道读 PAF）。
+*   实测边际 delta（相对 gzip-9 压缩的样本）：近缘样本 ≈ 50–57%，分歧
+    （~90% ANI）≈ 81%。归档后建议跑 `pbit to-fa` 做覆盖率质量门。
 
 #### Examples
 
 1.  **创建单样本归档**:
     ```bash
-    pgr pbit create -r ref.fa -i sample.fa -o out.pbit
-    ```
-
-2.  **创建多样本归档**:
-    ```bash
-    pgr pbit create -r ref.fa -i s1.fa -i s2.fa -i s3.fa -o cohort.pbit
-    ```
-
-3.  **使用 PAF 驱动编码**:
-    ```bash
     minimap2 -cx asm20 --eqx ref.fa sample.fa > sample.paf
     pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
     ```
 
-4.  **通过 TSV 批量指定样本和 PAF**:
+2.  **创建多样本归档**:
+    ```bash
+    pgr pbit create -r ref.fa -i s1.fa -p s1.paf -i s2.fa -p s2.paf -o cohort.pbit
+    ```
+
+3.  **通过 TSV 批量指定样本和 PAF**:
     ```bash
     cat samples.tsv
     # sample1	/path/to/s1.fa	/path/to/s1.paf
-    # sample2	/path/to/s2.fa
+    # sample2	/path/to/s2.fa	/path/to/empty.paf
     pgr pbit create -r ref.fa --name samples.tsv -o cohort.pbit
     ```
 
-5.  **多参考归档**（样本经 TSV 第 4 列路由到参考）:
+4.  **多参考归档**（样本经 TSV 第 4 列路由到参考）:
     ```bash
     cat samples.tsv
-    # s1	/path/to/s1.fa		mg1655
-    # s2	/path/to/s2.fa		1
+    # s1	/path/to/s1.fa	/path/to/s1.paf	mg1655
+    # s2	/path/to/s2.fa	/path/to/s2.paf	1
     pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv -o cohort.pbit
     ```
 
@@ -124,7 +127,7 @@ pgr pbit append [OPTIONS] <archive.pbit> -i <sample.fa>...
 *   `<archive.pbit>`: 现有 pbit 归档文件（必需）。
 *   `-i, --infile <file>`: 要追加的样本 FASTA 文件，可多次指定。
 *   `--name <file>`: TSV 文件，格式同 `create`（与 `-i` 互斥）。
-*   `-p, --paf <file>`: 与 `-i` 顺序对应的 PAF 文件。
+*   `-p, --paf <file>`: 与 `-i` 顺序对应的 PAF 文件（**必需**；空 PAF 可禁用 CIGAR）。
 *   `-o, --outfile <file>`: 输出文件名。省略则原地修改输入归档。
 
 #### Notes
@@ -136,12 +139,12 @@ pgr pbit append [OPTIONS] <archive.pbit> -i <sample.fa>...
 
 1.  **原地追加样本**:
     ```bash
-    pgr pbit append archive.pbit -i new_sample.fa
+    pgr pbit append archive.pbit -i new_sample.fa -p new_sample.paf
     ```
 
 2.  **追加到新的归档**:
     ```bash
-    pgr pbit append archive.pbit -i s1.fa -i s2.fa -o new_archive.pbit
+    pgr pbit append archive.pbit -i s1.fa -p s1.paf -i s2.fa -p s2.paf -o new_archive.pbit
     ```
 
 ---
@@ -305,6 +308,32 @@ pgr pbit to-fa [OPTIONS] <infile> -o <outdir>
     pgr pbit to-fa archive.pbit -o outdir/ -s sample1
     ```
 
+### to-paf
+
+将归档中内嵌的比对（PAF）导出为标准 PAF（12 列 + `cg:Z` 等标签）。
+
+```bash
+pgr pbit to-paf [OPTIONS] <infile> -o <out.paf>
+```
+
+#### Options
+
+*   `-o, --outfile <file>`: 输出文件名（必需）。
+*   `-s, --sample <name>`: 只导出指定样本的比对。
+
+#### Notes
+
+*   大链（主链）从归档 CIGAR 重建（`cg/cs/gi/bi/ms` 重算）；碎链和无
+    `cg:Z` 记录原样还原输入行。
+*   PAF 逐条可还原（"存进去什么，出来什么"）；坐标/链/CIGAR 均可访问。
+
+#### Examples
+
+1.  **导出全部样本的比对**:
+    ```bash
+    pgr pbit to-paf archive.pbit -o out.paf
+    ```
+
 ---
 
 ## 典型工作流
@@ -313,7 +342,8 @@ pgr pbit to-fa [OPTIONS] <infile> -o <outdir>
 
 ```bash
 # 1. 创建归档
-pgr pbit create -r ref.fa -i sample.fa -o cohort.pbit
+minimap2 -cx asm20 --eqx ref.fa sample.fa > sample.paf
+pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o cohort.pbit
 
 # 2. 查看统计
 pgr pbit stat cohort.pbit
@@ -322,16 +352,15 @@ pgr pbit stat cohort.pbit
 pgr pbit to-fa cohort.pbit -o outdir/
 ```
 
-### 场景 B：含结构变异的样本使用 PAF 驱动编码
+### 场景 B：从 MAF 建立归档（chainnet 链路）
 
 ```bash
-# 1. 使用 minimap2 生成带 CIGAR 的 PAF
-minimap2 -cx asm20 --eqx ref.fa sample.fa > sample.paf
+# 1. 比对 + 链化（chainnet 输出 MAF），转 PAF 并管道进 pbit
+pgr align pgi ref.fa sample.fa -o ref_vs_sample.psl
+pgr pl chainnet ref.fa sample.fa ref_vs_sample.psl --t-name '' --q-name '' -o chain_out
+pgr maf to-paf chain_out/*.maf | pgr pbit create -r ref.fa -i sample.fa -p stdin -o out.pbit
 
-# 2. 创建 pbit 归档
-pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o cohort.pbit
-
-# 3. 追加更多样本
+# 2. 追加更多样本
 pgr pbit append cohort.pbit -i sample2.fa -p sample2.paf
 ```
 
@@ -351,22 +380,23 @@ pgr fas consensus region.fa
 
 ### `--name` TSV 格式
 
-`--name` 文件每行两到四列（后两列可选），制表符分隔：
+`--name` 文件每行三到四列（第 3 列 PAF 必需，第 4 列可选），制表符分隔：
 
 ```text
-sample_name<TAB>fasta_path[<TAB>paf_path][<TAB>ref_name]
+sample_name<TAB>fasta_path<TAB>paf_path[<TAB>ref_name]
 ```
 
 *   空行和 `#` 开头的行被忽略。
-*   第三列缺失时，该样本使用 LZ-diff 编码。
-*   第三列存在时，使用该 PAF 文件进行 CIGAR delta 编码。
+*   第三列为 PAF 文件路径（**必需**）；传空 PAF 文件可禁用 CIGAR 编码
+   （该样本全部段走 LZ-diff/Raw 兜底）。
 *   第四列（多参考时）选择该样本所属参考，可为参考名或序号；缺省时路由到参考 0。
 
 ### pbit 文件限制
 
 *   二进制格式，需要随机访问（seek），不支持 stdin 或 `.gz` 输入。
 *   仅支持 `ACGTN` 字符。
-*   样本 contig 名必须与参考 contig 名匹配才会被编码。
+*   PAF 驱动的 CIGAR 编码不要求样本 contig 名与参考同名（按 PAF 记录映射）；
+   无 PAF 覆盖的段走 LZ-diff 内容匹配 / Raw 兜底。
 
 ## 参考
 

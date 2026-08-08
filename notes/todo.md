@@ -101,13 +101,18 @@ fmt/clippy/test 确认。
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
       一并处理）（来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
-- [ ] **用户文档改动清单落地（#22）**：dist.md 部分**已完成**（frac 无偏/
-      ANI 推荐、hv 粗分层、mini 排序用已写入 docs/dist.md）；剩余
-      pbit.md（强制 PAF 说明——当前仍写"可选 PAF/LZ 兜底"，过时）、
-      align-pgi.md（链粒度与 pbit 段不匹配）、pgi.md（近缘距离弱）
+- [x] ~~**用户文档改动清单落地（#22）**~~ → **已完成（2026-08-09）**：
+      dist.md（frac 无偏/ANI 推荐、hv 粗分层、mini 排序用）此前已落地；
+      pbit.md（强制 PAF、空 PAF 禁用 CIGAR、to-paf 命令、MAF 管道、边际
+      delta、无 cg:Z 存行）、align-pgi.md（链粒度 ~1 kb vs pbit 4 kb 段，
+      建议 chainnet 链路）、pgi.md（近缘距离弱 ρ≈−0.71）本轮补齐
       （来源：`genome-nn-query.md` §8.6）。
 - [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree
       用于 PAF 链式化 / POA 排序仍待评估（PAF 当前未明确需要链式化）
       （来源：`chain-algorithms.md` §12.3）。
+- [ ] **FastK/Profex 原生迁移（设计稿，未实现）**：`rept s-kmer`/`e-kmer`
+      仍依赖外部 FastK/Profex（CBP 安装）；设计稿 = `design/fastk-migration.md`
+      方案 B（`libs/kmer` 原生 k-mer 计数 + profile 生成 + run 提取，不做
+      super-mer/磁盘分桶/外部格式兼容），`libs/kmer` 尚未实现。
