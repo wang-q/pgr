@@ -1,0 +1,308 @@
+//! Build a canonical k-mer count table and persist it as `.pgrk`.
+
+use super::KmerTable;
+use anyhow::Context;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+/// File magic for the `.pgrk` k-mer table cache.
+const PGRK_MAGIC: &[u8; 4] = b"PGRK";
+/// Format version.
+const PGRK_VERSION: u32 = 1;
+
+/// Fixed-size `.pgrk` header, serialized with bincode (the entry payload is
+/// written separately so raw `Vec<u128>` keys are never bincode-encoded).
+#[derive(Serialize, Deserialize)]
+struct PgrkHeader {
+    magic: [u8; 4],
+    version: u32,
+    k: u32,
+    n_entries: u64,
+    key_bytes: u32,
+}
+
+/// Bincode byte size of the fixed-size [`PgrkHeader`] (4+4+4+8+4 LE fields).
+const PGRK_HEADER_LEN: usize = 24;
+
+/// Build a canonical k-mer count table from `seqs`.
+///
+/// Every N-free k-mer window contributes its canonical key; counts accumulate
+/// across all sequences (FastK `-p` semantics). `k` must be in `1..=64` so
+/// `2*k` bits fit a `u128` key.
+pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
+    anyhow::ensure!(k > 0 && k <= 64, "k must be in 1..=64, got {k}");
+    let mut per_seq: Vec<Vec<u128>> = seqs
+        .par_iter()
+        .map(|seq| {
+            let mut keys = Vec::new();
+            super::canonical_keys(seq, k, |_, key| keys.push(key));
+            keys
+        })
+        .collect();
+    let n: usize = per_seq.iter().map(Vec::len).sum();
+    let mut keys: Vec<u128> = Vec::with_capacity(n);
+    for v in &mut per_seq {
+        keys.append(v);
+    }
+    if keys.is_empty() {
+        return Ok(KmerTable {
+            k,
+            keys,
+            counts: Vec::new(),
+        });
+    }
+    let n_keys = keys.len();
+    crate::libs::ds::radix_sort::radix_sort_u128_par(
+        &mut keys,
+        &mut vec![0u8; n_keys],
+        2 * k as u32,
+    );
+    // Group equal keys (now contiguous after the sort) into counts.
+    let mut counts: Vec<u32> = Vec::with_capacity(keys.len());
+    let mut i = 0usize;
+    let mut w = 0usize;
+    while i < keys.len() {
+        let key = keys[i];
+        let mut j = i + 1;
+        while j < keys.len() && keys[j] == key {
+            j += 1;
+        }
+        keys[w] = key;
+        counts.push((j - i).min(u32::MAX as usize) as u32);
+        w += 1;
+        i = j;
+    }
+    keys.truncate(w);
+    Ok(KmerTable { k, keys, counts })
+}
+
+/// Write `table` to `path` (`.pgrk`) atomically: header (bincode) plus one
+/// packed key of `ceil(2k/8)` bytes and a `u32` count per entry.
+pub fn save(table: &KmerTable, path: &Path) -> anyhow::Result<()> {
+    let key_bytes = (2 * table.k).div_ceil(8);
+    let header = PgrkHeader {
+        magic: *PGRK_MAGIC,
+        version: PGRK_VERSION,
+        k: table.k as u32,
+        n_entries: table.keys.len() as u64,
+        key_bytes: key_bytes as u32,
+    };
+    let mut buf = bincode::serialize(&header).context("serializing pgrk header")?;
+    buf.reserve(table.keys.len() * (key_bytes + 4));
+    let mut packed = vec![0u8; key_bytes];
+    for (key, count) in table.keys.iter().zip(&table.counts) {
+        crate::libs::pgi::pack_kmer(*key, table.k, &mut packed);
+        buf.extend_from_slice(&packed);
+        buf.extend_from_slice(&count.to_le_bytes());
+    }
+    let mut name = path.as_os_str().to_os_string();
+    name.push(format!(".tmp.{}", std::process::id()));
+    let tmp = PathBuf::from(name);
+    {
+        let mut w = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        w.write_all(&buf)?;
+        w.flush()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Read a `.pgrk` table written by [`save`], validating magic/version/length
+/// and that the stored `k` matches the requested one.
+pub fn load(path: &Path, k: usize) -> anyhow::Result<KmerTable> {
+    let bytes = std::fs::read(path)?;
+    let header_bytes = bytes
+        .get(..PGRK_HEADER_LEN)
+        .context("truncated pgrk header")?;
+    let header: PgrkHeader = bincode::deserialize(header_bytes).context("bad pgrk header")?;
+    if &header.magic != PGRK_MAGIC {
+        anyhow::bail!("not a pgr k-mer table (bad magic)");
+    }
+    if header.version != PGRK_VERSION {
+        anyhow::bail!(
+            "unsupported pgrk version {} (expected {PGRK_VERSION})",
+            header.version
+        );
+    }
+    let stored_k = header.k as usize;
+    anyhow::ensure!(
+        stored_k == k,
+        "repeat table k={stored_k} conflicts with -k {k} (rebuild)"
+    );
+    let key_bytes = header.key_bytes as usize;
+    anyhow::ensure!(
+        key_bytes == (2 * k).div_ceil(8),
+        "repeat table key size {key_bytes} does not match k={k}"
+    );
+    let n_entries = header.n_entries as usize;
+    let entry_len = key_bytes
+        .checked_add(4)
+        .and_then(|e| e.checked_mul(n_entries))
+        .context("pgrk entry count overflow")?;
+    anyhow::ensure!(
+        bytes.len() == PGRK_HEADER_LEN + entry_len,
+        "truncated pgrk table ({} bytes, expected {})",
+        bytes.len(),
+        PGRK_HEADER_LEN + entry_len
+    );
+
+    let mut keys = Vec::with_capacity(n_entries);
+    let mut counts = Vec::with_capacity(n_entries);
+    let mut packed = vec![0u8; key_bytes];
+    let mut off = PGRK_HEADER_LEN;
+    for _ in 0..n_entries {
+        packed.copy_from_slice(
+            bytes
+                .get(off..off + key_bytes)
+                .context("truncated pgrk entry")?,
+        );
+        keys.push(crate::libs::pgi::unpack_kmer(&packed, k));
+        let count_bytes: [u8; 4] = bytes
+            .get(off + key_bytes..off + key_bytes + 4)
+            .context("truncated pgrk count")?
+            .try_into()
+            .unwrap();
+        counts.push(u32::from_le_bytes(count_bytes));
+        off += key_bytes + 4;
+    }
+    Ok(KmerTable { k, keys, counts })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::nt::rc_key;
+
+    /// Deterministic pseudo-random DNA block (same LCG as pgi tests).
+    fn random_block(len: usize, seed: u64) -> Vec<u8> {
+        let bases = *b"ACGT";
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                bases[(x >> 33) as usize & 3]
+            })
+            .collect()
+    }
+
+    /// A random block whose k-mer windows are all canonical-unique (needed
+    /// when a test asserts exact per-window counts on a duplicated block).
+    fn unique_block(k: usize, seed0: u64) -> Vec<u8> {
+        (0..100u64)
+            .map(|i| random_block(80, seed0 + i))
+            .find(|b| {
+                build_table(std::slice::from_ref(b), k).unwrap().keys.len() == b.len() - k + 1
+            })
+            .expect("a collision-free block must exist")
+    }
+
+    #[test]
+    fn canonical_keys_match_rc_key() {
+        // Regression for the count/profile canonicalization: every emitted
+        // key must equal min(forward, rc_key) of the window, and N splits
+        // windows (no key emitted for a window containing N).
+        let seq = b"ACGTACGTNNACGTACGTACGTTTTT".to_vec();
+        let mut expect = Vec::new();
+        let windows = crate::libs::nt::rolling_kmer_keys(&seq, 6);
+        for (p, key) in windows.iter().enumerate() {
+            if let Some(key) = key {
+                expect.push((p, (*key).min(rc_key(*key, 6))));
+            }
+        }
+        let mut got = Vec::new();
+        super::super::canonical_keys(&seq, 6, |p, key| got.push((p, key)));
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn build_counts_duplicates() {
+        // Each canonical k-mer of the duplicated block appears twice across
+        // the two copies; k-mers straddling N gaps are skipped entirely.
+        let block = unique_block(6, 42);
+        let mut seq = block.clone();
+        seq.extend_from_slice(&block);
+        let table = build_table(&[seq], 6).unwrap();
+        assert_eq!(table.k, 6);
+        assert!(!table.keys.is_empty());
+        // The first window's canonical key appears once per copy.
+        let fwd = crate::libs::nt::pack_kmer(&block[..6], 6).unwrap();
+        let canonical = fwd.min(rc_key(fwd, 6));
+        let idx = table.keys.partition_point(|&x| x < canonical);
+        assert_eq!(table.keys[idx], canonical);
+        assert_eq!(table.counts[idx], 2, "duplicated block k-mer must count 2");
+        // Total windows = duplicated sequence length - k + 1, all valid.
+        let total: u32 = table.counts.iter().sum();
+        assert_eq!(total as usize, 2 * block.len() - 6 + 1);
+    }
+
+    #[test]
+    fn build_counts_hand_checked() {
+        // Small sequence with a known canonical count:
+        // "AAAA" (k=2) has canonical keys AA (1x), and reverse pairs are
+        // merged (e.g. AC == GT canonical).
+        let table = build_table(&[b"AAAA".to_vec()], 2).unwrap();
+        let mut counts = std::collections::BTreeMap::new();
+        for (key, count) in table.keys.iter().zip(&table.counts) {
+            counts.insert(*key, *count);
+        }
+        let aa = crate::libs::nt::pack_kmer(b"AA", 2).unwrap();
+        assert_eq!(counts.get(&aa), Some(&3), "AA appears at 3 positions");
+        assert_eq!(table.keys.len(), 1, "one unique canonical k-mer");
+
+        // Case-insensitive: lowercase input merges into the same keys.
+        let lower = build_table(&[b"aaaa".to_vec()], 2).unwrap();
+        assert_eq!(table.keys, lower.keys);
+        assert_eq!(table.counts, lower.counts);
+    }
+
+    #[test]
+    fn n_runs_split_but_no_keys_inside() {
+        // A window touching N contributes nothing; flanks still count.
+        let table = build_table(&[b"ACGTACGTNNACGTACGT".to_vec()], 4).unwrap();
+        let total: u32 = table.counts.iter().sum();
+        // 18 bases, 15 windows; the 5 windows covering N positions 8..9
+        // (starts 5..9) are invalid, so 15 - 5 = 10 valid windows.
+        assert_eq!(total, 10);
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lib.pgrk");
+        let seqs = vec![
+            b"ACGTACGTACGTACGTACGTNNNACGTACGTACGTACGT".to_vec(),
+            b"TTTTTGGGGGCCCCCAAAAA".to_vec(),
+        ];
+        let table = build_table(&seqs, 9).unwrap();
+        save(&table, &path).unwrap();
+        let loaded = load(&path, 9).unwrap();
+        assert_eq!(loaded.k, table.k);
+        assert_eq!(loaded.keys, table.keys);
+        assert_eq!(loaded.counts, table.counts);
+    }
+
+    #[test]
+    fn load_rejects_truncated_and_wrong_k() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lib.pgrk");
+        let table = build_table(&[b"ACGTACGTACGTACGTACGT".to_vec()], 8).unwrap();
+        save(&table, &path).unwrap();
+
+        let full = std::fs::read(&path).unwrap();
+        std::fs::write(&path, &full[..full.len() - 5]).unwrap();
+        assert!(load(&path, 8).is_err(), "truncated pgrk must be rejected");
+        std::fs::write(&path, &full).unwrap();
+        assert!(
+            load(&path, 10).is_err(),
+            "k mismatch must be rejected as stale"
+        );
+
+        let bad = dir.path().join("bad.pgrk");
+        std::fs::write(&bad, b"XXXX").unwrap();
+        assert!(load(&bad, 8).is_err(), "bad magic must be rejected");
+    }
+}

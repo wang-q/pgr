@@ -110,9 +110,10 @@ src/
     │   └── graph/      #     DSU 图构建 + GFA 输出
     ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
     ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
+    ├── kmer/           #   canonical k-mer 计数/profile/重复 run 提取 (.pgrk 缓存)
     ├── sd/             #   分段重复检测核心
     ├── runlist/        #   runlist/.rg 区间核心 (IntSpan 构建、深度扫描线、merge 聚类、JSON I/O)
-    ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex + 内建 runlist 管道)
+    ├── pl/             #   pipeline 共享逻辑 (PipelineCtx + 内建 runlist 管道)
     ├── plot/           #   可视化 (dot/histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
     ├── rmblast.rs      #   RMBlast 重复遮蔽参数移植 (RepeatMasker 4.2.4)
@@ -243,7 +244,8 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 `pl` (pipelines) 模块定位特殊——它**编排命令与外部工具**（`chainnet`/`p2m`/`prefilter`
 完全用 pgr 自身命令，`ucsc` 需要 kent-tools），充当工作流 glue。这与 `chain`/`net` 模块的
 纯 Rust 实现形成互补：能用 Rust 就自己实现，复杂/成熟的用外部工具
-（trf、FastK/Profex、RMBlast 等外部工具编排在 `rept` 模块）。
+（trf、RMBlast 等外部工具编排在 `rept` 模块；`rept s-kmer` / `e-kmer` 的
+k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依赖）。
 
 > 注意（2026-08-06 与用户确认）：`pgr pl` 目前是"暂时没想好该放到哪边"的命令的
 > 临时存放处，定位可能随命令演化调整；新命令不要默认往 `pl` 里放。
@@ -332,8 +334,11 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 - `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity、best_crossover、
   merge_intervals、radix_sort），以及从外部 `intspan` crate 迁入的区间集合
   `IntSpan`（`intspan.rs`）与 `Range`（`range.rs`），API 与原 crate 一致
-- `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：FastK →
-  Profex → runlist 重复识别驱动）
+- `libs/kmer/`：canonical k-mer 计数表（`count.rs`，含 `.pgrk` 紧凑持久化）、
+  基因组 profile 生成（`profile.rs`）、profile → 重复 run 提取（`extract.rs`），
+  替代 FastK `-p/-t/-p:<table>` + Profex `-z`（设计：`notes/design/fastk-migration.md`）
+- `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：k-mer →
+  runlist 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `pgi build`
   比对锚点（dist 侧已改用 mini/mash/frac 草图，不再使用 syncmer）
 - `libs/nt.rs`：核苷酸类型与 2-bit k-mer 编解码（`pack_kmer`/`rc_key`/`rolling_kmer_keys`）

@@ -14,9 +14,6 @@ analysis; no repeat library is needed.
 
 * All operations are running in a tempdir and no intermediate files are retained.
 
-* External dependencies
-    * FastK / Profex
-
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
@@ -53,16 +50,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let _cwd_guard = ctx.enter()?;
 
-    let re_prof: regex::Regex = regex::Regex::new(
-        r"(?xi)
-            (?<start>\d+)       # start
-            \s*-\s*             # spacer
-            (?<end>\d+)         # end
-            \s*                 # spacer
-            \((?<depth>\d+)\)   # depth
-            ",
-    )?;
-
     let opts = pgr::libs::pl::RepeatOpts {
         pgr: ctx.pgr.clone(),
         abs_infile,
@@ -73,7 +60,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_ff,
         abs_repeat: None,
         keep_index: false,
-        re_prof,
         min_depth: Some(2),
     };
 

@@ -16,9 +16,6 @@ functionality of `RepeatMasker`.
 
 * All operations are running in a tempdir and no intermediate files are retained.
 
-* External dependencies
-    * FastK / Profex
-
 "###,
         )
         .arg(
@@ -72,14 +69,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let _cwd_guard = ctx.enter()?;
 
-    let re_prof: regex::Regex = regex::Regex::new(
-        r"(?xi)
-            (?<start>\d+)       # start
-            \s*-\s*             # spacer
-            (?<end>\d+)         # end
-            ",
-    )?;
-
     let opts = pgr::libs::pl::RepeatOpts {
         pgr: ctx.pgr.clone(),
         abs_infile,
@@ -90,7 +79,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_ff,
         abs_repeat: Some(abs_repeat),
         keep_index,
-        re_prof,
         min_depth: None,
     };
 

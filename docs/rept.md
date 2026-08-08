@@ -126,8 +126,6 @@ MG1655 (`tests/genome/mg1655.fa.gz`, NC_000913, 4,641,652 bp) looks like
 this:
 
 ```bash
-# Run each library serially: FastK-based commands are not safe to run in
-# parallel (three concurrent e-kmer runs crashed FastK with SIGSEGV)
 for lib in tncentral repbase dfam; do
     pgr rept e-kmer "$HOME/data/repeats/$lib.fa.gz" tests/genome/mg1655.fa.gz \
         --keep-index -o "$lib.json"
@@ -167,9 +165,9 @@ Notes:
 *   `trf` does not overlap `e-kmer` at all (tandem vs interspersed
     complement). `e-kmer` (TnCentral) + `trf` covers ~75.7 kb (1.63%) and
     ~91.5% of the RepeatMasker intervals.
-*   Run libraries serially: concurrent `e-kmer` runs crashed FastK with
-    SIGSEGV on RepBase. `--keep-index` caches each library table for reuse
-    (needs a writable directory next to the library).
+*   `--keep-index` caches each library's k-mer table next to the library
+    (`<library>.pgrk`; needs a writable directory next to the library), so
+    re-running the same library skips the table build.
 
 ## RepeatMasker (reference)
 
@@ -266,10 +264,6 @@ pgr rept e-kmer [OPTIONS] <repeat> <infile>
 | `ff` | | `--fill-fragment` | Int | Fill holes between repetitive fragments (default: 10) |
 | `keep_index` | | `--keep-index` | Flag | Keep the built repeat table next to the library for reuse |
 
-### Dependencies
-
-*   `FastK`, `Profex` (from FastK suite)
-
 ### Differences from RepeatMasker
 
 `e-kmer` is a fast k-mer-based approximation, not a full `RepeatMasker` replacement.
@@ -277,17 +271,20 @@ pgr rept e-kmer [OPTIONS] <repeat> <infile>
 *   **No repeat annotation**: `RepeatMasker` classifies each hit into a repeat family/class (`repeatmasker.out`). `e-kmer` only reports genomic intervals — it never labels a region with its repeat family.
 *   **k-mer sensitivity**: detection relies on k-mers shared with the repeat database. Highly diverged copies sharing few exact k-mers are missed or split into fragments; the `--fill-kmer` / `--fill-fragment` steps bridge small gaps but cannot recover long diverged copies.
 *   **Intervals only**: the output is a runlist of `chr:start-end` intervals (JSON), not a masked sequence. Feed it to `pgr fa mask --runlist` to soft-mask the genome.
-*   **External tools**: requires `FastK` / `Profex` in `$PATH`, plus a repeat database (Dfam, RepBase, etc.). Interval merging is done internally by `pgr runlist`.
+*   **No external tools**: k-mer counting, profile generation and run
+    extraction are native; only the repeat database itself (Dfam, RepBase,
+    etc.) is external. Interval merging is done internally by `pgr runlist`.
 *   **Use case**: suitable for a quick, cheap repeat-masking pass on large genomes. For annotation-grade results (family/class labels, consensus coverage), use `RepeatMasker`.
 
 ### Caching the repeat table
 
-`e-kmer` builds a FastK table from the repeat library on every run (in a
-temporary directory). Pass `--keep-index` to save that table next to the
-library (`<library>.repeat.k<k>.ktab` plus hidden part files and a
-`.complete` marker); later runs reuse it directly instead of rebuilding.
-The cache is invalidated automatically when the library file changes
-(mtime). Same convention as `pgr align pgi --keep-index`.
+`e-kmer` builds a canonical k-mer count table from the repeat library on
+every run (in a temporary directory). Pass `--keep-index` to save that table
+next to the library as a single `<library>.pgrk` file (`lib.fa` ->
+`lib.pgrk`, `lib.fa.gz` -> `lib.fa.pgrk`); later runs reuse it directly
+instead of rebuilding. The cache is invalidated automatically when the
+library file changes (mtime) or the requested `-k` no longer matches the
+stored table. Same convention as `pgr align pgi --keep-index`.
 
 ### Combining multiple libraries
 
@@ -451,10 +448,6 @@ pgr rept s-kmer [OPTIONS] <infile>
 | `fk` | | `--fill-kmer` | Int | Fill holes between repetitive k-mers (default: 2) |
 | `min` | | `--min-len` | Int | Min length of repetitive fragments (default: 100) |
 | `ff` | | `--fill-fragment` | Int | Fill holes between repetitive fragments (default: 10) |
-
-### Dependencies
-
-*   `FastK`, `Profex`
 
 ---
 

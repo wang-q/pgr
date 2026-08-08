@@ -292,7 +292,6 @@ Some subcommands in `pgr` invoke external executables. In particular:
     `chainNet`, `netSyntenic`, `netChainSubset`, `chainStitchId`, `netSplit`,
     `netToAxt`, `axtSort`, `axtToMaf`, `netFilter`, `netClass`, `chainSplit`.
 - `pgr rept trf` depends on `trf`.
-- `pgr rept s-kmer` and `pgr rept e-kmer` depend on `FastK` and `Profex`.
 - `pgr fas refine` depends on a multiple sequence alignment tool:
   - `clustalw` (default), or `muscle`, or `mafft`.
 

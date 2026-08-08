@@ -1,4 +1,4 @@
-//! Repeat-identification pipeline drivers (FastK → Profex → runlist).
+//! Repeat-identification pipeline drivers (k-mer → runlist).
 
 use cmd_lib::run_cmd;
 use rayon::prelude::*;
@@ -21,19 +21,6 @@ fn has_soft_mask(infile: &str) -> anyhow::Result<bool> {
             .iter()
             .any(|b| b.is_ascii_lowercase())
         {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// True when the FASTA contains at least one record with a non-empty
-/// sequence. FastK segfaults on sequence-less inputs (e.g. an empty repeat
-/// library), so the pipeline rejects them up front with a friendly error.
-fn has_sequences(infile: &str) -> anyhow::Result<bool> {
-    let mut reader = crate::libs::fmt::fa::reader(infile)?;
-    for result in reader.records() {
-        if !result?.sequence().is_empty() {
             return Ok(true);
         }
     }
@@ -157,73 +144,6 @@ fn write_masked_fasta(
     Ok(())
 }
 
-/// Run `Profex -z genome` per chromosome and write `.rg` files.
-///
-/// For each chromosome, runs `Profex -z genome <sn>` writing `prof.<sn>.txt`,
-/// then scans lines with `re_prof` capturing `start` and `end`. Profex prints
-/// the 0-based k-mer start of each run and closes it with the 1-based inclusive
-/// end (start + run length + kmer - 1), so the `.rg` output is 1-based
-/// inclusive with `start + 1` and `end` as-is. If `min_depth` is set and the
-/// regex has a `depth` capture group, entries with depth below the threshold
-/// are skipped. `Profex -z` never closes the final run of a read (its end and
-/// depth are omitted); when no depth threshold is applied (e.g. e-kmer) the
-/// run is closed with the chromosome length from `lens`, and with a threshold
-/// (e.g. s-kmer) it is conservatively dropped since its depth is unknown.
-/// Returns the list of `prof.<sn>.rg` file names.
-pub fn run_profex_per_chr(
-    chrs: &[String],
-    lens: &[usize],
-    re_prof: &regex::Regex,
-    min_depth: Option<usize>,
-) -> anyhow::Result<Vec<String>> {
-    let mut rg_files = vec![];
-    for (i, chr) in chrs.iter().enumerate() {
-        let sn = i + 1;
-        run_cmd!(
-            Profex -z genome ${sn} > prof.${sn}.txt
-        )?;
-
-        let reader = crate::reader(&format!("prof.{}.txt", sn))?;
-
-        let rg_file = format!("prof.{}.rg", sn);
-        let mut writer = crate::writer(&rg_file)?;
-        let mut tail_start: Option<usize> = None;
-
-        for line in std::io::BufReader::new(reader).lines() {
-            let line = line?;
-            let Some(caps) = re_prof.captures(&line) else {
-                // The final run of a read is printed as a bare start.
-                if let Ok(start) = line.trim().parse::<usize>() {
-                    tail_start = Some(start);
-                }
-                continue;
-            };
-
-            if let Some(min_d) = min_depth {
-                if let Some(depth_str) = caps.name("depth") {
-                    let depth: usize = depth_str.as_str().parse()?;
-                    if depth < min_d {
-                        continue;
-                    }
-                }
-            }
-
-            let start = caps["start"].parse::<usize>()? + 1;
-            let end = caps["end"].parse::<usize>()?;
-
-            writer.write_fmt(format_args!("{}:{}-{}\n", chr, start, end))?;
-        }
-
-        if let Some(start) = tail_start {
-            if min_depth.is_none() {
-                writer.write_fmt(format_args!("{}:{}-{}\n", chr, start + 1, lens[i]))?;
-            }
-        }
-        rg_files.push(rg_file);
-    }
-    Ok(rg_files)
-}
-
 /// Options for the shared repeat-identification pipeline (ir/rept).
 pub struct RepeatOpts {
     /// Absolute path to the `pgr` executable.
@@ -238,96 +158,58 @@ pub struct RepeatOpts {
     pub opt_ff: usize,
     /// For `ir`: absolute path to the repeat database. `None` for `rept`.
     pub abs_repeat: Option<String>,
-    /// Keep the FastK repeat table (`repeat.ktab`) next to the library for
+    /// Keep the k-mer table (`<library>.pgrk`) next to the library for
     /// reuse on later runs (`--keep-index`).
     pub keep_index: bool,
-    /// Profex output regex (captures `start`/`end`, optionally `depth`).
-    pub re_prof: regex::Regex,
-    /// Minimum depth filter; `None` to skip. `Some(2)` for `rept`.
-    pub min_depth: Option<usize>,
+    /// Minimum run depth filter; `None` to skip. `Some(2)` for `s-kmer`.
+    pub min_depth: Option<u16>,
 }
 
-/// Run the shared FastK → Profex → runlist repeat pipeline.
+/// Run the shared k-mer → runlist repeat pipeline.
 ///
-/// When `opts.abs_repeat` is set, runs FastK twice (repeat + genome with
-/// `-p:repeat`); otherwise runs FastK once on the genome (`-p`). Then
-/// generates `chr.sizes`, runs Profex per chromosome, and finally the
-/// internal cover/fill/excise/fill runlist pipeline.
+/// Reads the genome (and repeat library for `e-kmer`) into memory, builds the
+/// canonical k-mer table and per-chromosome profiles natively, extracts
+/// constant-value runs as `.rg` files, and finally runs the internal
+/// cover/fill/excise/fill runlist pipeline. The native extractor closes tail
+/// runs from the profile alone (the old Profex wrapper dropped or guessed
+/// them), so no `chr.sizes` pass is needed.
 pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
-    let pgr = &opts.pgr;
     let abs_infile = &opts.abs_infile;
     let opt_kmer = opts.opt_kmer;
+
+    // Read the genome once; names come from memory (no `pgr fa size` pass).
+    let genome = crate::libs::pgi::build::read_fasta(abs_infile)?;
     anyhow::ensure!(
-        has_sequences(abs_infile)?,
+        genome.iter().any(|(_, s)| !s.is_empty()),
         "input genome FASTA has no sequences: {}",
         abs_infile
     );
-    if let Some(abs_repeat) = &opts.abs_repeat {
+    let (genome_names, genome_seqs): (Vec<String>, Vec<Vec<u8>>) = genome.into_iter().unzip();
+
+    let profiles = if let Some(abs_repeat) = &opts.abs_repeat {
+        let lib = crate::libs::pgi::build::read_fasta(abs_repeat)?;
         anyhow::ensure!(
-            has_sequences(abs_repeat)?,
+            lib.iter().any(|(_, s)| !s.is_empty()),
             "repeat library FASTA has no sequences: {}",
             abs_repeat
         );
-    }
-    // FastK's block-level sort files go to a fixed global dir by default
-    // (/tmp), so concurrent or repeated runs clobber each other's partial
-    // tables (observed as SIGSEGV or corrupted profiles). Point -P at the
-    // pipeline tempdir (the current working directory after enter()).
-    let sort_dir = std::env::current_dir()?.display().to_string();
-
-    if let Some(abs_repeat) = &opts.abs_repeat {
-        // Cache the FastK table built from the repeat library next to the
-        // library (`<lib>.repeat.k<k>.ktab`) when `keep_index` is set, and
-        // reuse it on later runs as long as the library has not changed.
-        let cache_prefix = format!("{}.repeat.k{}", abs_repeat, opt_kmer);
-        if opts.keep_index && cache_is_fresh(abs_repeat, &cache_prefix) {
-            run_cmd!(info "==> FastK on genome (reused repeat table)")?;
-            run_cmd!(
-                FastK -p:${cache_prefix} -k${opt_kmer} -Ngenome -P${sort_dir} ${abs_infile}
-            )?;
-        } else {
-            run_cmd!(info "==> FastK on repeat")?;
-            run_cmd!(
-                FastK -t -k${opt_kmer} -Nrepeat -P${sort_dir} ${abs_repeat}
-            )?;
-            if opts.keep_index {
-                let cache_path = format!("{}.ktab", cache_prefix);
-                if let Err(e) = save_repeat_cache("repeat", &cache_prefix) {
-                    log::warn!("failed to cache repeat table at {}: {}", cache_path, e);
-                }
-            }
-            run_cmd!(info "==> FastK on genome")?;
-            run_cmd!(
-                FastK -p:repeat -k${opt_kmer} -Ngenome -P${sort_dir} ${abs_infile}
-            )?;
-        }
+        let lib_seqs: Vec<Vec<u8>> = lib.into_iter().map(|(_, s)| s).collect();
+        run_cmd!(info "==> Building k-mer table")?;
+        let table = build_or_load_table(abs_repeat, &lib_seqs, opt_kmer, opts.keep_index)?;
+        run_cmd!(info "==> Counting k-mers")?;
+        crate::libs::kmer::profile::relative_profiles(&genome_seqs, opt_kmer, &table)
     } else {
-        run_cmd!(info "==> FastK")?;
-        run_cmd!(
-            FastK -p -k${opt_kmer} -Ngenome -P${sort_dir} ${abs_infile}
-        )?;
-    }
-
-    run_cmd!(info "==> Process each chromosome")?;
-    run_cmd!(
-        ${pgr} fa size ${abs_infile} -o chr.sizes
-    )?;
-    let mut chrs = Vec::new();
-    let mut lens = Vec::new();
-    for line in crate::libs::io::read_lines("chr.sizes")? {
-        let mut fields = line.split_whitespace();
-        if let (Some(name), Some(len)) = (fields.next(), fields.next()) {
-            chrs.push(name.to_string());
-            lens.push(len.parse()?);
-        }
-    }
+        run_cmd!(info "==> Counting k-mers")?;
+        let table = crate::libs::kmer::count::build_table(&genome_seqs, opt_kmer)?;
+        crate::libs::kmer::profile::self_profiles(&genome_seqs, opt_kmer, &table)
+    };
 
     // The runlist parser truncates dotted contig names (e.g. `NC_000913.1`
     // -> `1`) at the last '.', so map real names to dot-free placeholders
     // and restore them after the runlist pass.
     let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let safe_chrs: Vec<String> = chrs
+    let safe_chrs: Vec<String> = genome_names
         .iter()
         .map(|c| {
             let s = format!("c{}", name_map.len() + 1);
@@ -337,7 +219,15 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
         })
         .collect();
 
-    let rg_files = run_profex_per_chr(&safe_chrs, &lens, &opts.re_prof, opts.min_depth)?;
+    run_cmd!(info "==> Extracting repeats")?;
+    let mut rg_files = Vec::new();
+    crate::libs::kmer::extract::write_rg(
+        &profiles,
+        &safe_chrs,
+        opt_kmer,
+        opts.min_depth,
+        &mut rg_files,
+    )?;
 
     if count_rg_lines(&rg_files)? == 0 {
         // No repetitive intervals: emit an empty runlist directly.
@@ -1044,75 +934,72 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// True when a complete cache for `cache_prefix` exists and is not older than
-/// `lib` (library unchanged). Completeness is guaranteed by the `.complete`
-/// marker written after all table files are copied; the marker is an exact
-/// copy of the `.ktab` table, so a size mismatch (e.g. a truncated table from
-/// an interrupted write) also marks the cache stale instead of letting FastK
-/// silently read a corrupt table and report empty/partial repeats.
-fn cache_is_fresh(lib: &str, cache_prefix: &str) -> bool {
-    let Ok(lib_meta) = std::fs::metadata(lib) else {
-        return false;
-    };
-    let mut ktab_len: Option<u64> = None;
-    for suffix in [".ktab", ".complete"] {
-        let Ok(cache_meta) = std::fs::metadata(format!("{}{}", cache_prefix, suffix)) else {
-            return false;
-        };
-        if !cache_meta.is_file() {
-            return false;
-        }
-        if suffix == ".ktab" {
-            ktab_len = Some(cache_meta.len());
-        } else if ktab_len != Some(cache_meta.len()) {
-            return false;
-        }
-        if let (Ok(lib_m), Ok(cache_m)) = (lib_meta.modified(), cache_meta.modified()) {
-            if cache_m < lib_m {
-                return false;
+/// Build the e-kmer repeat table, reusing the `<library>.pgrk` cache when
+/// `keep_index` is set and the cache is fresh; a corrupt or k-mismatched
+/// cache is rebuilt (the cache is pure acceleration, so rebuilding beats
+/// erroring out).
+fn build_or_load_table(
+    abs_repeat: &str,
+    lib_seqs: &[Vec<u8>],
+    k: usize,
+    keep_index: bool,
+) -> anyhow::Result<crate::libs::kmer::KmerTable> {
+    if !keep_index {
+        return crate::libs::kmer::count::build_table(lib_seqs, k);
+    }
+    let cache_path = pgrk_cache_path(abs_repeat);
+    if cache_is_fresh(abs_repeat, &cache_path) {
+        match crate::libs::kmer::count::load(&cache_path, k) {
+            Ok(table) => {
+                log::info!("reusing repeat table {}", cache_path.display());
+                return Ok(table);
+            }
+            Err(e) => {
+                log::warn!(
+                    "stale or corrupt repeat table {} ({}), rebuilding",
+                    cache_path.display(),
+                    e
+                );
             }
         }
     }
-    true
-}
-
-/// Copy the freshly built FastK table (`<prefix>.ktab` plus its hidden part
-/// files `.<prefix>.ktab.N`) to the cache path, renaming the prefix to the
-/// cache prefix basename. `-p:` needs both the main table and the part files.
-fn save_repeat_cache(src_prefix: &str, cache_prefix: &str) -> anyhow::Result<()> {
-    let cache_path = format!("{}.ktab", cache_prefix);
-    atomic_copy(&format!("{}.ktab", src_prefix), &cache_path)?;
-
-    let base = Path::new(cache_prefix)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow::anyhow!("invalid cache prefix: {}", cache_prefix))?;
-    let dir = Path::new(cache_prefix)
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    for entry in std::fs::read_dir(".")?.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(rest) = name.strip_prefix(&format!(".{}.ktab.", src_prefix)) {
-            let dst_name = format!(".{}.ktab.{}", base, rest);
-            atomic_copy(&name, &dir.join(&dst_name).display().to_string())?;
-        }
+    let table = crate::libs::kmer::count::build_table(lib_seqs, k)?;
+    if let Err(e) = crate::libs::kmer::count::save(&table, &cache_path) {
+        log::warn!(
+            "failed to cache repeat table at {}: {}",
+            cache_path.display(),
+            e
+        );
     }
-    // Mark the cache complete only after every table file is in place.
-    atomic_copy(
-        &format!("{}.ktab", src_prefix),
-        &format!("{}.complete", cache_prefix),
-    )?;
-    Ok(())
+    Ok(table)
 }
 
-/// Atomically copy `src` to `dst` (write a temp file, then rename).
-fn atomic_copy(src: &str, dst: &str) -> anyhow::Result<()> {
-    let tmp = format!("{}.tmp.{}", dst, std::process::id());
-    std::fs::copy(src, &tmp)?;
-    std::fs::rename(&tmp, dst)?;
-    Ok(())
+/// Sibling cache path for a repeat library: `lib.fa` -> `lib.pgrk` and
+/// `lib.fa.gz` -> `lib.fa.pgrk` (same sidecar convention as `.pgi`).
+fn pgrk_cache_path(lib: &str) -> PathBuf {
+    let mut p = PathBuf::from(lib);
+    if p.extension().and_then(|e| e.to_str()) == Some("gz") {
+        // `lib.fa.gz` -> `lib.fa.pgrk`: keep the `.fa` so a gzipped library
+        // has its own cache, distinct from a plain `lib.fa`.
+        p.set_extension("");
+        return PathBuf::from(format!("{}.pgrk", p.display()));
+    }
+    p.set_extension("pgrk");
+    p
+}
+
+/// True when a `.pgrk` cache exists and is not older than the library.
+///
+/// Integrity (magic/version/length/k) is validated on load; a corrupt cache
+/// is simply rebuilt.
+fn cache_is_fresh(lib: &str, cache_path: &Path) -> bool {
+    let (Ok(lib_m), Ok(cache_m)) = (
+        std::fs::metadata(lib).and_then(|m| m.modified()),
+        std::fs::metadata(cache_path).and_then(|m| m.modified()),
+    ) else {
+        return false;
+    };
+    cache_m >= lib_m
 }
 
 /// Run the cover → fill → excise → fill pipeline on `rg_files`.
@@ -1211,46 +1098,53 @@ mod tests {
     }
 
     #[test]
-    fn truncated_cache_table_is_not_fresh() {
-        // Regression: a truncated `.ktab` (e.g. interrupted write) used to
-        // pass `cache_is_fresh` (existence + mtime only), so FastK silently
-        // read the corrupt table and e-kmer reported empty repeats. The
-        // `.complete` marker is an exact copy of `.ktab`, so a size mismatch
-        // must mark the cache stale and trigger a rebuild.
+    fn pgrk_cache_freshness() {
+        // Regression: a cache older than the library (mtime) must be stale,
+        // and a corrupt `.pgrk` must not be reused (load rejects it, so the
+        // pipeline rebuilds instead of reading a corrupt table).
         let dir = tempfile::tempdir().unwrap();
         let lib = dir.path().join("lib.fa");
-        let prefix = dir.path().join("lib.fa.repeat.k17");
         std::fs::write(&lib, ">seq\nACGT\n").unwrap();
-        let full = vec![b'x'; 4096];
-        std::fs::write(format!("{}.ktab", prefix.display()), &full).unwrap();
-        std::fs::write(format!("{}.complete", prefix.display()), &full).unwrap();
+        let cache = pgrk_cache_path(lib.to_str().unwrap());
+        let table =
+            crate::libs::kmer::count::build_table(&[b"ACGTACGTACGTACGT".to_vec()], 8).unwrap();
+        crate::libs::kmer::count::save(&table, &cache).unwrap();
         assert!(
-            cache_is_fresh(lib.to_str().unwrap(), prefix.to_str().unwrap()),
+            cache_is_fresh(lib.to_str().unwrap(), &cache),
             "intact cache must be fresh"
         );
 
-        std::fs::write(format!("{}.ktab", prefix.display()), &full[..100]).unwrap();
+        // Touch the library after the cache: stale. Set the mtime explicitly
+        // because coarse filesystem mtime ticks can otherwise keep lib and
+        // cache timestamps equal.
+        std::fs::write(&lib, ">seq\nACGTACGT\n").unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(10);
+        std::fs::File::options()
+            .write(true)
+            .open(&lib)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
         assert!(
-            !cache_is_fresh(lib.to_str().unwrap(), prefix.to_str().unwrap()),
-            "truncated .ktab must not be fresh"
+            !cache_is_fresh(lib.to_str().unwrap(), &cache),
+            "cache older than the library must be stale"
         );
-    }
 
-    #[test]
-    fn sequence_less_fasta_is_detected() {
-        // Regression: a sequence-less repeat library made FastK segfault
-        // ("terminated by signal: 11"); the pipeline now rejects it up front.
-        let dir = tempfile::tempdir().unwrap();
-        let empty = dir.path().join("empty.fa");
-        std::fs::write(&empty, ">only_header\n").unwrap();
-        assert!(!has_sequences(empty.to_str().unwrap()).unwrap());
-
-        let normal = dir.path().join("normal.fa");
-        std::fs::write(&normal, ">chr\nACGT\n").unwrap();
-        assert!(has_sequences(normal.to_str().unwrap()).unwrap());
-
-        let no_records = dir.path().join("no_records.fa");
-        std::fs::write(&no_records, "").unwrap();
-        assert!(!has_sequences(no_records.to_str().unwrap()).unwrap());
+        // Truncated cache: fresh by mtime but rejected on load, so the
+        // pipeline rebuilds instead of reading a corrupt table.
+        let full = std::fs::read(&cache).unwrap();
+        std::fs::write(&cache, &full[..full.len() - 4]).unwrap();
+        let even_later = std::time::SystemTime::now() + std::time::Duration::from_secs(20);
+        std::fs::File::options()
+            .write(true)
+            .open(&cache)
+            .unwrap()
+            .set_modified(even_later)
+            .unwrap();
+        assert!(
+            cache_is_fresh(lib.to_str().unwrap(), &cache),
+            "truncated cache is fresh by mtime"
+        );
+        assert!(crate::libs::kmer::count::load(&cache, 8).is_err());
     }
 }

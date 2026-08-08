@@ -91,6 +91,10 @@ name = "rg_merge_benchmark"
 harness = false
 
 [[bench]]
+name = "kmer_benchmark"
+harness = false
+
+[[bench]]
 name = "paf_index_benchmark"
 harness = false
 

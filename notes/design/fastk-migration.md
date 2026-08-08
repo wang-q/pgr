@@ -1,6 +1,6 @@
 # FastK / Profex 原生迁移设计（方案 B）
 
-> 状态：设计稿。目标：让 `pgr rept s-kmer` / `pgr rept e-kmer` 不再依赖外部
+> 状态：**已实现（2026-08-09）**。目标：让 `pgr rept s-kmer` / `pgr rept e-kmer` 不再依赖外部
 > FastK / Profex。参考源码：仓库内 `FASTK-master/`（2025-09-13 下载的快照，
 > **等于 FASTK-1.2**，README 标注 Current: April 18, 2021，**不是上游当前
 > master**，见 §2.3 版本核对）；行为契约以本机安装的 FastK / Profex

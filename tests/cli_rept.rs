@@ -169,17 +169,10 @@ fn command_rept_masker_end_to_end() -> anyhow::Result<()> {
 }
 
 /// s-kmer on a genome with a dotted contig name must report the full name
-/// in the runlist (regression for runlist-name truncation; needs FastK and
-/// Profex in $PATH).
+/// in the runlist (regression for runlist-name truncation). Runs with no
+/// external tools; the native k-mer pipeline must work out of the box.
 #[test]
 fn command_rept_s_kmer_dotted_name() -> anyhow::Result<()> {
-    for tool in ["FastK", "Profex"] {
-        if which::which(tool).is_err() {
-            eprintln!("skipping: {tool} not found");
-            return Ok(());
-        }
-    }
-
     let temp = tempfile::TempDir::new()?;
     let genome_fa = temp.path().join("genome.fa");
     let out = temp.path().join("out.json");
@@ -205,25 +198,17 @@ fn command_rept_s_kmer_dotted_name() -> anyhow::Result<()> {
     let spans = json["NC_000913.1"]
         .as_str()
         .expect("NC_000913.1 key missing (runlist truncated the name?)");
-    // A 2000 bp block duplicated head-to-tail: Profex reports the first copy
-    // (depth 2) as 1-based inclusive [1, 2000] and omits the depth/end of the
-    // tail run, so the conservative result is exactly the first copy.
-    assert_eq!(spans, "1-2000", "unexpected s-kmer spans: {spans}");
+    // A 2000 bp block duplicated head-to-tail: every k-mer appears twice, and
+    // the native extractor closes the tail run (the old Profex wrapper
+    // dropped it), so the merged runlist spans the full 4000 bp.
+    assert_eq!(spans, "1-4000", "unexpected s-kmer spans: {spans}");
     Ok(())
 }
 
 /// e-kmer on a perfect tandem duplication must report the full duplicated
-/// interval, including the chromosome-tail run whose depth/end Profex omits
-/// (needs FastK and Profex in $PATH).
+/// interval, including the chromosome-tail run (no external tools needed).
 #[test]
 fn command_rept_e_kmer_tandem_coordinates() -> anyhow::Result<()> {
-    for tool in ["FastK", "Profex"] {
-        if which::which(tool).is_err() {
-            eprintln!("skipping: {tool} not found");
-            return Ok(());
-        }
-    }
-
     let seq = random_seq(2000, 13);
     let temp = tempfile::TempDir::new()?;
     let lib = temp.path().join("lib.fa");
@@ -252,17 +237,10 @@ fn command_rept_e_kmer_tandem_coordinates() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// e-kmer end-to-end on the repo's small fixtures (needs FastK and Profex in
-/// $PATH). Guards the FastK pipeline and the dotted-name mapping.
+/// e-kmer end-to-end on the repo's small fixtures. Guards the native k-mer
+/// pipeline and the dotted-name mapping.
 #[test]
 fn command_rept_e_kmer_end_to_end() -> anyhow::Result<()> {
-    for tool in ["FastK", "Profex"] {
-        if which::which(tool).is_err() {
-            eprintln!("skipping: {tool} not found");
-            return Ok(());
-        }
-    }
-
     let lib = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/pgr/tncentral.fa.gz");
     let genome = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/genome/mg1655.fa.gz");
     let temp = tempfile::TempDir::new()?;
@@ -272,10 +250,61 @@ fn command_rept_e_kmer_end_to_end() -> anyhow::Result<()> {
         .args(&["rept", "e-kmer", lib, genome, "-o", out.to_str().unwrap()])
         .run();
     assert!(stderr.contains("==> Outputs"), "pipeline failed: {stderr}");
+    assert!(
+        !stderr.contains("FastK") && !stderr.contains("Profex"),
+        "native pipeline must not invoke external tools: {stderr}"
+    );
 
     let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
     let spans = json["NC_000913"].as_str().expect("NC_000913 key missing");
     assert!(spans.contains('-'), "expected intervals, got: {spans}");
+    Ok(())
+}
+
+/// e-kmer `--keep-index` writes a `.pgrk` table next to the library and
+/// reuses it on the next run instead of rebuilding.
+#[test]
+fn command_rept_e_kmer_keep_index_cache() -> anyhow::Result<()> {
+    let seq = random_seq(2000, 13);
+    let temp = tempfile::TempDir::new()?;
+    let lib = temp.path().join("lib.fa");
+    let genome_fa = temp.path().join("genome.fa");
+    let out = temp.path().join("out.json");
+    std::fs::write(&lib, format!(">rep\n{}\n", seq))?;
+    std::fs::write(&genome_fa, format!(">chr1\n{}{}\n", seq, seq))?;
+
+    let cache = temp.path().join("lib.pgrk");
+    assert!(!cache.exists());
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "e-kmer",
+            lib.to_str().unwrap(),
+            genome_fa.to_str().unwrap(),
+            "--keep-index",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("==> Outputs"), "pipeline failed: {stderr}");
+    assert!(cache.exists(), ".pgrk cache must be written");
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "e-kmer",
+            lib.to_str().unwrap(),
+            genome_fa.to_str().unwrap(),
+            "--keep-index",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        stderr.contains("reusing repeat table"),
+        "second run must reuse the cache: {stderr}"
+    );
     Ok(())
 }
 

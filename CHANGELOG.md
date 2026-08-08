@@ -2,6 +2,22 @@
 
 ## Unreleased - ReleaseDate
 
+### Repeat Detection (`rept`)
+
+* **Native k-mer pipeline for `s-kmer` / `e-kmer`** - canonical k-mer counting,
+  per-chromosome profile generation and repeat-run extraction are now
+  implemented in Rust (`src/libs/kmer/`), replacing the external `FastK` and
+  `Profex` executables. Semantics match FastK/Profex (canonical 2-bit k-mers,
+  N-gap splitting, constant-value runs, `-p:<table>` relative counts), and the
+  old Profex quirk of dropping/guessing the final run of a chromosome is
+  fixed (tail runs are now closed from the full in-memory profile). No
+  external tools are needed for either command.
+* **`.pgrk` repeat-table cache** - `--keep-index` now writes a single compact
+  `<library>.pgrk` file (`lib.fa` -> `lib.pgrk`, `lib.fa.gz` ->
+  `lib.fa.pgrk`) instead of FastK's `<library>.repeat.k<k>.ktab` hidden
+  shards plus a `.complete` marker. Old FastK caches are ignored and rebuilt
+  once on the first run after upgrading.
+
 ## 0.5.0 - 2026-08-08
 
 ### New Features
