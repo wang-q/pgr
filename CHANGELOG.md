@@ -77,6 +77,33 @@
 
 * **v1005 format upgrade** - Soft-mask (lowercase) preservation across
   `range`/`some`/`to-fa` extraction.
+* **Strictly lossless (v1006)** - Unmatched segments are stored verbatim
+  (Raw deltas) instead of being skipped; content-based LZ fallback
+  (canonical k-mer index) removes the contig-name matching requirement.
+* **CIGAR across arbitrary reference intervals (v1007)** - Segment-level
+  hybrid encoding (CIGAR for PAF-covered parts, LZ/Raw for the rest) makes
+  PAF-driven compression effective (~39% of gzip-9 on 98.6% ANI pairs).
+* **`pgr pbit to-paf` (v1009)** - Exports embedded alignments as standard
+  PAF, reproducing the input field-for-field (big chains rebuilt from the
+  archive CIGAR, small chains stored verbatim).
+* **Identity encoding (v1010)** - Segments identical to a reference interval
+  are stored as zero-cost pointers to the reference.
+* **Main/small chain selection** - Chain-level greedy by query coverage
+  replaces the 10 kb length threshold; small chains may still encode their
+  covered segments; records without `cg:Z` are kept for PAF recovery.
+* **PAF is now mandatory** for `create`/`append` (an empty PAF disables
+  CIGAR encoding); the no-PAF compression path was retired.
+* `pbit stat` now reports the Identity encoding count.
+
+#### HV / Distance
+
+* Sparse `.hv` sketch encoding (s=1 default) and AVX2-accelerated HV
+  Jaccard (bit ±1, ~4.8x); `pgr dist hv` dimension fixed for FASTA inputs.
+
+#### fas
+
+* `to-xlsx` completed migration from App-Fasops (wrapped sections, indel
+  painting, per-position colors); audit hardening across the command family.
 
 ### Enhancements
 
