@@ -222,9 +222,10 @@ pairwise 比较。归纳为三条路线：
 
 | 方案 | 许可 | 向量类型 | 检索方式 | 备注 |
 |---|---|---|---|---|
-| **sqlite-vec**（asg017） | MIT / Apache-2.0 | float[N] / int8[N] / bit[N] | `vec0` 虚拟表 KNN（`match … order by distance limit k`），**精确扫描、无 ANN** | Rust crate `sqlite-vec`；metric 支持 l2/cosine/l1/hamming；k ≤ 4096；HV 存 float[4096] 与 i32 等体积（16 KB），HV 值域（√N 量级）在 f32 精确整数范围内 |
-| **sqlite-vector**（rqlite） | **Elastic 2.0**（生产需商业授权） | Float32 / Float16 / BFloat16 / Int8 / UInt8 | 普通表 BLOB + 精确扫描，可量化 | 许可与 MIT 的 pgr 不兼容，**排除** |
-| 自研：SQLite 存 BLOB + pgr SIMD 扫描 | MIT | i32 原样 | 线性扫描（`hv.rs` 已有 SIMD 点积） | 零新依赖；≤10 万规模与 sqlite-vec 等价 |
+| **sqlite-vec**（asg017） | MIT / Apache-2.0 | float[N] / int8[N] / bit[N] | `vec0` 虚拟表 KNN（`match … order by distance limit k`），**精确扫描、无 ANN** | **核心是 C 扩展**（用户明确不采用，未评测）；metric 支持 l2/cosine/l1/hamming；k ≤ 4096；HV 存 float[4096] 与 i32 等体积（16 KB），HV 值域（√N 量级）在 f32 精确整数范围内 |
+| **sqlite-vector-rs**（quinnjr） | MIT / Apache-2.0 | Float4 / Float8 / Int1 / Int2 / Int4 / Float2 | PGVector-like `vector` 虚拟表 + **usearch HNSW（ANN）** | **纯 Rust 封装**（usearch 核心经 cxx FFI，C++ 源码构建）；`knn_match(distance, ?) LIMIT k`；**2,088 真实 HV 实测**（`benchmarks/bench-scale-and-pbit.md` #10b）：构建 1.6 s、查询 1.58 ms、recall@10 1.000、DB 69.9 MB（HNSW 图 +35 MB）。0.1.0 短板：library `register()` 是 `todo!()`（需手动注册 vtab）、shadow id 忽略用户 id、`sqlite3-ext-vtab` 需 bundled/static |
+| **sqlite-vector**（rqlite） | **Elastic 2.0**（生产需商业授权） | Float32 / Float16 / BFloat16 / Int8 / UInt8 | 普通表 BLOB + 精确扫描，可量化 | 许可与 MIT 的 pgr 不兼容，**排除**（与上面两行是不同项目） |
+| 自研：SQLite 存 BLOB + pgr SIMD 扫描 | MIT | i32 原样 | 线性扫描（`hv.rs` 已有 SIMD 点积） | 零新依赖；2,088 实测 DB 35 MB、预取后 2.46 ms/查询（#10a），**SQLite 非瓶颈** |
 
 ### 6.3 超大规模（>10 万）候选
 
@@ -289,7 +290,9 @@ pairwise 比较。归纳为三条路线：
   聚类 / 选参考用 `dist mash` / `dist frac`；HV 定位为嵌入 / 粗筛 /
   查询路由（85–98% 带），不做 ANI 级精排。**
 - **推荐路线**（据此更新）：
-  * **≤10k**：精确扫描即够——SQLite + sqlite-vec（float[4096] +
+  * **≤10k**：精确扫描即够——SQLite + pgr SIMD 扫描（零依赖，
+    2,088 实测 2.46 ms/查询）或 sqlite-vector-rs vtab（实测 1.58 ms、
+    recall 1.000，但多 ~35 MB HNSW 图 + 0.1.0 成熟度风险）
     cosine，命令形态候选 `pgr hv db` / `pgr hv nn`），或零依赖的
     自研 SIMD 扫描（`hv.rs` 已有 `hv_dot`/`calc_distances`，SQLite 只
     存 BLOB/元数据）；实测精确扫描 10k 规模 ~10 ms/查询，批处理聚类
@@ -306,7 +309,8 @@ pairwise 比较。归纳为三条路线：
     单线程；hnsw_rs 构建再慢 ~2×）；**应先降维**
     （如 PCA 到 256–512 维）再评估 ANN，或回 SQLite 精确扫描 +
     分桶/倒排路线。
-- 待验证：sqlite-vec 4096 维 float 查询延迟（目标机实测）；HV→f32 无损
+- 已验证：sqlite-vector-rs vtab 2,088 真实 HV 延迟/召回（#10b）；HV→f32
+  无损（值域 √N ≪ 2²⁴）
   （按最大 N 校验值域）；cosine 排序 vs 精确 Jaccard 的一致性。
 - Necom `mat from-vector`（f32，euclid/cosine/jaccard，O(N²)）是**批处理
   聚类消费者**，与查询型 NN 互补：小规模聚类可直接喂，查询型用本节方案。
@@ -449,7 +453,7 @@ recall@10 已测，图检索部分待补。详见
 | 7 | 真实 clade 路由 | 用 cohort 自身 mash 距离聚类（necom hier/cut）做 clade，代表路由 + clade 内 HV 检索 | §6.5 真实验证（收益/误路由代价） | ✅ 135 小 clade 路由反降（R=1 0.70）；**2,088 正向案例**：C=8/R=2 HV 路由 0.942、保 94% 全量 Mash recall；recall≈路由准确率（线性公式定量确认）（详见 `benchmarks/bench-hv-ann-real.md` 补充节） |
 | 8 | E. coli NR 全量 HV | 2,115 NR 基因组 HV 建库 + 精确 top-k 延迟 | 万级规模账 | ✅ **2,088 全量实测（2026-08-08）**：精确 5.55 ms、HNSW ef10 0.45 ms（12×）、recall_HV 0.958–0.984；HV vs Mash 真值 recall@10=0.09（种内排序脱钩，详见 `benchmarks/bench-scale-and-pbit.md` #8b） |
 | 9 | 全 NR HV 可行性 | 15,574 NR 建库时间/内存估算 | 万级上限 | ✅ 估算：建库 ~3 CPU·时（0.7 s/基因组，可并行）；向量 249 MB；精确扫描 ~37 ms/查询（外推自 #8） |
-| 10 | SQLite vs SIMD | BLOB+SIMD vs sqlite-vec 真实 HV 延迟（需装 sqlite-vec） | §6.2 实证 | 🔄 BLOB 侧 ✅：2,088 向量 DB 35 MB，预取后扫描 2.46 ms/查询，SQLite 非瓶颈（`benchmarks/bench-scale-and-pbit.md` #10）；sqlite-vec 侧等安装 |
+| 10 | SQLite vs SIMD | BLOB+SIMD vs sqlite-vector-rs 真实 HV 延迟/召回 | §6.2 实证 | ✅ 双路径都实测（`benchmarks/bench-scale-and-pbit.md` #10a/#10b）：BLOB+扫描 2.46 ms/查询、DB 35 MB；sqlite-vector-rs vtab 1.58 ms/查询、recall@10 1.000、DB 69.9 MB；裸 usearch ef≥50 recall≥0.999（sqlite-vec 因 C 核心未评测，用户决定） |
 | 11 | Necom 聚类 vs 物种 | cohort 距离矩阵 → necom clust → ARI/NMI vs species 标签 | 聚类一致性（对标 C①） | ✅ mash K16 ARI 0.68/HV 0.65，K10 最优（mash 0.74/HV 0.57）（详见 `benchmarks/bench-clustering-validation.md`） |
 | 12 | 聚类稳定性 | 距离加噪/自助重聚类，测再现度 | 聚类对距离误差敏感性 | ✅ ≤20% 噪声 ARI≥0.73，40% 崩至 0.36（详见同上） |
 | 13 | groups.tsv 一致性 | groups.tsv 成员 vs species 标签/ANI 分布 | 现成分组能否当 clade/路由键 | ✅ 仅 13 个科/目级大组，物种纯度 0.03，不能当物种级路由键（详见同上） |
@@ -624,6 +628,22 @@ recall@10 已测，图检索部分待补。详见
   扫描 2.46 ms/查询、一次性取+转换 68 ms——**SQLite 存储不是瓶颈**，
   ≤10k 精确扫描方案成立；sqlite-vec 对比仍待安装（#10 转 🔄）。
 - §8.6 用户文档改动清单完成（6 个文档 × 8 项改动，含依据证据），
+
+**执行日志（2026-08-08 第十二轮）**：
+- 目标：#10 换道——用户明确不用 C 核心的 sqlite-vec，改测纯 Rust 的
+  **sqlite-vector-rs 0.1.0**（PGVector-like vtab + usearch HNSW；
+  MIT/Apache-2.0，与 rqlite 的 Elastic-2.0 "sqlite-vector" 是不同项目）。
+- 踩坑记录（防重走）：① library 模式 `register()` 是 `todo!()`，需按
+  loadable-extension 入口等价逻辑手动注册 vtab；② `sqlite3-ext-vtab`
+  默认（非 static）走运行时 API 表，library 用法直接 SIGSEGV，需
+  `bundled`/`static`；主机缺 libsqlite3-dev，故用 bundled；③ vtab
+  shadow 表 `id` 是 AUTOINCREMENT，用户提供的 id 被忽略，返回 id 从 1
+  起（比对真值要 `id-1`）。
+- 结果 ✅（`benchmarks/bench-scale-and-pbit.md` #10b）：2,088 真实 HV，
+  裸 usearch HNSW 构建 1.4 s、查询 159–842 µs（ef10–200）、recall@10
+  0.984–1.000（ef≥50 ≥0.999）；vtab ef64 端到端构建 1.56 s、查询
+  1.58 ms、recall 1.000，DB 69.9 MB（HNSW 图 +35 MB）；重开加载 58 ms
+  后 warm 查询 1.55 ms。**#10 转 ✅（22/22）**。
   待语言处理时落地（#22 技术主体就绪）。
 
 ## 8. 证据汇总与设计决策建议（2026-08-08）
@@ -672,7 +692,8 @@ recall@10 已测，图检索部分待补。详见
 
 ### 8.4 未决与后续
 
-- #10 sqlite-vec 真实 HV 延迟（等安装）；
+- #10 sqlite-vector-rs vtab 实测完成（#10b）；sqlite-vec（C 核心）按
+  用户决定不再评测；
 - pbit 真实压缩率：需"pgi 长链链化"或"pbit 跨记录组装"（todo 已挂）；
 - pgr `psl to-paf` 的 cg:Z 生产者（链级，与上一条相关）；
 - 用户文档（docs/*.md）阈值与默认参数建议随语言处理一起落地。

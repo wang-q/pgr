@@ -130,6 +130,10 @@ harness = false
 name = "hv_ann_real"
 harness = false
 
+[[bench]]
+name = "hv_vector_rs"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]
@@ -154,6 +158,15 @@ rand_pcg = "0.3.1"
 # ANN / sketch experiments (GSearch reference implementation)
 hnsw_rs = "0.3"
 probminhash = "0.1"
+
+# SQLite vector-store comparison (sqlite-vector-rs: PGVector-like vtab + usearch HNSW;
+# MIT/Apache-2.0; dev-dep only. NOTE: rqlite's "sqlite-vector" is Elastic-2.0 -> excluded,
+# this crate is a different project with a compatible license.)
+# `bundled` is required for library (non-loadable-extension) use: without a static
+# feature the crate dispatches through a runtime API table that only SQLite fills
+# when loading a .so; the host also lacks libsqlite3-dev, so bundle SQLite itself.
+sqlite3-ext-vtab = { version = "0.2", features = ["bundled"] }
+sqlite-vector-rs = "0.1"
 
 [profile.release]
 lto = true

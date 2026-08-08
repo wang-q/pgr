@@ -51,14 +51,17 @@
       pair TSV → **Necom**（`~/Scripts/necom`，聚类/构树/剪枝）→ 选参考
       → align pgi → pbit create；缺口 = pgr 侧 `dist` 输出与 Necom 格式
       对齐、参考挑选、pbit 自动路由（`design/pbit.md` 决策点 1 的触发
-      场景）；HV 最近邻存储方案已调研（§6：≤10 万 SQLite + sqlite-vec，
-      或零依赖自研 SIMD 扫描；usearch 为 C++ FFI 负担大暂不引入）；ANN
+      场景）；HV 最近邻存储方案已调研（§6：≤10 万 SQLite + pgr SIMD
+      扫描（实测 2.46 ms/查询）或 sqlite-vector-rs vtab（实测 1.58 ms、
+      recall 1.000）；sqlite-vec 因 C 核心不用；usearch 直接依赖为 C++
+      FFI 负担大，经 sqlite-vector-rs 封装以 dev-dep 实验）；ANN
       ANN 召回已实测（rust-cv `hnsw`：`benchmarks/bench-hv-ann-recall.md`；
       GSearch 同源 `hnsw_rs` + HubNSW 单层：`benchmarks/bench-hv-ann-hubnsw.md`，
       2026-08-08）：rust-cv 在 30k 召回上限 0.92 但快 20–46×；hnsw_rs
       召回 0.99 但只快 2.3–6.5×，HubNSW 单层仅微改善；结论 = ≤10k 精确
       扫描即可，10k–30k 依召回/速度偏好选实现，>30k 先降维再评估 ANN；
-      sqlite-vec 4096 维延迟与降维路线待实测）。
+      sqlite-vector-rs 4096 维延迟/召回已实测（`benchmarks/bench-scale-and-pbit.md`
+      #10b，2026-08-08）；降维路线仍待评估）。
 - [x] **HV/Mash vs ANI 标定（P1 主体，2026-08-08）**：135 个真实基因组
       （E. coli NR + 其他 Escherichia + Yersinia，全部挂靠 pass.lst/NR.lst/
       genome.taxon.tsv）上 HV（D=4096/16384）与 Mash vs skani ANI 的
@@ -74,7 +77,7 @@
       HNSW recall_HV≥0.993（图检索误差可忽略），recall_ANI 0.664=精确；
       物种硬路由在小 clade 上反而有害（R=1 跌到 0.70），clade 需 ≥K
       成员（`benchmarks/bench-hv-ann-real.md`）。
-- [ ] **标定/检索剩余**：sqlite-vec 真实 HV 延迟（等安装）；E. coli NR
+- [ ] **标定/检索剩余**：sqlite-vector-rs 实测已完成（#10b）；E. coli NR
       全 NR（15,574）实跑（2,088 已实测，见 `benchmarks/bench-scale-and-pbit.md`
       #8b）；pbit 多参考/高分歧样本验证（同 #14 路线）；§7.4 #10/#9/#14/#19
       状态见设计文档。

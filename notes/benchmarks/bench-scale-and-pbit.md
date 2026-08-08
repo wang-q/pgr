@@ -221,7 +221,7 @@ bp）——样本特有序列段在参考中无内容匹配，被 LZ 回退跳�
 （~90% ANI）≈ 81%；结构化归档 + 随机访问 + 无损（匹配段）是相对
 gzip 的核心价值。
 
-## #10 SQLite BLOB 存储路径实测（2026-08-08；sqlite-vec 侧待装）
+## #10 SQLite 向量存储路径实测（2026-08-08）
 
 方法：2,088 个真实 HV（i32 4096，16 KB/个）写入 SQLite BLOB
 （Python 标准库 sqlite3，近似 pgr"SQLite 存 BLOB + SIMD 扫描"路径；
@@ -239,7 +239,52 @@ gzip 的核心价值。
    ≤10k"SQLite + 精确扫描"方案（§6.2/§6.4）成立。若工作流为批处理
    （一次性加载向量复用），每查询仅 ~2.5 ms（核开销），远优于 HNSW
    在该规模下的复杂度和召回风险。
-2. sqlite-vec（向量虚拟表 + 精确扫描）对比仍待安装后补（#10 剩余）。
+2. **sqlite-vec（asg017）不再评测**：其核心是 C 扩展，用户明确换用
+   纯 Rust 的 **sqlite-vector-rs 0.1.0**（PGVector-like vtab + usearch
+   HNSW；MIT/Apache-2.0；注意与 rqlite 那个 Elastic-2.0 的
+   "sqlite-vector" 是**不同项目**，许可不冲突）。以下为实测结果。
+
+### #10b sqlite-vector-rs vtab 实测（2026-08-08）
+
+方法：同 cohort（2,088 个真实 HV）→ f32 L2 归一化 → 建
+`CREATE VIRTUAL TABLE emb USING vector(dim=4096, type=float4, metric=l2,
+m=16, ef_construction=200, ef_search=…)` → 事务包裹批量 INSERT →
+`knn_match(distance, ?) LIMIT 10` 查询；召回真值 = 精确 f32 L2 top-10。
+200 个查询平均。crate 0.1.0 的 library `register()` 是 `todo!()`，bench
+按 loadable-extension 入口的等价逻辑手动注册（`StandardModule::<VectorTable>`
++ `register_scalar_functions`），并以 `bundled` SQLite 编译
+（`sqlite3-ext-vtab` 非 static 模式走运行时 API 表，library 用法会
+SIGSEGV；主机又缺 libsqlite3-dev，故用 bundled）。
+
+| 方案 | 构建 | 查询延迟（均值） | recall_HV@10 | 备注 |
+|---|---|---|---|---|
+| 精确扫描（简单 f32 循环） | — | 5.50 ms | 1.000 | 对照；numpy 版 2.46 ms（上表） |
+| usearch HNSW ef10 | 1.42 s | 159 µs | 0.984 | 裸 HnswIndex（无 SQLite 层） |
+| usearch HNSW ef20 | 1.44 s | 198 µs | 0.996 | 同上 |
+| usearch HNSW ef50 | 1.42 s | 362 µs | 0.999 | 同上 |
+| usearch HNSW ef100 | 1.38 s | 535 µs | 1.000 | 同上 |
+| usearch HNSW ef200 | 1.38 s | 842 µs | 1.000 | 同上 |
+| **vtab ef64（SQLite）** | 1.56 s | **1.58 ms** | **1.000** | 端到端：INSERT+查询+持久化 |
+| vtab 重开（shadow 加载） | 58 ms 一次性 | 1.55 ms（warm） | 1.000 | HNSW 图从 `_index` 表反序列化 |
+
+DB 文件：69.9 MB（向量 BLOB 33 MB + HNSW 图序列化 ~36 MB）；对照 #10a
+纯 BLOB 方案 35.4 MB。
+
+结论：
+1. **vtab 端到端可用**：2,088 规模构建 ~1.6 s、查询 ~1.6 ms、召回
+   1.000、持久化正确（重开 58 ms 加载后查询速度不变）。
+2. **SQLite 层代价 ~3.5×**：vtab 查询 1.58 ms vs 裸 usearch（ef64
+   量级 ~450 µs）——KNN 每个结果都要回查 shadow 表
+   （`fetch_row_by_id`，10 次 SQL + BLOB 拷贝）。仍是精确扫描
+   （5.5 ms）的 3.5× 加速；HNSW 收益在该规模被 SQLite 取行开销摊薄。
+3. **召回与 §6.4 hnsw_rs 结论一致**：2,088 规模 usearch HNSW
+   ef≥50 recall_HV@10 ≥ 0.999，图检索误差可忽略；ef10 开始掉点
+   （0.984）。
+4. **工程性记录**（写进 `design/genome-nn-query.md` §6.2 表）：
+   vtab 的 shadow 表 `id` 是 AUTOINCREMENT，用户提供的 id 被忽略
+   （返回 id 从 1 起，需 `id-1` 映射回 0 基下标）；library 模式
+   `register()` 未实现 + `sqlite3-ext-vtab` 需 static/bundled，这些是
+   0.1.0 的成熟度短板，作为 dev-dep 实验可接受，作为生产依赖要再评估。
 
 ## 复现
 
