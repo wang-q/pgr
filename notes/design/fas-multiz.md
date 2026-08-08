@@ -120,7 +120,7 @@ gap open 400 / extend 30（§3.5）。
 | `windows.rs`      | 窗口推导                                                                                                          |
 | `merge.rs`        | `merge_window`：progressive 合并与保守回退                                                                        |
 | `banded_align.rs` | 单步 profile–profile 带状 DP（yama 直译）                                                                         |
-| `tests.rs`        | 10 个单元测试                                                                                                     |
+| `tests.rs`        | 13 个单元测试                                                                                                     |
 
 依赖：`fmt::fas`（block 数据结构）、`chain::SubMatrix`（打分，硬编码 `hoxd55`）、
 `ds`（区间合并/覆盖计数）。不依赖 `libs::alignment`。
@@ -129,7 +129,8 @@ gap open 400 / extend 30（§3.5）。
 
 1. 提取所有输入参考序列的 `Range`，按 `radius` 扩展后按染色体合并重叠区间。
 2. 过滤宽度小于 `min_width` 的窗口。
-3. 过滤覆盖度：只保留被至少一个输入覆盖的窗口。
+3. 无需显式覆盖度过滤：每个窗口都源自某个输入参考区间按 `radius` 扩展，天然被该输入
+   覆盖（零宽单碱基块也能保留，`merge_intervals` 不会丢弃）。
 
 ### 3.3 单窗口合并流程（merge_window）
 
