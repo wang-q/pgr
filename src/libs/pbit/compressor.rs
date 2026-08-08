@@ -8,6 +8,7 @@
 
 use anyhow::{bail, Context, Result};
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -284,6 +285,9 @@ pub struct Compressor<W: Write + Seek> {
     segments: Vec<Segment>,
     /// Map: contig_name → Vec<ref_group_id> (reference segment indices).
     contig_ref_groups: IndexMap<String, Vec<u32>>,
+    /// Lazy canonical-k-mer → reference segment index for content-based
+    /// matching when sample contig names do not match reference contigs.
+    ref_kmer_index: Option<HashMap<u64, Vec<u32>>>,
     /// Per-reference metadata (name, group range, embedded-index offsets).
     ref_meta: Vec<RefTableEntry>,
     /// Reference a sample routes to during `append_sample` (set per sample).
@@ -367,6 +371,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection: Collection::new(),
             segments: Vec::new(),
             contig_ref_groups: IndexMap::new(),
+            ref_kmer_index: None,
             ref_meta: Vec::new(),
             cur_ref_id: 0,
             segment_size,
@@ -504,6 +509,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection,
             segments,
             contig_ref_groups,
+            ref_kmer_index: None,
             ref_meta: dec_ref_table.clone(),
             cur_ref_id: 0,
             segment_size,
@@ -522,6 +528,68 @@ impl<W: Write + Seek> Compressor<W> {
     /// Names of the reference genomes in the archive, in ref_id order.
     pub fn ref_names(&self) -> Vec<&str> {
         self.ref_meta.iter().map(|r| r.ref_name.as_str()).collect()
+    }
+
+    /// Canonical 2-bit k-mer (min of k-mer and its reverse complement) as u64.
+    fn canonical_kmer(seq: &[u8], pos: usize, k: usize) -> Option<u64> {
+        if pos + k > seq.len() {
+            return None;
+        }
+        let mut mer = 0u64;
+        for &b in &seq[pos..pos + k] {
+            let v = match b.to_ascii_uppercase() {
+                b'A' => 0u64,
+                b'C' => 1u64,
+                b'G' => 2u64,
+                b'T' => 3u64,
+                _ => return None,
+            };
+            mer = (mer << 2) | v;
+        }
+        let mut rc = 0u64;
+        let mut m = mer;
+        for _ in 0..k {
+            rc = (rc << 2) | (3 - (m & 3));
+            m >>= 2;
+        }
+        Some(mer.min(rc))
+    }
+
+    /// Build (once) the reference canonical-k-mer → segment index used by the
+    /// content-based LZ-diff fallback.
+    fn ensure_ref_kmer_index(&mut self) {
+        if self.ref_kmer_index.is_some() {
+            return;
+        }
+        let k = self.kmer_len;
+        let mut idx: HashMap<u64, Vec<u32>> = HashMap::new();
+        for (gid, seg) in self.segments.iter().enumerate() {
+            let dna = seg.reference_dna();
+            for pos in 0..dna.len().saturating_sub(k - 1) {
+                if let Some(km) = Self::canonical_kmer(&dna, pos, k) {
+                    idx.entry(km).or_default().push(gid as u32);
+                }
+            }
+        }
+        self.ref_kmer_index = Some(idx);
+    }
+
+    /// Reference segment with the most shared canonical k-mers with `seg`.
+    fn best_ref_group(&mut self, seg: &[u8]) -> Option<u32> {
+        self.ensure_ref_kmer_index();
+        let idx = self.ref_kmer_index.as_ref()?;
+        let k = self.kmer_len;
+        let mut votes: HashMap<u32, u32> = HashMap::new();
+        for pos in 0..seg.len().saturating_sub(k - 1) {
+            if let Some(km) = Self::canonical_kmer(seg, pos, k) {
+                if let Some(gids) = idx.get(&km) {
+                    for &g in gids {
+                        *votes.entry(g).or_default() += 1;
+                    }
+                }
+            }
+        }
+        votes.into_iter().max_by_key(|&(_, v)| v).map(|(g, _)| g)
     }
 
     /// Whether a sample `name` already exists in the archive. Appending a
@@ -560,31 +628,49 @@ impl<W: Write + Seek> Compressor<W> {
                     self.ref_meta.len()
                 );
             };
-            let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(contig_name) {
-                Some(ids) => ids
-                    .iter()
-                    .copied()
-                    .filter(|id| {
-                        *id >= meta.group_start && *id < meta.group_start + meta.group_count
-                    })
-                    .collect(),
-                None => {
+            let (group_start, group_count) = (meta.group_start, meta.group_count);
+            let ref_name = meta.ref_name.clone();
+            let ref_group_ids: Vec<u32> = self
+                .contig_ref_groups
+                .get(contig_name)
+                .map(|ids| {
+                    ids.iter()
+                        .copied()
+                        .filter(|id| *id >= group_start && *id < group_start + group_count)
+                        .collect()
+                })
+                .unwrap_or_default();
+            if ref_group_ids.is_empty() {
+                // Content-based fallback (design §8.5 route 1): sample contig
+                // names differ from reference names; match each segment to its
+                // best-matching reference segment by canonical k-mer overlap
+                // and LZ-encode against it (no contig-name identity required).
+                let mut any = false;
+                for (seg_idx, seg) in segs.iter().enumerate() {
+                    if let Some(gid) = self.best_ref_group(seg) {
+                        self.encode_segment_lzdiff(
+                            sample_name,
+                            contig_name,
+                            seg_idx,
+                            seg,
+                            &[gid],
+                            false,
+                        )?;
+                        any = true;
+                    }
+                }
+                if any {
+                    self.collection
+                        .register_sample_contig(sample_name, contig_name)
+                        .mask_blocks = mask_blocks;
+                } else {
                     log::warn!(
-                        "contig '{}' in sample '{}' not found in reference {}; skipping",
+                        "contig '{}' in sample '{}' has no content match in reference {}; skipping",
                         contig_name,
                         sample_name,
-                        meta.ref_name
+                        ref_name
                     );
-                    continue;
                 }
-            };
-            if ref_group_ids.is_empty() {
-                log::warn!(
-                    "contig '{}' in sample '{}' has no segments in reference {}; skipping",
-                    contig_name,
-                    sample_name,
-                    meta.ref_name
-                );
                 continue;
             }
             // Register the contig entry with its soft-mask intervals (v1005);
@@ -954,6 +1040,19 @@ impl<W: Write + Seek> Compressor<W> {
                         seg,
                         &ref_group_ids,
                         contig_is_rev_comp,
+                    )?;
+                    any_encoded = true;
+                } else if let Some(gid) = self.best_ref_group(seg) {
+                    // Content-based fallback: no contig-name match and no
+                    // PAF coverage; encode against the best-matching
+                    // reference segment by canonical k-mer overlap.
+                    self.encode_segment_lzdiff(
+                        sample_name,
+                        contig_name,
+                        seg_idx,
+                        seg,
+                        &[gid],
+                        false,
                     )?;
                     any_encoded = true;
                 }
@@ -1633,6 +1732,201 @@ mod tests {
         dec.get_sample("sample1", &mut buf)?;
         let got = extract_fasta_seq(&buf);
         let expected = String::from_utf8(sample_seq.clone()).unwrap();
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_sample_with_paf_multi_segment_gap_free() -> Result<()> {
+        // 12000 bp reference = 3 segments (4096 + 4096 + 3808). A single
+        // full-coverage CIGAR without internal gaps must encode all segments.
+        let dir = tempfile::tempdir()?;
+        let ref_seq = random_dna(12000, 42);
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let mut sample_seq = ref_seq.clone();
+        sample_seq[100] = b'G';
+        sample_seq[5000] = b'C';
+        sample_seq[9000] = b'T';
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("sampc", &sample_seq)]);
+
+        let paf_path = dir.path().join("sample.paf");
+        write_paf(
+            paf_path.to_str().unwrap(),
+            &[paf_line(
+                "sampc",
+                12000,
+                0,
+                12000,
+                "+",
+                "chr1",
+                12000,
+                0,
+                12000,
+                "100=1X4899=1X3999=1X3999=",
+            )],
+        );
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample_with_paf(
+            "sample1",
+            sample_path.to_str().unwrap(),
+            paf_path.to_str().unwrap(),
+        )?;
+        comp.finish()?;
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let got = extract_fasta_seq(&buf);
+        let expected = String::from_utf8(sample_seq.clone()).unwrap();
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_sample_with_paf_deletion_crosses_segment() -> Result<()> {
+        // A deletion whose target interval crosses a 4096-bp reference segment
+        // boundary is rejected by the CIGAR path (design constraint 3), but
+        // the LZ content fallback recovers the segment losslessly against the
+        // best-matching reference segment, so the sample round-trips fully.
+        let dir = tempfile::tempdir()?;
+        let ref_seq = random_dna(12000, 42);
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        // Sample = ref with 100 bp deleted at position 5000 (target interval
+        // [5000, 5100) lies within ref segment 1, but the query segment
+        // [4096, 8192) maps to target [4096, 8192+100) crossing the boundary).
+        let mut sample_seq = Vec::with_capacity(11900);
+        sample_seq.extend_from_slice(&ref_seq[..5000]);
+        sample_seq.extend_from_slice(&ref_seq[5100..]);
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("sampc", &sample_seq)]);
+
+        let paf_path = dir.path().join("sample.paf");
+        write_paf(
+            paf_path.to_str().unwrap(),
+            &[paf_line(
+                "sampc",
+                11900,
+                0,
+                11900,
+                "+",
+                "chr1",
+                12000,
+                0,
+                12000,
+                "5000=100D6900=",
+            )],
+        );
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample_with_paf(
+            "sample1",
+            sample_path.to_str().unwrap(),
+            paf_path.to_str().unwrap(),
+        )?;
+        comp.finish()?;
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let got = extract_fasta_seq(&buf);
+        let expected = String::from_utf8(sample_seq.clone()).unwrap();
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_sample_with_paf_indel_breaks_phase() -> Result<()> {
+        // A 1-bp insertion early in the sample shifts the phase of every
+        // downstream segment: the CIGAR path requires phase-aligned target
+        // intervals and drops those segments, but the LZ content fallback
+        // recovers them losslessly against the best-matching reference
+        // segment, so the sample round-trips fully.
+        let dir = tempfile::tempdir()?;
+        let ref_seq = random_dna(12000, 42);
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        // Sample = ref with one base inserted at position 100.
+        let mut sample_seq = Vec::with_capacity(12001);
+        sample_seq.extend_from_slice(&ref_seq[..100]);
+        sample_seq.push(b'G');
+        sample_seq.extend_from_slice(&ref_seq[100..]);
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("sampc", &sample_seq)]);
+
+        let paf_path = dir.path().join("sample.paf");
+        write_paf(
+            paf_path.to_str().unwrap(),
+            &[paf_line(
+                "sampc",
+                12001,
+                0,
+                12001,
+                "+",
+                "chr1",
+                12000,
+                0,
+                12000,
+                "100=1I11900=",
+            )],
+        );
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample_with_paf(
+            "sample1",
+            sample_path.to_str().unwrap(),
+            paf_path.to_str().unwrap(),
+        )?;
+        comp.finish()?;
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let got = extract_fasta_seq(&buf);
+        let expected = String::from_utf8(sample_seq.clone()).unwrap();
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_sample_content_match_cross_assembly() -> Result<()> {
+        // Sample contig names differ from the reference and no PAF is
+        // provided: the LZ-diff content fallback must match each segment to
+        // its best reference segment by canonical k-mer overlap and round-trip
+        // losslessly (design §8.5 route 1).
+        let dir = tempfile::tempdir()?;
+        let ref_seq = random_dna(12000, 42);
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let mut sample_seq = ref_seq.clone();
+        sample_seq[100] = b'G';
+        sample_seq[5000] = b'C';
+        sample_seq[9000] = b'T';
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("sampc", &sample_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("sample1", sample_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let got = extract_fasta_seq(&buf);
+        let expected =
+            String::from_utf8(sample_seq.iter().map(|&c| c.to_ascii_uppercase()).collect())
+                .unwrap();
         assert_eq!(got, expected);
         Ok(())
     }

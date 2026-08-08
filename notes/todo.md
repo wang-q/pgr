@@ -75,15 +75,23 @@
       物种硬路由在小 clade 上反而有害（R=1 跌到 0.70），clade 需 ≥K
       成员（`benchmarks/bench-hv-ann-real.md`）。
 - [ ] **标定/检索剩余**：sqlite-vec 真实 HV 延迟（等安装）；E. coli NR
-      全量（2,115）与全 NR（15,574）实跑（已 494 规模外推）；pbit
-      多参考/高分歧样本验证；bac120 标记基因路由准确率（§7.4 #10/#9/#14/#19）。
+      全 NR（15,574）实跑（2,088 已实测，见 `benchmarks/bench-scale-and-pbit.md`
+      #8b）；pbit 多参考/高分歧样本验证（同 #14 路线）；§7.4 #10/#9/#14/#19
+      状态见设计文档。
 - [x] **bac120 标记基因路由（#19，2026-08-08）**：8 个保守标记蛋白 aa
       最近邻路由准确率 0.756（ANI 金标准上限 0.800，HV 路由 0.822）
       （`benchmarks/bench-marker-routing.md`）。
-- [ ] **pbit PAF 闭环（#14，2026-08-08 部分）**：已修 `--paf` 跨组装
-      命名 bug（回归测试过）；还需实现 `psl to-paf` 的 cg:Z（=/X）输出
-      或接入 minimap2，才能拿到真实压缩率（约束见
-      `benchmarks/bench-scale-and-pbit.md` #14b）。
+- [ ] **pbit PAF 闭环（#14，2026-08-08）**：已修 `--paf` 跨组装命名
+      bug（118 测试过）；最根本约束 = 段相位对齐（indel 即破坏，新增
+      `indel_breaks_phase` 测试；`benchmarks/bench-scale-and-pbit.md`
+      #14b–e）。真实压缩率需"跨相位/跨记录组装"或"长链链化"设计改动。
+- [x] **pbit 重构路线 1：LZ 内容匹配化（2026-08-08 落地，#14 ✅）**：
+      canonical k-mer 倒排索引 + `best_ref_group`，无 PAF/同名也可
+      ~100% 无损；真实 delta = gzip-9 的 53%（近缘）~78%（分歧）
+      （`benchmarks/bench-scale-and-pbit.md` #14f；119 个 pbit 测试过）。
+- [ ] **pbit 路线 2/3（2026-08-08 挂账）**：跨相位 CIGAR 编码（格式
+      升级候选）；pgi 长链链化（依赖对齐器）；cg:Z 生产者（CIGAR 长期
+      优化，非阻塞）。
 - [ ] **聚类/选参考/PBit 端到端验证（P2）**：Necom 聚类 vs GTDB 标签
       一致率；参考策略（中心/最长/随机）→ pgi → pbit 压缩率对比
       （§7.2③–⑤，数据需求：一个物种的真实 cohort）。
