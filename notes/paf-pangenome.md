@@ -1,11 +1,11 @@
 # pgr 泛基因组 — PAF 隐式图
 
-> 本文档覆盖 `pgr paf` 泛基因组查询与图构建命令族（query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat）。
+> 本文档覆盖 `pgr paf` 泛基因组查询与图构建命令族（query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat / validate）。
 > 群体基因组压缩格式 `pgr pbit` 见 [`pbit.md`](design/pbit.md)。
 
 **复用已有的 pairwise 比对基础设施，构建 PAF 隐式图，按需回答"哪些序列的哪些区段同源"， 而非物化一张泛基因组图。**
 
-query / to-maf / graph / to-gfa / to-vcf / stat 已全部完成。综合参考：impg（POA → GFA）、minigraph（chain → CIGAR → rGFA）、
+query / to-maf / graph / to-gfa / to-vcf / stat / validate 已全部完成。综合参考：impg（POA → GFA）、minigraph（chain → CIGAR → rGFA）、
 seqwish（DSU 传递闭包）、Cactus（Caf 退火-熔化）。
 
 参考文档：[[impg.md]]、[[seqwish.md]]、[[minigraph.md]]、[[cactus.md]]、[[cactus_lastz.md]]、
@@ -51,7 +51,8 @@ pgr 走向泛基因组时，面对的问题与 impg **完全不同**。impg 的�
 | 比对来源 | 从 FASTA 跑 wfmash/sweepga | 已有两序列 MAF（可转 PAF）       |
 | 挑选时机 | align 阶段（无先验）       | 可借已有 MAF 先验                |
 | 核心问题 | 选哪些对比对               | 复用已有 pairwise，做 PAF 隐式图 |
-| 比对工具 | wfmash/FastGA              | pgr 已有 `pgr align lastz` 全套    |
+| 比对工具 | wfmash/FastGA              | pgr 已有 `pgr align lastz` 全套；近缘/常规场景推荐
+  更快的 `pgr align pgi` + `pgr pl chainnet`（自产 PAF）  |
 
 ### 1.3 与 `--sparsify` 的关系：分场景
 
@@ -72,13 +73,67 @@ pgr 是否需要 sparsify **取决于 cohort 规模和已有资产**：
 **大 cohort**：Mash KNN 把 27000² 降到 27000×K（K≈50，~270 倍缩减）；用 FastGA 比对产 MAF → 转 PAF；
 稀疏比对的缺口由查询时 BFS 推断。
 
-> MAF 出现在这里是因为外部工具（lastz/FastGA）以 MAF 输出；进入 pgr 后立即转成内部格式
-> （PAF 给隐式图、Block FA 给多序列比对），内部链路不再依赖 MAF。
-
 > **spanning tree 优化（远期）**：seqwish 在传递闭包前用最大权生成树剪枝，把 N(N-1)/2 边压缩到 N-1
 > 边。pgr 查询层 BFS 若性能瓶颈显现，可在加载 PAF 阶段预计算生成树。当前不做，待性能数据出来再评估。
 
-### 1.4 三种图构建路线
+### 1.4 Pbit 的定位：近缘样本不需要 all-vs-all
+
+上述"小 cohort / 大 cohort"都默认走 all-vs-all（或 sparsify + BFS）的 PAF 隐式图。
+但对**没有明显结构变异的基因组**（同物种近缘，如 E. coli 菌株间），这个前提并不成立：
+
+- 这类样本的**泛基因组样式不会有太大差别**——共线性基本一致，差异主要是
+  **SNP 与 indel**（由 CIGAR 的 `=/X/I/D` 表达），没有大规模重排/插入缺失需要
+  图来承载；
+- 因此它们**不需要无谓的 all-vs-all PAF**：N 个样本两两比对（N² 记录）里，
+  绝大多数记录在重复表达同样的 SNP/indel 关系——样本与参考的差异已经足够
+  描述整个群。
+
+**Pbit 的定位**：Pbit 正是这个场景的压缩归档层——"**一个参考锚 + 每个样本
+对参考的一条 PAF**"。样本只对参考做一次比对（`pbit create --paf` 的强制输入），
+差异通过 CIGAR/Identity 编码合并到参考上（纯匹配段零开销引用参考、`=` 段
+直接取参考碱基），样本间共享的序列不重复存储。这是"合并近缘样本、避免
+all-vs-all"的显式实现，也是 pbit 设计基础"样本尽量复用参考序列"（见
+`design/pbit.md`）的来源。
+
+与 PAF 隐式图的关系：**Pbit 是 PAF 隐式图的一部分**——归档内嵌的
+样本-参考比对（经 `pbit to-paf` 导出）本身就是 PAF 边集，可直接作为
+PafIndex 输入被查询（`pgr paf query` / BFS 传递闭包）。参考是锚节点，
+每个样本是叶子节点，边 = 该样本对参考的 PAF 记录；近缘样本间的同源
+关系沿"参考-样本"边由 BFS 介导推断，无需显式 all-vs-all。
+
+| 场景 | 做法 | 产物 |
+|---|---|---|
+| 近缘、无明显结构变异（同物种菌株群） | 每样本 vs 参考一次 PAF → Pbit 归档 | `.pbit`（压缩存储；`to-paf` 导出的 PAF 可直接进 PAF 隐式图查询） |
+| 有结构变异 / 需要泛基因组图 | all-vs-all 或 Mash KNN sparsify → PAF 隐式图 | PAF 索引 + 查询/BFS |
+
+Pbit 的定位 = **近缘样本的压缩存储 + PAF 隐式图的数据源**：它把
+"每样本 vs 参考"的边集压缩进归档（样本序列不重复存储），查询时经
+`to-paf` 还原边集喂给 PafIndex；有结构变异、需要图承载的样本群仍走
+all-vs-all / sparsify 路线（§1.3），两者在 PAF 层汇合。
+
+**最终交付物：PAF 索引 + Pbit**——泛基因组场景交付给用户的只有两样：
+
+- **PAF 索引**：隐式图查询入口（`pgr paf query` / BFS / stat）；
+- **Pbit 归档**：参考 + 样本序列与比对的压缩存储（`to-fa` 还原序列、
+  `to-paf` 还原边集）。
+
+原始 FASTA、中间格式（MAF / PSL / chain / axt）都不需要提交——Pbit 内含
+参考与样本、可完整还原；**粗 GFA 也不需要物化提交**——它是 PAF 索引的
+**显式投影**（`graph` / `to-gfa`，`--min-var-len` 过滤小 indel），需要
+结构变异概览时按需生成。空间与文件格式因此都大幅简化。
+
+**显式图 + 隐式图结合**：本次设计不是二选一，而是两者共同（同一数据源
+PAF，分工互补）：
+
+| 图 | 形式 | 职责 |
+|---|---|---|
+| **隐式图** | PAF 索引 + 区间树 + BFS 传递闭包 | 精确同源查询（"哪些序列的哪些区域与该位点同源"），碱基级 |
+| **显式粗图** | 粗 GFA（`--min-var-len` 切分节点边界） | **只表现结构变异**的拓扑概览，零序列依赖 |
+
+交付时只需 **PAF 索引 + Pbit** 两件；粗 GFA 作为 PAF 索引的显式投影按需
+生成，不进入交付物。
+
+### 1.5 三种图构建路线
 
 | 路线          | 流程                                          | 输出                 |       pgr 采用       |
 |---------------|-----------------------------------------------|----------------------|:--------------------:|
@@ -114,16 +169,18 @@ PAF 是图的边，Chain/Net 是查询层的 syntenic 过滤器。理由（详�
 的每个 block 等价于一条 pairwise alignment—— `s` 行给出坐标和链向，可直接映射到 PAF 的 12 列。
 这是 PAF 隐式图（query / graph / to-gfa / to-vcf / stat）的入口；多序列比对 / 核心基因组
 路径（`pgr pl p2m`）则走 `maf to-fas` 转 Block FA，内部工作格式是 fas 而非 MAF。
+pgr 也自产比对：推荐链路 `pgr align pgi → pgr pl chainnet --t-name '' --q-name '' → pgr maf
+to-paf`（chainnet 输出 MAF），产出的 PAF 同样进入 PafIndex；近缘样本群则经 Pbit 归档
+（`pbit to-paf` 还原边集）作为图数据源（见 §1.4）。
 
 ### 2.3 索引全量装入，挑选发生在查询层
 
 PAF 索引时不做过滤，所有记录全量装入区间树。过滤参数只在查询时生效。同一份索引可服务不同严格度的
 查询。对应 impg 的 `Index` 命令只有文件路径和 index-mode 参数，而 `QueryOpts` 才有过滤开关。
 
-**索引层工程优化（4 万大肠杆菌规模可考虑）**：seqwish 的 `SeqIndex` 用 FM-index 索引序列名 +
-`SparseBitVec` 记录序列边界，比 HashMap 省内存；`PosT` 把 offset+方向打包进单 u64。详见 [[seqwish.md]
-] §2.1、§2.2。pgr 当前用 HashMap + coitrees 在 4 万大肠杆菌规模尚可，若扩到 HPRC 规模（数百单倍型、
-Gb 级），可借鉴此方案。
+**索引层工程优化（4 万大肠杆菌规模可考虑）**：seqwish 的 `SeqIndex`（FM-index 序列名 +
+`SparseBitVec` 序列边界）与 `PosT`（offset+方向打包进单 u64）可降低索引内存，详见
+[[seqwish.md]] §2.1/§2.2——具体引入时机与收益见 §5.2 路径 A。
 
 ### 2.4 传递闭包是图遍历，不是多序列比对
 
@@ -205,6 +262,7 @@ region 跑 `pgr align lastz`，合并回 PAF 网络。**这一层是第一层的
 | **to-gfa** ✅ | 区域精细 GFA（impg 风格） | 需 `-f TSV` + `--transitive` | unchop 默认开；`--crush` 可选 bubble 压缩；LN tag；多 region 独立                          |
 | **to-vcf** ✅ | POA MSA → VCF（SNP + INS/DEL） | 需 `-f TSV` + `--transitive` | 复用 `build_msa_entries`（与 `--msa` 同源）；三分支主循环；1bp anchor；indel 左对齐 |
 | **stat** ✅ | 粗图拓扑报告（25 维度 TSV） | 复用 `graph` 的 `PafGraph::build` | 节点长度/覆盖分布 + 连通分量 + tips/self-loop + 路径长度分布   |
+| **validate** ✅ | 自洽性校验报告（纯文本） | 复用 `cigar_stats` + `extract_cigar` | 由 `cg:Z:` 重构期望端坐标并与声明坐标比对，报告 query/target 端失配记录 |
 
 配套命令：`pgr maf to-paf`（MAF → PAF 转换）、`pgr paf index`（区间树索引，支持多文件合并
 `build_multi`、`.paf.idx` 持久化、BGZF lazy CIGAR）。
@@ -255,6 +313,10 @@ src/libs/paf/
 ├── msa_build.rs    # MSA 条目构建
 ├── poa_compact.rs  # POA 压缩
 ├── query.rs        # 查询接口
+├── to_bed.rs       # BED 输出辅助
+├── to_fas.rs       # Block FA 输出辅助
+├── to_maf.rs       # MAF 输出辅助
+├── validate.rs     # cg:Z 自洽性校验（ValidationReport）
 ├── vcf.rs          # VCF 导出逻辑
 ├── index/          # PafIndex + BFS 传递闭包
 │   ├── mod.rs      #   PafIndex + PafMetadata + SortedRanges
@@ -272,8 +334,7 @@ src/libs/paf/
     └── tests.rs    #   单元测试
 
 src/cmd_pgr/paf/
-├── index.rs / query.rs / to_bed.rs / to_fas.rs / to_maf.rs / to_gfa.rs / to_vcf.rs / graph.rs / stat.rs
-├── common.rs       # 共享参数和辅助函数
+├── index.rs / query.rs / to_bed.rs / to_fas.rs / to_maf.rs / to_gfa.rs / to_vcf.rs / graph.rs / stat.rs / validate.rs
 └── mod.rs
 ```
 
@@ -332,7 +393,8 @@ identity 计算：对 CIGAR 做 fold 统计——`=`/`X` 计入 matches/mismatch
 或按碱基计数（bi）。`gi` 评估同源性（对长 indel 宽容），`bi` 评估序列一致性（对长 indel 严格）。
 
 PAF 输出：`output_paf` 输出 12 列 + 三个标准标签：`gi:f:`（gap-compressed identity）、`bi:f:`
-（block identity）、`cg:Z:`（CIGAR string）。
+（block identity）、`cg:Z:`（CIGAR string）。`maf_import`（`maf to-paf`）额外产出 FastGA 风格的
+`cs:Z:` 可逆紧凑 CIGAR（`cs_from_alignment`，见 [[references/fastga.md]]），供 `pgi` 链路复用。
 
 ### 4.5 PafIndex 设计
 
@@ -397,12 +459,12 @@ query / to-maf / graph / to-gfa / to-vcf / stat 已完成索引→查询→图�
 | VCF 左对齐 ✅               | §3.2 已知限制 | 用户反馈 `bcftools norm` 后处理不够时 | 中     |
 | `--min-tree-coverage` ❌    | §6.4 Cactus Caf 过滤维度 | 有 phylogeny 上下文且需按树分布过滤时（需进化树上下文，留待后续阶段） | 中     |
 
-> `pgr paf` 基准测试（`benches/`）原列于此，因依赖 4 万大肠杆菌真实数据，已随规模扩展一并推迟。
+> `pgr paf` 基准测试：10 基因组级已完成（见下，2026-08-02）；4 万级重测
+> 随规模扩展（§5.2）一并推迟（依赖真实 cohort 数据）。
 
-**graph rGFA tag** ✅：已在 `PafGraph::write_gfa` 的 S 行追加 `SN:Z`（源序列名）、`SO:i`（0-based
-起始 偏移）、`SR:i:0`（rank 0 = primary）。origin 取 DSU 等价类中 `(seq_id, start)` 最小者（PAF
-target 先 注册，故 target 优先），novel 节点 origin 取其填充时的 `(name, start)`。SR 暂恒为 0（pgr
-路径方向 恒 `+`，无链翻转）。与 minigraph rGFA / odgi 工具链兼容。
+**graph rGFA tag** ✅：`PafGraph::write_gfa` 的 S 行已追加 `SN:Z`/`SO:i`/`SR:i:0`
+（origin 取 DSU 等价类最小者，SR 恒 0 = 方向恒 `+`），与 minigraph rGFA / odgi
+工具链兼容（细节见 §3.3）。
 
 **VCF 左对齐** ✅：在 `to_vcf.rs` 中实现 `left_align_indels` 辅助函数，对 INS/DEL 做左推。取 target
 序列前 1000bp 前缀构建 `target_ext`，当锚点前碱基与所有非空 indel 序列末位碱基相同时，将锚点左移并
@@ -536,7 +598,7 @@ impg 能力栈顶端是 `Genotype` / `Infer`（[[impg.md]] §7）。pgr 路径�
 ### 5.4 优先级路线图
 
 ```
-当前 (query / to-maf / graph / to-gfa / to-vcf / stat ✅ + 增量增强 ✅* )
+当前 (query / to-maf / graph / to-gfa / to-vcf / stat / validate ✅ + 增量增强 ✅* )
    │
    ├─ §5.0 打磨项（可选，按触发条件）: rGFA tag ✅ / VCF 左对齐 ✅ / --min-tree-coverage
    │
@@ -559,7 +621,7 @@ impg 能力栈顶端是 `Genotype` / `Infer`（[[impg.md]] §7）。pgr 路径�
 待 4 万大肠杆菌数据可用后启动。应用层视用户反馈与真实数据验证后再启动。
 
 **测试文件结构重组**：原 `cli_paf_query.rs`（59 个测试，覆盖 query + to-maf/to-vcf/to-gfa/to-bed +
-BFS + transitive 等多子命令）已按子命令拆分为 12 个独立文件，每个文件聚焦单一子命令或核心行为，
+BFS + transitive 等多子命令）已按子命令拆分为 13 个独立文件，每个文件聚焦单一子命令或核心行为，
 辅助函数（`write_bgzf_fa` / `spell_gfa_paths` / `revcomp`）按需在各文件内独立包含，无跨文件依赖：
 
 - `cli_paf.rs`（12）— `pgr paf index` 基础与持久化 roundtrip
@@ -573,6 +635,7 @@ BFS + transitive 等多子命令）已按子命令拆分为 12 个独立文件�
 - `cli_paf_to_gfa.rs`（7）— `pgr paf to-gfa`（局部图）+ path round-trip + lowercase round-trip
 - `cli_paf_to_maf.rs`（13）— `pgr paf to-maf`（pairwise + MSA）
 - `cli_paf_to_vcf.rs`（6）— `pgr paf to-vcf`（SNP + INS/DEL + 左对齐）
+- `cli_paf_validate.rs`（7）— `pgr paf validate`（cg:Z 自洽性校验）
 - `cli_paf_real.rs`（3）— 真实 multiz 数据回归
 
 **跨平台临时文件**：所有 paf 测试已统一使用 `tempfile::TempDir` 替换硬编码 `/tmp/` 路径，
@@ -582,6 +645,8 @@ BFS + transitive 等多子命令）已按子命令拆分为 12 个独立文件�
 ## 6. 存量资产优势
 
 通读 notes/ 下全部文档并分析 pgr 源码后，对 pgr 已有资产的认识持续深化。 以下发现显著降低了实现门槛。
+（本章为 2026-08-02 的早期资产分析；其中"从零写三样"等结论在 pgr paf
+模块中已全部落地——区间树索引、PAF 解析、CIGAR 编解码见 §4。）
 
 ### 6.1 `loc.rs` — pgr 的 IO 层比 impg 更成熟
 
@@ -594,7 +659,7 @@ BFS + transitive 等多子命令）已按子命令拆分为 12 个独立文件�
   `Input::read_line` 方法供 PAF 解析使用
 
 **结论**：PAF 模块中最棘手的 IO 部分（多格式输入、BGZF 随机访问、CIGAR 懒加载） pgr 已经解决了 80%。
-真正需要从零写的只有三样：区间树索引、PAF 行解析、CIGAR 编解码。
+真正需要从零写的只有三样：区间树索引、PAF 行解析、CIGAR 编解码（**均已落地**，见 §4）。
 
 ### 6.2 `IndexedReader` 自带索引能力，不需要 impg 的 GZI 机制
 
@@ -607,7 +672,9 @@ impg 的 `parse_paf_bgzf_with_gzi` 需要外部 `.gzi` 索引文件来做多线�
 
 ### 6.3 pgr 已有的比对生成能力
 
-pgr 有完整的 lastz 封装（7 套预设参数、并行执行），可以为特定 pair 生成 pairwise 比对。 `--self`
+pgr 有完整的 lastz 封装（7 套预设参数、并行执行），可以为特定 pair 生成 pairwise 比对；常规
+场景推荐更快的 `pgr align pgi`（→ `pgr pl chainnet` → `pgr maf to-paf` 自产 PAF，见 §2.2）。
+`--self`
 模式是重复屏蔽管道的一部分（碎片自比对），不是泛基因组比对工具。
 
 ### 6.4 Cactus Caf 的"退火-熔化"循环对 pgr 挑选机制的直接参考
