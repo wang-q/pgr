@@ -28,6 +28,9 @@ distances match `mash dist` for identical k / sketch size.
 * MinHash Jaccard is unbiased for similarly-sized sets (Broder 1997);
   containment uses the first input as the denominator and is biased for very
   different-sized sets.
+* -p parallelizes sketch loading across input files and pair comparison;
+  speedup saturates around the number of input files/sequences (e.g. 4 query
+  files -> ~4 threads), so -p beyond that adds little.
 
 Examples:
 1. Mash-compatible distances (defaults -k 21 --size 1000 match `mash dist`):

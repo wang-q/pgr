@@ -14,7 +14,16 @@
       20 对全部一致，见 `benchmarks/bench-dist-mash-compat.md`）/
       `dist frac`（FracMinHash + `--ci`）；`dist pgi`/`dist hv` 保留；
       `pl prefilter` 改用 `dist mini`。syncmer 从 dist 侧移除，仅保留在
-      `pgi build` 作比对锚点。
+      `pgi build` 作比对锚点。**收尾（2026-08-08 审计 + 并行）**：
+      (1) Jaccard/union 改用 Mash 的 merge `denom` 语义（未满 sketch 时
+      与 mash dist 一致，如 2/2→0、0/92→1）；(2) containment 用完整集合
+      交集/第一个集合大小（Mash `within` 语义，原为 merge-common 系统性
+      低估 25–35%）；(3) sketch 构建流式化（滚动 O(k) 窗口 + 增量
+      bottom-k），内存从 O(基因组长度) 降到 O(sketch size)（4.6 Mb 基因组
+      峰值 RSS 90 MB→15.8 MB）；(4) 空集不再输出 NaN；(5) sketch 加载
+      文件级并行 + bottom-k 预筛（4 对场景 -p4：1.34 s→0.23 s，Mash
+      参照 0.18 s）。默认输出过滤差异（Mash 输出 shared=0 行、pgr 默认
+      过滤需 `--zero`）已在 docs/dist.md 说明。
 - [x] **FracMinHash 采样器落地**（2026-08-08）：`dist seq --sampler frachash`
       → 现为独立命令 `dist frac`（canonical k-mer 保留 hash < u64::MAX/scale，
       `--scale` 默认 1000）
@@ -55,13 +64,16 @@
 - [ ] 稀疏 s=1 的完整 45 对 cohort 复测（2026-08-08 仅 5 株 10 对验证
       ρ=0.988；原 s=3 是 10 株 45 对）：等 10 株数据到位后补全，确认
       s=1 排序一致性（理论 + 10 对实测已支持，此为收尾验证）。
-- [ ] FracMinHash containment/ANI 偏差校正（2026-08-08 立项，等 Hera
-      论文：Hera et al. 2023, *Genome Res* 33(7):1061–1068,
-      doi:10.1101/gr.277651.123）：当前 `dist frac`
-      的 containment 有 ~10% Jensen 偏差（实测与 scale 无关、增大采样
-      无效）；实现 Hera 校正公式消除到一阶/二阶，使 containment/ANI
-      数值精确（来源：`benchmarks/dist-cohort-validation.md`
-      FracMinHash containment 小节）。
+- [x] FracMinHash containment/ANI 偏差校正评估（2026-08-08 完成，Hera
+      2023 论文已读：Hera et al., *Genome Res* 33(7):1061–1068,
+      doi:10.1101/gr.277651.123）：原"~10% Jensen 偏差"是 **k 不匹配
+      假象**（frachash k=21 vs 全 k=40 真值）；同 k=21 对照（5 株 × 10
+      对）偏差仅 0.3–2.3%（正负对称 = 采样方差）。Hera 校正因子
+      (1−(1−s)^|A|) 对 |A|≥10⁵ ≈ 1，大肠杆菌/默认 scale 场景无校正
+      效果；Theorem 8 CI 需对 p 数值求解、与现有正态近似差异小。
+      **结论：不实现**，`dist frac` containment/ANI 保持现状（数据见
+      `benchmarks/bench-dist-mash-compat.md` 同 k 对照节；触发条件 =
+      极短序列 |A|<~100 + 大 scale 场景出现时再评估）。
 - [x] 重新审视 `.hv` 路径的稀疏选择（2026-08-08 已分析 + s=1 已落地）：
       稀疏是历史性能优化产物（非有意设计）但理论已补齐（§2.7/§6.5/§6.6）；
       权衡 = 编码瓶颈场景用稀疏 s=1（~50× 快 + 大 D 免费精度）、小规模
@@ -83,6 +95,10 @@
       并确认 `sd cross` 是否需要双向全量；量化完再实现（来源：`design/pgi-align.md` §7.4.1）。
 - [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项；当前非优先级
       （来源：`design/pgi-query-layer.md` 目标 4）。
+- [ ] `dist mash` 序列级并行（单文件多 record，对齐 Mash `sketchFileBySequence`）：
+      需流式背压管道（有界 channel，避免物化记录使内存回归 O(基因组长度)）；
+      触发条件 = 单文件多 contig 的大规模草图场景（当前文件级并行已覆盖
+      多文件用例，见 `benchmarks/bench-dist-mash-compat.md` 性能节）。
 
 ## 3. 低风险审计记录项（可顺手修）
 
@@ -120,3 +136,5 @@
 - sd 边界扩展（BISER MAX_EXTEND 移植）：**已评估后不做**（2026-08-06，与 lastz
   比较：pgi hit 左边界仅短 2–6 bp、右边界一致，收益边际；且灵敏度优化
   freq=50/k=31 已解决更实质的漏检问题——详见 `design/sd.md` §4.8/§4.9）。
+- `dist mash` murmur3 SIMD/换实现优化：**已评估后不做**（2026-08-08）——单对
+  已对齐 Mash 1.3×（0.24 vs 0.18 s），换哈希实现需重验字节级兼容，风险大于收益。

@@ -16,6 +16,10 @@ minimizers or closed syncmers, projected onto hypervectors.
   sketch-distance family (`pgr dist mini` / `pgr dist frac`). Syncmer defaults
   (DNA smer=8/window=55, protein smer=7/window=5) are applied automatically
   when --sampler syncmer is used without explicit -k/-w.
+* `--sampler syncmer` is kept as an experimental option: closed syncmer
+  sampling is not uniform, so its Jaccard/containment estimates are biased
+  (see notes/benchmarks/dist-cohort-validation.md). Use it to compare against
+  minimizer or FracMinHash results; prefer `pgr dist frac` for numeric ANI.
 
 * Input Modes:
     * For a single sequence file: Merge all sequences within the file into a single hypervector.

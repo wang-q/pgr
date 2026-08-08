@@ -276,6 +276,15 @@ impl BottomK {
 
     /// Insert one hash, evicting the current maximum when over capacity.
     pub fn insert(&mut self, h: u64) {
+        // Fast path: once full, hashes >= the current maximum can never be
+        // in the top-k, so reject them before touching the set/heap.
+        if self.set.len() >= self.size {
+            if let Some(&max) = self.heap.peek() {
+                if h >= max {
+                    return;
+                }
+            }
+        }
         if self.set.insert(h) {
             self.heap.push(h);
             if self.heap.len() > self.size {
@@ -674,55 +683,6 @@ pub fn load_fracminhash(
             set: all_set,
         };
         entries.push(entry);
-    }
-
-    Ok(entries)
-}
-
-/// Read a FASTA file and build a `MinimizerEntry` per record (or one merged
-/// entry with `is_merge`) using closed syncmers.
-///
-/// Drop-in parallel to [`load_minimizers`]; `smer` is the s-mer length and
-/// `window` the number of s-mers per syncmer window. `is_protein` dispatches
-/// to the protein byte-hash path (DNA uses the 2-bit canonical rolling hash).
-pub fn load_syncmers(
-    infile: &str,
-    smer: usize,
-    window: usize,
-    is_protein: bool,
-    is_merge: bool,
-) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let params = crate::libs::syncmer::SyncmerParams {
-        smer,
-        window,
-        seed: 7,
-    };
-    params.validate()?;
-
-    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
-
-    let mut entries = vec![];
-    let mut all_set: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::default();
-
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
-
-        let set = crate::libs::syncmer::seq_syncmer_set(&seq[..], &params, is_protein)?;
-
-        if is_merge {
-            all_set.extend(set);
-        } else {
-            entries.push(MinimizerEntry { name, set });
-        }
-    }
-
-    if is_merge {
-        entries.push(MinimizerEntry {
-            name: infile.to_string(),
-            set: all_set,
-        });
     }
 
     Ok(entries)

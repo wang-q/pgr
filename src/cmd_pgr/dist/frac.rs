@@ -24,6 +24,9 @@ sets, and support ANI bias correction with confidence intervals (Hera et al.
 
 * DNA default: -k 21; protein default: -k 7 (applied automatically).
 * --scale controls density (default 1000; smaller = denser = lower variance).
+* -p parallelizes sketch loading across input files and pair comparison;
+  speedup saturates around the number of input files/sequences (e.g. 4 query
+  files -> ~4 threads), so -p beyond that adds little.
 
 This is the recommended command for numeric ANI estimation. See
 notes/benchmarks/dist-cohort-validation.md for the unbiasedness validation.

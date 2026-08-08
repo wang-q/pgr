@@ -24,6 +24,9 @@ other sketch-distance commands (`pgr dist mash` / `pgr dist frac`).
   emits canonical k-mers (sequence and reverse complement share the same
   k-mer set) and is DNA-only; combining it with --protein is rejected.
 * Increasing the window size speeds up processing.
+* -p parallelizes sketch loading across input files and pair comparison;
+  speedup saturates around the number of input files/sequences (e.g. 4 query
+  files -> ~4 threads), so -p beyond that adds little.
 
 Note: minimizer Jaccard estimates are biased and inconsistent (Belbasi et al.
 2022). Use this command for fast ranking/screening; for unbiased numeric ANI

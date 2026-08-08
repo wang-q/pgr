@@ -42,14 +42,18 @@ pub fn resolve_paths(infile: &str, is_list: bool) -> anyhow::Result<Vec<String>>
     }
 }
 
-/// Load entries from a list of paths using a per-file loader.
+/// Load entries from a list of paths using a per-file loader, in parallel
+/// (Mash sketches each input file concurrently). Results keep the input
+/// path order; errors are reported on the first failing file.
 pub fn load_entries<E, F>(paths: &[String], load_fn: F) -> anyhow::Result<Vec<E>>
 where
-    F: Fn(&str) -> anyhow::Result<Vec<E>>,
+    E: Send,
+    F: Fn(&str) -> anyhow::Result<Vec<E>> + Sync + Send,
 {
+    let results: Vec<anyhow::Result<Vec<E>>> = paths.par_iter().map(|p| load_fn(p)).collect();
     let mut entries = Vec::new();
-    for path in paths {
-        let mut loaded = load_fn(path)?;
+    for r in results {
+        let mut loaded = r?;
         entries.append(&mut loaded);
     }
     Ok(entries)

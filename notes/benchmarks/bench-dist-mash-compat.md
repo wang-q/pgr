@@ -76,5 +76,46 @@ E2348 / CFT073）。pgr 侧用 `--merge`（与 `mash dist` 的整文件语义一
 ## 性能
 
 `benches/dist_sketch_benchmark.rs`（criterion，本机）：
-`dist mash` 草图构建约 33 MiB/s（k=21 单线程）；对比 `dist mini` 约
-122 MiB/s、`dist frac` 约 113 MiB/s（语义不同，仅量级参考）。
+`dist mash` 草图构建约 54 MiB/s（k=21 单线程、流式 bottom-k + 预筛，
+2026-08-08 优化后；优化前 24 MiB/s）；对比 `dist mini` 约 104 MiB/s
+（窗口采样，哈希次数少 5 倍）、`dist frac` 约 113 MiB/s（语义不同，
+仅量级参考）。Mash C++ 单线程约 66 MiB/s（实测估算）。
+
+### 并行扩展（2026-08-08，5 株 E. coli × 4 query，3 次取最快）
+
+sketch 加载改为文件级并行后（`load_entries` rayon，三个草图命令共用）：
+
+| -p | pgr dist mash（前） | pgr dist mash（后） | mash |
+|---:|---:|---:|---:|
+| 1 | 1.34 s | 0.57 s | 0.45 s |
+| 4 | 1.34 s | 0.23 s | 0.18 s |
+| 8 | 1.34 s | 0.24 s | 0.19 s |
+
+单对（2×4.6 Mb）：pgr 0.24 s vs mash 0.18 s（1.3×）。剩余差距来自
+纯 Rust murmur3 与 FASTA 读取（Mash 为 C++ 优化），未换哈希实现以保持
+字节级兼容。`dist frac` 同样受益（0.70→0.31 s @ -p4）、`dist mini`
+（0.53→0.30 s）。
+
+### `dist frac` containment 同 k 对照（2026-08-08）
+
+澄清此前"~10% Jensen 偏差"（`dist-cohort-validation.md`）：那是 frachash
+k=21 vs 全 k=40 真值的 **k 不匹配假象**。同 k=21 全 canonical k-mer 集合
+真值下，5 株 × 10 对：
+
+| 对 | 真值 containment | frac (scale=1000) | 偏差 |
+|---|---:|---:|---:|
+| mg×sa | 0.6690 | 0.6591 | −1.5% |
+| mg×se | 0.7474 | 0.7347 | −1.7% |
+| sa×se | 0.5884 | 0.5840 | −0.7% |
+| e2×mg | 0.4976 | 0.5012 | +0.7% |
+| e2×sa | 0.5168 | 0.5049 | −2.3% |
+| e2×se | 0.5021 | 0.5004 | −0.3% |
+| cf×mg | 0.4819 | 0.4861 | +0.9% |
+| cf×sa | 0.4875 | 0.4823 | −1.1% |
+| cf×se | 0.4844 | 0.4795 | −1.0% |
+| cf×e2 | 0.6680 | 0.6772 | +1.4% |
+
+偏差正负对称、幅度 ~1–2%（scale=1000 时采样 SE≈0.7%），属采样方差而非
+系统性偏差。Hera 2023 校正因子 (1−(1−s)^|A|) 对 |A|≥10⁵ ≈ 1，大肠杆菌
+场景无校正效果；仅极短序列（|A|<~100）+ 大 scale 才有意义。`dist frac`
+containment/ANI 保持现状。

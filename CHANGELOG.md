@@ -23,6 +23,13 @@
   streaming (rolling O(k) window + incremental bottom-k), cutting memory
   from O(genome length) to O(sketch size); empty sketches no longer emit NaN
   (two empty sketches are identical -> distance 0, matching Mash).
+* **Parallel sketch loading** - sketch-distance commands (`mini` / `mash` /
+  `frac`) now sketch input files concurrently with `-p` (file-level rayon
+  parallelism in `load_entries`), matching Mash's parallel sketching. A
+  bottom-k fast-path rejects hashes above the current sketch maximum before
+  touching the set/heap (~2.2x faster Mash sketch building). On 5 E. coli
+  strains x 4 queries, `dist mash --merge -p 4` drops from 1.34 s to 0.23 s
+  (Mash: 0.18 s).
 * **Default scene is DNA** - `dist mini` / `frac` / `mash` now show DNA
   defaults in help (`-k 21`, `-w 5` for minimizers); `--protein` still falls
   back to k=7 (and w=1 for minimizers) automatically. `dist mash` default

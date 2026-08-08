@@ -81,7 +81,10 @@ syncmer）映射为固定维度的向量。*
 - **参数**（与草图命令族共享 sampler/hash 参数，含义与默认值相同）:
   - `--dim`: 向量维度 (默认 4096，需为 32 的倍数)。
   - `--sampler`: `minimizer` (默认) 或 `syncmer`（syncmer 默认 DNA `-k 8 -w 55`、
-    蛋白 `-k 7 -w 5`）。
+    蛋白 `-k 7 -w 5`）。`syncmer` 作为实验选项保留：closed syncmer 采样
+    非均匀，Jaccard/containment 估计有偏（详见
+    `notes/benchmarks/dist-cohort-validation.md`），用于与 minimizer /
+    FracMinHash 结果对照体验偏差；数值 ANI 用 `dist frac`。
   - `--hasher`: 哈希算法（`rapid`/`fx`/`murmur`/`mod`，默认 `rapid`）。
   - `-k`/`--kmer`: k-mer 长度 (默认 7)。
   - `-w`/`--window`: Minimizer 窗口大小 (默认 1)。

@@ -114,6 +114,17 @@ containment 列），**期望无偏**（共享 k-mer 判定一致，分子分母
 需偏差校正公式才能进一步精确**（Hera et al. 2023 方向）。排序 ρ=0.976
 对粗筛/质粒检测足够；数值精确的 containment 留作校正公式后续。
 
+> **更正（2026-08-08，同 k 对照实验）**：上述 ~10% 残差是 **k 不匹配的
+> 假象**——frachash 用 k=21、真值用全 k=40 集合，两套 k-mer 的共享比例
+> 本来就不同。同 k=21 下（5 株 × 10 对，全 canonical k-mer 集合真值）：
+> containment 偏差仅 0.3–2.3%（正负对称，即采样方差，SE≈0.7%），
+> jaccard 偏差 0.1–1.6%。读 Hera et al. 2023 原文后确认：其校正因子
+> (1−(1−s)^|A|) 对 |A|≥10⁵ 的基因组 ≈ 1（4.6 Mb 时 ≈ e^(−4600)≈0），
+> 仅对 |A|<~100 且 scale≥0.1 的极短序列有意义；Theorem 8 的 CI 需对 p
+> 数值求解，与现有正态近似差异小。**结论：大肠杆菌/默认 scale 场景
+> 无需 Hera 校正**，`dist frac` 的 containment/ANI 保持现状（数据见
+> `benchmarks/bench-dist-mash-compat.md` 同 k 对照节）。
+
 **syncmer 家族（dist pgi 与 dist seq --sampler syncmer 同机制）**
 **（2026-08-08 补充）**：两者都是 closed syncmer 采样，位置偏差同源。
 k=21 时 `dist seq syncmer` 比 frachash 低 ~2%（e2-cf 0.5075 vs
