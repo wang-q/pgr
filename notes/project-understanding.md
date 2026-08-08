@@ -336,7 +336,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
   `IntSpan`（`intspan.rs`）与 `Range`（`range.rs`），API 与原 crate 一致
 - `libs/kmer/`：canonical k-mer 计数表（`count.rs`，含 `.pgrk` 紧凑持久化）、
   基因组 profile 生成（`profile.rs`）、profile → 重复 run 提取（`extract.rs`），
-  替代 FastK `-p/-t/-p:<table>` + Profex `-z`（设计：`notes/design/fastk-migration.md`）
+  替代 FastK `-p/-t/-p:<table>` + Profex `-z`（设计：`notes/design/kmer.md`）
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：k-mer →
   runlist 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `pgi build`

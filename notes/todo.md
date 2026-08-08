@@ -112,7 +112,7 @@ fmt/clippy/test 确认。
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree
       用于 PAF 链式化 / POA 排序仍待评估（PAF 当前未明确需要链式化）
       （来源：`chain-algorithms.md` §12.3）。
-- [ ] **FastK/Profex 原生迁移（设计稿，未实现）**：`rept s-kmer`/`e-kmer`
-      仍依赖外部 FastK/Profex（CBP 安装）；设计稿 = `design/fastk-migration.md`
-      方案 B（`libs/kmer` 原生 k-mer 计数 + profile 生成 + run 提取，不做
-      super-mer/磁盘分桶/外部格式兼容），`libs/kmer` 尚未实现。
+- [x] **FastK/Profex 原生迁移（已实现 2026-08-09）**：`rept s-kmer`/`e-kmer`
+      已原生化（`libs/kmer/` 计数 + profile + run 提取，`--keep-index` 缓存
+      升级为单文件 `.pgrk`；不做 super-mer/磁盘分桶/外部格式兼容），
+      设计 = `design/kmer.md`。
