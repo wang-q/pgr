@@ -175,15 +175,28 @@ fn merge_conflicting_refs(
         let group = species_map.get(&name).unwrap();
 
         let mut seq = Vec::with_capacity(out_len);
+        // A species present in only one block must be carried across the whole
+        // merged output through that block's map, otherwise the half of the
+        // sequence on the other side of `cut` collapses to gaps and the species
+        // silently loses data. Shared species (and the reference) are spliced at
+        // the crossover so the left part tracks block A and the right part
+        // block B, matching the spliced reference.
+        let splice = group[0].is_some() && group[1].is_some();
         for pos in 0..out_len {
-            let (map, entry) = if pos < cut {
-                (&map_a, group[0])
+            let base = if splice {
+                let (map, entry) = if pos < cut {
+                    (&map_a, group[0])
+                } else {
+                    (&map_b, group[1])
+                };
+                match entry {
+                    Some(e) => col(map, e.seq(), pos),
+                    None => b'-',
+                }
+            } else if group[0].is_some() {
+                col(&map_a, group[0].unwrap().seq(), pos)
             } else {
-                (&map_b, group[1])
-            };
-            let base = match entry {
-                Some(e) => col(map, e.seq(), pos),
-                None => b'-',
+                col(&map_b, group[1].unwrap().seq(), pos)
             };
             seq.push(base);
         }

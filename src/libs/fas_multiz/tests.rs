@@ -229,6 +229,64 @@ fn merge_window_mismatched_reference_no_shared_species_returns_none() {
 }
 
 #[test]
+fn merge_window_conflicting_refs_keeps_single_block_species() {
+    // When two blocks conflict in their reference sequence and are spliced at
+    // a crossover, a species present in only one block must still be carried
+    // across the whole merged output. Regression for a bug where the half of
+    // such a species' sequence on the other side of the crossover collapsed to
+    // gaps (silent data loss).
+    let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "ACGT");
+    let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "ACGT");
+    let (b_entry1, b_name1, b_header1) = make_entry("B", 1, 4, "ACGT");
+    let block1 = make_block(vec![
+        (ref_entry1.clone(), ref_name1.clone(), ref_header1.clone()),
+        (a_entry1, a_name1, a_header1),
+        (b_entry1, b_name1, b_header1),
+    ]);
+
+    let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 4, "AGGT");
+    let (a_entry2, a_name2, a_header2) = make_entry("A", 1, 4, "AGGT");
+    let (c_entry2, c_name2, c_header2) = make_entry("C", 1, 4, "AGGT");
+    let block2 = make_block(vec![
+        (ref_entry2.clone(), ref_name2.clone(), ref_header2.clone()),
+        (a_entry2, a_name2, a_header2),
+        (c_entry2, c_name2, c_header2),
+    ]);
+
+    let blocks_per_input = vec![vec![block1], vec![block2]];
+
+    let cfg = default_config();
+    let window = Window {
+        chr: "ref".to_string(),
+        start: 1,
+        end: 4,
+    };
+
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let block = merged.expect("conflicting refs should merge via crossover");
+    assert!(block.names.contains(&"B".to_string()));
+    assert!(block.names.contains(&"C".to_string()));
+
+    // Species B (block A only) and C (block B only) must keep their full
+    // sequences; neither may collapse to all gaps on one side of the splice.
+    let idx_b = block.names.iter().position(|n| n == "B").unwrap();
+    let idx_c = block.names.iter().position(|n| n == "C").unwrap();
+    let seq_b = block.entries[idx_b].seq();
+    let seq_c = block.entries[idx_c].seq();
+    assert_eq!(seq_b.len(), seq_c.len());
+    assert!(
+        seq_b.iter().any(|b| *b != b'-'),
+        "B truncated to gaps: {:?}",
+        seq_b
+    );
+    assert!(
+        seq_c.iter().any(|b| *b != b'-'),
+        "C truncated to gaps: {:?}",
+        seq_c
+    );
+}
+
+#[test]
 fn merge_fas_files_multiple_windows() {
     use crate::libs::ds::Range;
     use std::fs::File;

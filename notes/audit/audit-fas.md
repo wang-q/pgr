@@ -366,9 +366,101 @@ N（黑色）样式而非失败。回归 `command_to_xlsx_outgroup_ambiguity_no_
   `ds/intspan` 的全部执行路径，未再发现新缺陷。`to-xlsx` 外群模式下 indel 段不绘制
   外群行（外群仅作极化参考的显示取舍），记录不修复。
 
+## 2026-08-09 Review Fixes（第七轮）
+
+第七轮以全新视角复核全部 20 个子命令与相关库（`fmt/fas.rs`、`alignment/*`、
+`fas_multiz/*`、`fas_xlsx.rs`、`poa/*`、`ds/intspan.rs`），并逐项比对
+`docs/fas.md` 与 CLI 帮助文本。本轮修复 3 处缺陷：
+
+### 数据完整性（subset）
+
+**`subset` 块内重复物种名静默丢序列**：`subset` 用 `HashMap<name, &FasEntry>` 为每个
+block 建名→序列索引，`collect()` 对同名重复条目保留**最后一次**，另一个重复序列被静默
+丢弃；而 `concat`（用 `.position()` 取首个）与 `replace`（重复 header 告警）对同类畸形
+输入均有明确处理，行为不一致。修复：改为 `entry.entry(name).or_insert(e)` **首现优先**
+，与 `concat` 的首匹配语义对齐，不再静默丢序列。回归
+`command_fas_subset_duplicate_species_in_block_keeps_first`。
+
+### to-xlsx 版式（paint_indel 换行边界）
+
+**`paint_indel` 换行 off-by-one 与小节双重计数**：`paint_indel` 内部换行判断
+`col_cursor + col_taken > wrap` 要求 indel 结束列 ≤ `wrap-1`，使恰好结束在第 `wrap`
+列的多碱基 indel 被无谓换入新小节（而 `paint_sub` 可占用第 `wrap` 列，语义不一致）；
+且内部换行后调用方又无条件执行 `col_cursor + consumed > wrap` 的后置换行，当
+`wrap ≤ col_taken`（即 `--wrap 1/2/3`）时 `sec_cursor` 被连续递增两次，留下空小节并
+把名称写进多余小节。修复：将换行预检上移到调用方统一处理（`col_cursor + width >
+wrap + 1` 才换行，允许 `width` 列恰结束于第 `wrap` 列），移除 `paint_indel` 内部换行，
+消除双重计数。回归 `command_to_xlsx_indel_fits_in_wrapped_section`。
+
+### 多序列合并（multiz merge_conflicting_refs 数据丢失）
+
+**`merge_conflicting_refs` 对仅存在于单块的物种静默截断**：两输入 block 参考序列真实
+不一致（`ungapped_equal` 为假）走 `merge_conflicting_refs` 在最佳 crossover `cut` 处拼接
+时，原实现对**每个**物种都按 `pos < cut` 用 `map_a`+`group[0]`、`pos >= cut` 用
+`map_b`+`group[1]`。对仅存在于 block A 的物种（`group[1]` 为 `None`），其 `pos >= cut`
+半段全部塌成 `-`；对仅存在于 block B 的物种同理左半段全 `-`。即单块物种的一半序列被
+静默丢弃。对比非冲突路径 `merge_two_blocks_with_dp`（两块回退 `group[0]`→`group[1]`，
+单块物种经 `map_a`/`map_b` 全程携带）行为不一致。修复：按物种**在哪些块中存在**选择
+映射——共享物种（含参考）保持 `cut` 拼接（左随 A、右随 B，与拼接后的参考一致），仅
+存在于 A 的物种用 `map_a` 全程、仅存在于 B 的物种用 `map_b` 全程，不再截断。回归
+`merge_window_conflicting_refs_keeps_single_block_species`。
+
+### 记录不修复（低风险 / 设计取舍）
+
+* `separate`/`split` 的 `sanitize_filename` 名称碰撞 → 已在前文记录为已知限制。
+* `merge_conflicting_refs` 合并后参考序列与其声明 range 的 ungapped 长度可能不一致：
+  仅在"同一窗口两个输入 block 参考序列真实不一致"（矛盾输入）时触发，与既有的
+  "参考不一致丢弃整窗口"同源，属共享坐标系合并架构下的设计取舍，记录不修复。
+* `cover --name` 在"输入无块"（报错）与"有块但无该物种"（输出空 `{}`）两种情形行为
+  不一致：均为极边缘信息性问题，无数据损坏，未改。
+* `link --best` 函数 doc 措辞 "best-to-best bilateral" 与实现（最近邻+去重）略有出入，
+  但 CLI 帮助文本已准确描述为 "nearest-neighbor bilateral links (deduplicated)"，行为与
+  文档一致，仅函数注释措辞，未改。
+
+### 验证
+
+`cargo test --test cli_fas --test cli_fas_vars --test cli_fas_poa --test cli_fas_vcf
+--test cli_fas_multiz` 全部通过（`cli_fas` 49、`cli_fas_vars` 16、`cli_fas_vcf` 6 等），
+`cargo clippy --all-targets -- -D warnings` 与 `cargo fmt --check` 干净。
+
+## 2026-08-09 Review Fixes（第八轮：纵深复核确认无新缺陷）
+
+第八轮对第七轮修复的 `merge_conflicting_refs` 单块物种截断问题做回归验证（新增
+`merge_window_conflicting_refs_keeps_single_block_species`，通过），并以全新视角完整
+重读全部 20 个 `fas` 子命令（`check`/`concat`/`consensus`/`cover`/`create`/`filter`/
+`join`/`link`/`multiz`/`name`/`refine`/`replace`/`separate`/`slice`/`split`/`stat`/
+`subset`/`to_vcf`/`to_xlsx`/`variation`）与相关库（`fmt/fas.rs`、`alignment/{coords,
+variation,trim,slice,stat}`、`fas_multiz/{merge,banded_align,windows,mod}`、
+`fas_xlsx.rs`、`poa/*`、`ds/intspan.rs`），并比照 `docs/fas.md` 与各命令帮助文本。
+
+第八轮纵深补充复核（逐文件精读，未发现新缺陷）：
+- `fas_xlsx.rs`：`vars` 以位置为键，sub（全真实碱基列）与 indel（含 gap 列）的起点按
+  构造不相交，键冲突不可达；`col_taken = length.min(3)` 与预检
+  `col_cursor+width > wrap+1` 一致，`paint_indel` 内不再换行、由调用方统一推进，游标
+  `saturating_add`；outgroup 行 `pos_row+seq_count+1` 与 `paint_name` 的 entries 行
+  对齐，`sec_height` 多出的一行仅为间隔空白，非缺陷。
+- `alignment/variation.rs`：`get_subs`/`get_indels` 等长校验 + `bail!`；`polarize_subs`
+  `og_idx < og.len()`、`polarize_indels` `end <= og.len()` 边界；`freq` 取少数等位/极化
+  派生计数语义正确；`vcf_alt_bases` 去重排除参考碱基。doctest 全对。
+- `alignment/slice.rs`：`ss_start < 1 || ss_end > seq_len_i32` 在切片前守卫，杜绝
+  `(ss_start-1) as usize` 下溢；全 gap 物种使子切片退化为纯 indel 岛被 `ss_ints.is_empty()`
+  剔除，永不触发空 intspan 的 `align_to_chr`；负链端点交换归一正确。
+- `alignment/trim.rs`：`trim_head_tail` 头部移除量 `min(max, seqs[0].len())`、尾部
+  `cur_len==0` break，全 gap 不 panic；`head/tail_indel_ints` 空判守卫
+  `min()/max()`；`replace_range(lower-1..upper)` 的 lower≥1。
+- `fmt/fas.rs` `consensus_block`/`refine_block`、`alignment/msa.rs`、`poa/consensus.rs`：
+  全 gap 内群 `retain` 剔除、空 POA 图 `generate_consensus` 返回空、节点权重计入
+  路径得分、`refine_block` 外群 `n>=3` 校验、`chop`/`pad`/`fill` 的 `try_from` 与
+  `chop*2` 理论溢出（需 chop≥2^63，不可达）。
+
+验证：`cargo test --lib fas`（37 通过，含新增回归）、`cli_fas`（49）、`cli_fas_multiz`
+（2）、`cli_fas_vars`（16）、`cli_fas_poa`、`cli_fas_vcf` 全部通过；`cargo clippy
+--all-targets -- -D warnings` 与 `cargo fmt --check` 干净。第八轮（含纵深补充复核）
+未发现需修复的新缺陷，`fas` 审核收敛。
+
 ## 结论
 
-`fas` 命令族审核完成（累计修复 32 处缺陷并补回归测试与文档澄清），并经多轮纵深
+`fas` 命令族审核完成（累计修复 33 处缺陷并补回归测试与文档澄清），并经多轮纵深
 复审（全部 20 个子命令的执行路径、`-o` 覆盖保护含 `create`/`check` 的 `.loc` 与
 `separate`/`split` 目录输出、`stat`/`variation`/`to-vcf`/`to-xlsx` 的不等长与
 外群越界、`slice_block`/`trim_head_tail` 全 gap 场景、`banded_align` I 态 gap

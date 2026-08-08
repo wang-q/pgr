@@ -70,6 +70,25 @@ pub fn export_to_xlsx(
             }
 
             for (_, var) in vars {
+                // A substitution fills one column, while a multi-base indel
+                // spans up to three (`paint_indel` uses `indel.length.min(3)`).
+                // Check up front whether the variation fits in the current
+                // section: a single column may occupy the very last column
+                // (`wrap`), so `width` columns are allowed to end exactly at
+                // `wrap`. Without this pre-check a multi-base indel that would
+                // end exactly on the last column was needlessly wrapped into a
+                // fresh section, and (with a tiny `--wrap`) the same indel was
+                // counted twice by the post-paint wrap below, leaving an empty
+                // section.
+                let width = match &var {
+                    Variation::Substitution(_) => 1u16,
+                    Variation::Indel(indel) => indel.length.min(3) as u16,
+                };
+                if opt.col_cursor.saturating_add(width) > opt.wrap.saturating_add(1) {
+                    opt.col_cursor = 1;
+                    opt.sec_cursor += 1;
+                }
+
                 // Advance the cursor by the number of columns each variation
                 // actually occupies: a substitution fills one column, while a
                 // multi-base indel spans up to three (`paint_indel` uses
@@ -168,15 +187,11 @@ fn paint_indel(
     opt: &mut Opt,
     indel: &Indel,
 ) -> anyhow::Result<u16> {
-    let mut pos_row = opt.sec_height * (opt.sec_cursor - 1);
+    // The caller has already advanced to a section where the indel fits
+    // (`col_cursor + col_taken - 1 <= wrap`), so no wrapping is done here.
+    let pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
     let col_taken = indel.length.min(3) as u16;
-
-    if opt.col_cursor.saturating_add(col_taken) > opt.wrap {
-        opt.col_cursor = 1;
-        opt.sec_cursor += 1;
-        pos_row = opt.sec_height * (opt.sec_cursor - 1);
-    }
 
     let indel_string = format!("{}{}", indel.itype, indel.length);
     let pos_format = format_of

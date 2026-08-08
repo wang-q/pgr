@@ -398,6 +398,63 @@ fn command_to_xlsx_many_sequences_no_overflow() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_to_xlsx_indel_fits_in_wrapped_section() -> anyhow::Result<()> {
+    // A 3-base indel spans 3 columns. With --wrap 3 it fits exactly in one
+    // section ending on the last (wrap) column. Regression for the
+    // paint_indel off-by-one that needlessly wrapped such an indel into its
+    // own section (and then wrapped again, leaving an empty section).
+    let content = ">A.chr1(+):1-3\nAAA\n>B.chr1(+):1-3\n---\n";
+    let input = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(input.path())?,
+        content.as_bytes(),
+    )?;
+    let out = tempfile::NamedTempFile::new()?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg(input.path())
+        .arg("--indel")
+        .arg("--wrap")
+        .arg("3")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(output.status.success());
+
+    let mut wb: calamine::Xlsx<_> = calamine::open_workbook(out.path())?;
+    let sheet = wb.worksheet_range_at(0).unwrap().unwrap();
+    // sec_height = seq_count(2) + 1 + spacing(1) = 4. The single 3-base indel
+    // fits entirely in section 1 (data at row 1, 0-based), so the cursor wraps
+    // once and names appear in sections 1 and 2 (rows 1,2 and 5,6). There must
+    // be no third, empty section (rows 9,10) — the off-by-one previously
+    // wrapped the indel into its own section and then wrapped again, creating
+    // one.
+    assert!(
+        sheet.get_value((1, 1)).is_some(),
+        "indel should be drawn in section 1"
+    );
+    for row in [1u32, 2, 5, 6] {
+        assert!(
+            sheet.get_value((row, 0)).is_some(),
+            "name should be present at row {}",
+            row
+        );
+    }
+    for row in [9u32, 10] {
+        assert!(
+            sheet.get_value((row, 0)).is_none(),
+            "no empty third section: unexpected name at row {}",
+            row
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
 fn command_to_xlsx_colors_rejects_out_of_range() -> anyhow::Result<()> {
     // `--colors` outside [1, 15] must fail with a friendly error.
     let out = tempfile::NamedTempFile::new()?;

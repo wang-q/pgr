@@ -74,13 +74,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
 
-            // Build name -> entry index for O(1) lookup (avoids O(N*M) triple loop)
-            let entry_of: HashMap<&str, &pgr::libs::fmt::fas::FasEntry> = block
-                .entries
-                .iter()
-                .enumerate()
-                .map(|(idx, e)| (block.names[idx].as_str(), e))
-                .collect();
+            // Build name -> entry index for O(1) lookup (avoids O(N*M) triple
+            // loop). A duplicate species name in one block keeps the first
+            // occurrence, matching `concat`'s `.position()` first-match
+            // behavior, so no duplicate sequence is silently dropped.
+            let mut entry_of: HashMap<&str, &pgr::libs::fmt::fas::FasEntry> = HashMap::new();
+            for (idx, e) in block.entries.iter().enumerate() {
+                let name = block.names[idx].as_str();
+                entry_of.entry(name).or_insert(e);
+            }
 
             if is_strict && !needed.iter().all(|n| entry_of.contains_key(n.as_str())) {
                 continue;

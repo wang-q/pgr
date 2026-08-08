@@ -154,6 +154,37 @@ fn command_fas_subset_duplicate_required_no_dup() {
 }
 
 #[test]
+fn command_fas_subset_duplicate_species_in_block_keeps_first() {
+    // A block containing the same species name twice keeps the first
+    // occurrence (matching `concat`), so the duplicate sequence is not
+    // silently dropped in favor of the last one.
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("dup_species.fas");
+    fs::write(
+        &fas_file,
+        ">speciesA.chr1(+):1-5\nACGTA\n>speciesA.chr1(+):6-10\nTTTTT\n>speciesB.chr1(+):1-5\nACGTG\n\n",
+    )
+    .unwrap();
+    let name_lst = temp.path().join("names.lst");
+    fs::write(&name_lst, "speciesA\nspeciesB\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "subset",
+            fas_file.to_str().unwrap(),
+            "-R",
+            name_lst.to_str().unwrap(),
+        ])
+        .run();
+
+    assert_eq!(stdout.matches(">speciesA").count(), 1, "got: {stdout}");
+    assert!(stdout.contains("ACGTA"), "got: {stdout}");
+    assert!(!stdout.contains("TTTTT"), "got: {stdout}");
+    assert_eq!(stdout.matches(">speciesB").count(), 1, "got: {stdout}");
+}
+
+#[test]
 fn command_link() {
     let (stdout, _) = PgrCmd::new()
         .args(&["fas", "link", "tests/fas/example.fas"])
