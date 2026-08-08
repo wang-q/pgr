@@ -802,9 +802,10 @@ pub fn hasher_arg() -> Arg {
 /// `minimizer` (default) keeps the historical jumping-minimizer behavior
 /// (combined with `--hasher`, including `mod` for DNA canonical mod-minimizers).
 /// `syncmer` switches to closed syncmers; `-k` is the s-mer size and `-w` is
-/// the number of s-mers per syncmer window. DNA syncmers use a 2-bit canonical
-/// rolling hash (ignoring `--hasher`); protein syncmers hash s-mer bytes with
-/// `--hasher` (rapid/fx/murmur).
+/// the number of s-mers per syncmer window. Syncmers ignore `--hasher`: DNA
+/// uses a 2-bit canonical rolling hash, protein hashes s-mer bytes with
+/// `RapidHash`. Note: `--sampler` is only offered by `dist hv`, which supports
+/// minimizer and syncmer (not FracMinHash).
 pub fn sampler_arg() -> Arg {
     Arg::new("sampler")
         .long("sampler")
@@ -812,10 +813,9 @@ pub fn sampler_arg() -> Arg {
         .value_parser([
             builder::PossibleValue::new("minimizer"),
             builder::PossibleValue::new("syncmer"),
-            builder::PossibleValue::new("frachash"),
         ])
         .default_value("minimizer")
-        .help("Sequence sampler to use")
+        .help("Sequence sampler to use (minimizer or syncmer)")
 }
 
 /// `--protein` flag (declare input as protein sequence; affects all samplers).

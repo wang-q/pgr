@@ -116,7 +116,7 @@ syncmer）映射为固定维度的向量。*
   比较用余弦相似度恢复共享 k-mer 数（`inter = cos × √(n1·n2)`），是
   `pgr dist pgi` 的约 50× 快近似（排序相关性 ρ≈0.97）。
 - **参数**（与草图命令族共享 sampler/hash 参数，含义与默认值相同）:
-  - `--dim`: 向量维度 (默认 4096，需为 32 的倍数)。
+  - `--dim`: 向量维度 (默认 4096，建议为 32 的倍数以利对齐/性能，实现不强制)。
   - `--sampler`: `minimizer` (默认) 或 `syncmer`（syncmer 默认 DNA `-k 8 -w 55`、
     蛋白 `-k 7 -w 5`）。**syncmer 的 `-k` 是 s-mer 长度**（判定窗口端点最小的
     短子串），`-w` 是窗口内 s-mer 数，实际采样跨度 = k+w−1 碱基（如 DNA
@@ -126,7 +126,9 @@ syncmer）映射为固定维度的向量。*
     非均匀，Jaccard/containment 估计有偏（详见
     `notes/benchmarks/dist-cohort-validation.md`），用于与 minimizer /
     FracMinHash 结果对照体验偏差；数值 ANI 用 `dist frac`。
-  - `--hasher`: 哈希算法（`rapid`/`fx`/`murmur`/`mod`，默认 `rapid`）。
+  - `--hasher`: 哈希算法（`rapid`/`fx`/`murmur`/`mod`，默认 `rapid`）。仅对
+    `minimizer` 采样生效；`syncmer` 采样忽略 `--hasher`（DNA 用 2-bit 规范化
+    滚动哈希、蛋白用 RapidHash）。
   - `-k`/`--kmer`: k-mer 长度 (默认 7)。
   - `-w`/`--window`: Minimizer 窗口大小 (默认 1)。
   - `--sim`: 将 Mash 距离转为相似度输出。
@@ -140,6 +142,8 @@ syncmer）映射为固定维度的向量。*
 - **算法**：两排序流线性归并（O(|K1|+|K2|)），共享 k-mer 集合精确计数。
 - **要求**：两侧索引采样参数（k/syncmer/window）必须一致，否则报错。
 - **输出格式**：`Name1 Name2 Total1 Total2 Inter Union Mash Jaccard Containment`。
+- **Containment**：与草图命令族一致，以**第一个**索引为分母、有方向性
+  （`inter / total1`），交换两个参数会改变其值。
 - **注意**：该距离是"采样集合的精确距离"（确定性、零采样方差），但 syncmer
   采样位置随变异漂移（重复元件株数值偏差可达 ~3% ANI；containment 略稳于
   Jaccard）；排序大致可用。数值 ANI 用 `dist frac`；初筛用 `dist hv`。

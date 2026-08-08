@@ -108,6 +108,14 @@ pub fn seq_mins(
         }
         .mins(seq),
         "mod" => {
+            // minimizer_iter's mod builder requires an odd window width and
+            // panics (assert) otherwise; reject even windows with a friendly
+            // error instead of crashing on user input.
+            anyhow::ensure!(
+                opt_window % 2 == 1,
+                "--hasher mod requires an odd window size, got {}",
+                opt_window
+            );
             let min_iter = minimizer_iter::MinimizerBuilder::<u64, _>::new_mod()
                 .canonical()
                 .minimizer_size(opt_kmer)
@@ -130,7 +138,11 @@ pub fn mash_distance(jaccard: f64, kmer: usize) -> f64 {
     if jaccard == 0.0 {
         1.0
     } else {
-        ((-1.0 / kmer as f64) * ((2.0 * jaccard) / (1.0 + jaccard)).ln()).abs()
+        // Mash clamps the distance to [0, 1]; tiny Jaccards (small k, weak
+        // overlap) can otherwise push the raw value above 1.
+        ((-1.0 / kmer as f64) * ((2.0 * jaccard) / (1.0 + jaccard)).ln())
+            .abs()
+            .min(1.0)
     }
 }
 
@@ -992,6 +1004,17 @@ mod tests {
         assert_eq!(d.mash, 0.0);
         assert_eq!(d.containment, 0.0);
         assert!(!d.containment.is_nan());
+    }
+
+    #[test]
+    fn test_mash_distance_bounded_to_one() {
+        // Mash clamps distance to [0, 1]; tiny Jaccards (small k) must not
+        // exceed 1 (matching Mash's `min(1, dist)` in compareSketches).
+        assert_eq!(mash_distance(0.0, 21), 1.0);
+        assert!(mash_distance(0.05, 1) <= 1.0);
+        assert!(mash_distance(0.01, 2) <= 1.0);
+        // Sanity: large Jaccard gives a small distance.
+        assert!(mash_distance(1.0, 21) < 1e-9);
     }
 
     #[test]

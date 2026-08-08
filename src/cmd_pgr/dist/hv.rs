@@ -12,10 +12,12 @@ minimizers or closed syncmers, projected onto hypervectors.
 * The outputs are printed to stdout in the following format:
     <file1> <file2> <total1> <total2> <inter> <union> <mash_distance> <jaccard_index> <containment_index>
 
-* Samplers, hash algorithms, --protein, -k/-w semantics are the same as the
-  sketch-distance family (`pgr dist mini` / `pgr dist frac`). Syncmer defaults
-  (DNA smer=8/window=55, protein smer=7/window=5) are applied automatically
-  when --sampler syncmer is used without explicit -k/-w.
+* Samplers, --protein, -k/-w semantics are the same as the sketch-distance
+  family (`pgr dist mini` / `pgr dist frac`). `--hasher` applies only to the
+  minimizer/FracMinHash samplers; syncmers ignore it (DNA uses a 2-bit
+  canonical rolling hash, protein hashes s-mer bytes with RapidHash). Syncmer
+  defaults (DNA smer=8/window=55, protein smer=7/window=5) are applied
+  automatically when --sampler syncmer is used without explicit -k/-w.
 * With `--sampler syncmer`, `-k` is the **s-mer length** (the short substring
   used to decide the window's minimum endpoint), not the full k-mer size of
   the minimizer/FracMinHash paths; `-w` is the number of s-mers per window
@@ -81,7 +83,7 @@ Examples:
                 .num_args(1)
                 .default_value("4096")
                 .value_parser(clap::value_parser!(usize))
-                .help("The dimension size should be a multiple of 32."),
+                .help("Hypervector dimension; a multiple of 32 is recommended for alignment/performance."),
         )
         .arg(crate::cmd_pgr::args::sim_arg())
         .arg(crate::cmd_pgr::args::list_arg())
@@ -113,6 +115,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
     let infiles = crate::cmd_pgr::args::collect_infiles(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        crate::cmd_pgr::args::get_outfile(args),
+        infiles.iter().copied(),
+    )?;
     if infiles.iter().any(|f| f.ends_with(".hv")) {
         return run_hv_files(
             &infiles,
@@ -231,12 +237,28 @@ fn run_hv_files(
         let n2 = e2.n_kmer as f64;
         let na: f64 = e1.hv.iter().map(|x| (*x as f64) * (*x as f64)).sum();
         let nb: f64 = e2.hv.iter().map(|x| (*x as f64) * (*x as f64)).sum();
-        let sim = dot / (na.sqrt() * nb.sqrt());
+        // Cosine is undefined when either vector is all-zero; treat two empty
+        // vectors as identical (sim 1) and a single empty one as no overlap.
+        let sim = if na > 0.0 && nb > 0.0 {
+            dot / (na.sqrt() * nb.sqrt())
+        } else if na == 0.0 && nb == 0.0 {
+            1.0
+        } else {
+            0.0
+        };
         let inter = (sim * (n1 * n2).sqrt()).round() as usize;
         let inter = inter.min(e1.n_kmer).min(e2.n_kmer);
         let union = e1.n_kmer + e2.n_kmer - inter;
-        let jaccard = inter as f32 / union as f32;
-        let containment = inter as f32 / e1.n_kmer as f32;
+        let jaccard = if union > 0 {
+            inter as f32 / union as f32
+        } else {
+            1.0
+        };
+        let containment = if e1.n_kmer > 0 {
+            inter as f32 / e1.n_kmer as f32
+        } else {
+            0.0
+        };
         let mash = pgr::libs::hash::mash_distance(jaccard as f64, e1.k) as f32;
         let dist = if is_sim {
             pgr::libs::hash::mash_to_sim(mash as f64) as f32

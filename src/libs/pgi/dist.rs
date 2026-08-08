@@ -78,15 +78,18 @@ pub fn dist_between(a: &impl PgiQuery, b: &impl PgiQuery) -> anyhow::Result<PgiD
     validate_compatible(a, b)?;
     let (total1, total2, inter) = merge_stats(a, b);
     let union = total1 + total2 - inter;
+    // Empty indexes: two empty sets are identical (jaccard 1, distance 0);
+    // containment is directional (first set as denominator), matching the
+    // sketch-distance family.
     let jaccard = if union == 0 {
-        0.0
+        1.0
     } else {
         inter as f64 / union as f64
     };
-    let containment = if total1.min(total2) == 0 {
+    let containment = if total1 == 0 {
         0.0
     } else {
-        inter as f64 / total1.min(total2) as f64
+        inter as f64 / total1 as f64
     };
     let mash = crate::libs::hash::mash_distance(jaccard, a.k()) as f32;
     Ok(PgiDist {

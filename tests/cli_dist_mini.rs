@@ -114,3 +114,24 @@ fn command_dist_mini_protein_rejects_mod_hasher() {
 
     assert!(stderr.contains("--hasher mod is DNA-only"));
 }
+
+#[test]
+fn command_dist_mini_mod_rejects_even_window() {
+    // minimizer_iter's mod builder panics (assert) on an even window width;
+    // pgr must return a friendly error instead of crashing.
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "mini",
+            fixture("seq.fa").to_str().unwrap(),
+            "--hasher",
+            "mod",
+            "-w",
+            "4",
+            "-k",
+            "21",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("requires an odd window size"));
+}

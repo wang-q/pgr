@@ -53,6 +53,7 @@ where
     G: Fn(&RapidHashSet<u64>, &RapidHashSet<u64>) -> SetDistances + Send + Sync,
 {
     let infiles = crate::cmd_pgr::args::collect_infiles(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(&opt.outfile, infiles.iter().copied())?;
     let (sender, writer_thread) = par::spawn_writer_and_pool(&opt.outfile, opt.parallel)?;
 
     let (entries1, entries2) = par::load_two_sets(&infiles, opt.is_list, |paths| {

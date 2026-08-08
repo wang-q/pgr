@@ -69,10 +69,22 @@ unsafe fn hash_hv_bit_avx2(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
             );
         }
     }
-    // Tail dims (hv_d not a multiple of 64) keep the −N offset, matching the
-    // portable fallback exactly.
-    for v in &mut hv[num_chunk * 64..] {
-        *v = -n;
+    // Tail dims (hv_d not a multiple of 64) must still receive each seed's
+    // ±1 contribution, not just the −N offset: leaving them at −N would make
+    // them identical across inputs and corrupt Jaccard/containment.
+    let tail_base = num_chunk * 64;
+    if tail_base < hv_d {
+        for &seed in seed_vec {
+            let r = rnd_at(seed, num_chunk as u64 + 1);
+            let halves = [(r as u32) as i32, ((r >> 32) as u32) as i32];
+            for (offset, v) in hv[tail_base..].iter_mut().enumerate() {
+                let (k, bit) = (offset / 32, offset % 32);
+                *v += 2 * ((halves[k] >> bit) & 1);
+            }
+        }
+        for v in &mut hv[tail_base..] {
+            *v -= n;
+        }
     }
     hv
 }
@@ -165,6 +177,20 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
                     hv_simd += bits_i32;
                     hv[base..base + 8].copy_from_slice(&hv_simd.to_array());
                 }
+            }
+        }
+
+        // Tail dims when hv_d is not a multiple of 64: they must still receive
+        // each seed's ±1 contribution (via the deferred −N offset), otherwise
+        // they would all sit at −N and dominate the dot product with identical
+        // values, corrupting Jaccard/containment for arbitrary `--dim`.
+        let tail_base = num_chunk * 64;
+        if tail_base < hv_d {
+            let rnd_bits = rng.next_u64();
+            let halves = [(rnd_bits as u32), (rnd_bits >> 32) as u32];
+            for (offset, v) in hv[tail_base..].iter_mut().enumerate() {
+                let (k, bit) = (offset / 32, offset % 32);
+                *v += 2 * (((halves[k] >> bit) & 1) as i32);
             }
         }
     }
@@ -369,11 +395,19 @@ pub fn calc_distances(s1: &[i32], s2: &[i32], kmer: usize) -> HvDistances {
     let card1 = hv_cardinality(s1);
     let card2 = hv_cardinality(s2);
 
-    let inter = hv_dot(s1, s2).min(card1 as f32).min(card2 as f32);
+    // `inter` = dot product, a zero-centered noisy estimator of the shared
+    // k-mer count. For unrelated sequences it can land slightly negative by
+    // chance; clamp to 0 so Jaccard/containment stay in [0, 1] (disjoint
+    // sets must read jaccard 0, containment 0, distance 1, not negative
+    // values). The `.hv`-file path already clamps via its `usize` cast.
+    let inter = hv_dot(s1, s2).max(0.0).min(card1 as f32).min(card2 as f32);
     let union = card1 as f32 + card2 as f32 - inter;
 
-    let jaccard = inter / union;
-    let containment = inter / card1 as f32;
+    // Empty hypervectors: two empty sets are identical (jaccard 1, distance
+    // 0); containment of an empty first set is undefined, report 0 instead
+    // of NaN (matches the sketch-distance family).
+    let jaccard = if union > 0.0 { inter / union } else { 1.0 };
+    let containment = if card1 > 0 { inter / card1 as f32 } else { 0.0 };
     let mash = crate::libs::hash::mash_distance(jaccard as f64, kmer) as f32;
 
     HvDistances {
@@ -465,6 +499,9 @@ mod tests {
     use rapidhash::RapidHashSet;
 
     /// Serial ±1 reference for `hash_hv_bit` (AVX-512 path parity check).
+    /// Must match the production tail handling exactly: when `hv_d` is not a
+    /// multiple of 64, the trailing dims also receive each seed's ±1
+    /// contribution (via the deferred −N offset), not just the −N constant.
     fn hash_hv_bit_serial(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
         let num_seed = seed_vec.len();
         let mut hv = vec![-(num_seed as i32); hv_d];
@@ -478,6 +515,16 @@ mod tests {
                         let idx = i * 64 + k * 32 + j;
                         hv[idx] += (((half >> j) & 1) << 1) as i32;
                     }
+                }
+            }
+            // Tail dims when hv_d is not a multiple of 64.
+            let tail_base = (hv_d / 64) * 64;
+            if tail_base < hv_d {
+                let rnd_bits = rng.next_u64();
+                let halves = [(rnd_bits as u32), (rnd_bits >> 32) as u32];
+                for (offset, v) in hv[tail_base..].iter_mut().enumerate() {
+                    let (k, bit) = (offset / 32, offset % 32);
+                    *v += 2 * (((halves[k] >> bit) & 1) as i32);
                 }
             }
         }
@@ -586,6 +633,33 @@ mod tests {
             d.jaccard,
             true_j
         );
+    }
+
+    #[test]
+    fn test_calc_distances_disjoint_no_negative() {
+        // Regression: for two completely disjoint seed sets the dot-product
+        // `inter` is a zero-centered noisy estimate and used to land slightly
+        // negative, emitting negative Jaccard/containment (invalid). It must
+        // be clamped to 0 so disjoint sets read jaccard/containment 0 and
+        // mash 1, never negative or NaN.
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let set_a: Vec<u64> = (0..3000).map(|_| rng.random()).collect();
+        let set_b: Vec<u64> = (0..3000).map(|_| rng.random()).collect();
+        let hv_d = 4096;
+        for _ in 0..50 {
+            let d = calc_distances(&hash_hv_bit(&set_a, hv_d), &hash_hv_bit(&set_b, hv_d), 21);
+            assert!(
+                d.jaccard >= 0.0,
+                "jaccard must not be negative: {}",
+                d.jaccard
+            );
+            assert!(
+                d.containment >= 0.0,
+                "containment must not be negative: {}",
+                d.containment
+            );
+            assert!(!d.jaccard.is_nan() && !d.containment.is_nan() && !d.mash.is_nan());
+        }
     }
 
     #[test]

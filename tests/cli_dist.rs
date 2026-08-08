@@ -141,6 +141,101 @@ fn command_dist_hv_protein_rejects_mod_hasher() {
 }
 
 #[test]
+fn command_dist_hv_empty_inputs_no_nan() {
+    // Two empty FASTA files -> both hypervectors are empty. This must not
+    // emit NaN: jaccard 1, mash 0, containment 0 (matches the sketch family).
+    let temp = tempfile::TempDir::new().unwrap();
+    let empty = temp.path().join("empty.fa");
+    std::fs::write(&empty, ">e\n\n").unwrap();
+    let fa = temp.path().join("g.fa");
+    std::fs::write(&fa, format!(">g\n{}\n", "ACGT".repeat(50))).unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "hv",
+            empty.to_str().unwrap(),
+            empty.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        !stdout.contains("NaN"),
+        "empty==empty must not be NaN: {stdout}"
+    );
+    let fields: Vec<&str> = stdout.split_whitespace().collect();
+    assert_eq!(fields.len(), 9);
+    assert_eq!(fields[2], "0", "card1 should be 0: {stdout}");
+    assert_eq!(
+        fields[6], "0.0000",
+        "empty==empty mash should be 0: {stdout}"
+    );
+    assert_eq!(
+        fields[7], "1.0000",
+        "empty==empty jaccard should be 1: {stdout}"
+    );
+    assert_eq!(
+        fields[8], "0.0000",
+        "empty first-set containment should be 0: {stdout}"
+    );
+
+    // Empty vs non-empty: no overlap, but also no NaN.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["dist", "hv", empty.to_str().unwrap(), fa.to_str().unwrap()])
+        .run();
+    assert!(
+        !stdout.contains("NaN"),
+        "empty-vs-nonempty must not be NaN: {stdout}"
+    );
+    let fields: Vec<&str> = stdout.split_whitespace().collect();
+    assert_eq!(
+        fields[8], "0.0000",
+        "containment of empty first set should be 0: {stdout}"
+    );
+}
+
+#[test]
+fn command_dist_output_same_as_input_rejected() {
+    // The writer opens the output before reading inputs, so `-o` pointing at
+    // an input must be rejected rather than silently truncating the input.
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = temp.path().join("in.fa");
+    let content = ">a\nACGTACGTACGTACGTACGT\n";
+    std::fs::write(&fa, content).unwrap();
+    for sub in ["mini", "mash", "frac", "hv"] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&[
+                "dist",
+                sub,
+                fa.to_str().unwrap(),
+                "-o",
+                fa.to_str().unwrap(),
+            ])
+            .run_fail();
+        assert!(
+            stderr.contains("also an input file"),
+            "{sub}: expected rejection, got: {stderr}"
+        );
+        // Input must be untouched.
+        let after = std::fs::read_to_string(&fa).unwrap();
+        assert_eq!(after, content, "{sub}: input was truncated");
+    }
+}
+
+#[test]
+fn command_dist_hv_rejects_frachash_sampler() {
+    // `dist hv` only implements minimizer and syncmer; the shared --sampler
+    // argument used to also accept "frachash", which silently ran the
+    // minimizer path with w=1 instead of FracMinHash. It must now be rejected.
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = temp.path().join("g.fa");
+    std::fs::write(&fa, format!(">g\n{}\n", "ACGT".repeat(50))).unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&["dist", "hv", fa.to_str().unwrap(), "--sampler", "frachash"])
+        .run_fail();
+    assert!(stderr.contains("invalid value 'frachash'"), "got: {stderr}");
+}
+
+#[test]
 fn command_dist_hv_files_self_and_dim_mismatch() {
     let temp = tempfile::TempDir::new().unwrap();
     let fa = temp.path().join("g.fa");

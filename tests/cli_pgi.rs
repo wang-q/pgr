@@ -221,6 +221,108 @@ fn command_pgi_dist_param_mismatch_fails() {
 }
 
 #[test]
+fn command_pgi_dist_empty_indexes() {
+    // A sequence shorter than k (default k=40) yields an index with 0 unique
+    // k-mers. Two empty indexes are identical -> jaccard 1, mash 0 (not NaN
+    // and not a spurious distance of 1).
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "tiny", "ACGT");
+    let idx1 = temp.path().join("a.pgi");
+    let idx2 = temp.path().join("b.pgi");
+    for out in [&idx1, &idx2] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&["pgi", "build", &fa, "-o", out.to_str().unwrap()])
+            .run();
+        assert!(stderr.contains("wrote"), "build failed: {stderr}");
+    }
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "pgi",
+            idx1.to_str().unwrap(),
+            idx2.to_str().unwrap(),
+        ])
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    assert_eq!(fields.len(), 9, "unexpected output: {stdout}");
+    assert_eq!(fields[2], "0", "total1 should be 0: {stdout}");
+    assert_eq!(
+        fields[6], "0.0000",
+        "empty==empty mash should be 0: {stdout}"
+    );
+    assert_eq!(
+        fields[7], "1.0000",
+        "empty==empty jaccard should be 1: {stdout}"
+    );
+    assert_eq!(
+        fields[8], "0.0000",
+        "empty first-set containment should be 0: {stdout}"
+    );
+    assert!(!stdout.contains("NaN"), "no NaN allowed: {stdout}");
+}
+
+#[test]
+fn command_pgi_dist_containment_directional() {
+    // Containment uses the FIRST index as denominator (directional), like the
+    // rest of the dist family. A smaller first set fully contained in a larger
+    // second set gives containment 1; swapping the arguments must change it.
+    let temp = tempfile::TempDir::new().unwrap();
+    // fa_short is a 60 bp sequence; fa_long shares it and adds extra sequence.
+    let shared = "ACGTGCAATGGCTTAGCGTACCGAT".repeat(3); // 78 bp
+    let fa_short = write_fa(temp.path(), "short", &shared);
+    let fa_long = write_fa(
+        temp.path(),
+        "long",
+        &format!("{}{}", shared, "TAGCTAGCTAGCTAGCTAGCTAGCTAGCTA".repeat(5)),
+    );
+    let short_idx = temp.path().join("short.pgi");
+    let long_idx = temp.path().join("long.pgi");
+    for (fa, out) in [(&fa_short, &short_idx), (&fa_long, &long_idx)] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&["pgi", "build", fa, "-o", out.to_str().unwrap()])
+            .run();
+        assert!(stderr.contains("wrote"), "build failed: {stderr}");
+    }
+
+    // short in long: containment (short/long-first) ~ 1 (short's k-mers all
+    // present in long since long is a superset, modulo window-boundary
+    // syncmer positions).
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "pgi",
+            short_idx.to_str().unwrap(),
+            long_idx.to_str().unwrap(),
+        ])
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    let c_short_in_long = fields[8].parse::<f64>().unwrap();
+    // long in short: containment is long's k-mers / short's k-mers -> smaller.
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "pgi",
+            long_idx.to_str().unwrap(),
+            short_idx.to_str().unwrap(),
+        ])
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    let c_long_in_short = fields[8].parse::<f64>().unwrap();
+
+    // Directional: the two containment values differ, and the short-in-long
+    // view is the larger one.
+    assert!(
+        c_short_in_long > c_long_in_short,
+        "containment should be directional: short-in-long={c_short_in_long} long-in-short={c_long_in_short}"
+    );
+    assert!(
+        c_short_in_long > 0.9,
+        "containment of a subset-first view should be near 1: {c_short_in_long}"
+    );
+}
+
+#[test]
 fn command_pgi_to_hv() {
     let temp = tempfile::TempDir::new().unwrap();
     let fa = write_fa(temp.path(), "g", &"ACGT".repeat(100));
