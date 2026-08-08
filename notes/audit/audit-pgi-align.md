@@ -1,476 +1,173 @@
 # align 命令族代码审核记录（2026-08-07）
 
 对 `pgr align` 命令族（pgi/lastz + `libs/pgi`、`libs/lastz`、`libs/fmt/lav`、
-`libs/fmt/psl`、`alignment` DP）约 3000 行代码及全部文档
-（`docs/{align-pgi,align-lastz,lav,psl}.md`）进行审核。缺陷按类别分组记录；
-关键修复均附回归测试，验证概况见文末"验证"一节。
+`libs/fmt/psl`、`alignment` DP）约 3000 行代码及全部文档进行审核。以下仅保留
+有借鉴意义的结论；验证过程已精简。
 
 > 注：`pgr sd` / `pgr rept` 命令族的审核记录见 `notes/audit/audit-sd-rept.md`。
-> `libs/pgi` 索引的**构建**与读取缺陷（k-mer key、构造头、记录越界、sibling
-> 索引、`--parallel` 等）记录在本文件；sd 对 pgi 的**消费**缺陷（`sd search`
-> 传 `.pgi` 拒绝、greedy/tube 链逻辑等）记录在 audit-sd-rept.md。
-
-审核范围：
-- **align pgi**：`align pgi`（+ `libs/pgi` 索引构建/读取、`psl`/`sort` 输出）
-- **align lastz**：`align lastz`（+ `libs/lastz` 封装、`libs/fmt/lav` 解析、
-  `align_banded_local` 等 alignment DP）
-
-审核重点：Zero Panic（畸形输入/构造索引不 panic）、数据安全（`-o` 不得覆盖
-输入、陈旧/损坏索引不得静默复用）、确定性（`--parallel` 下输出可复现）、与
-外部参考实现（FastGA GIX / UCSC kent pslLiftSubrangeBlat / lavToPsl / lastz）
-的语义一致。
+> `libs/pgi` 索引的**构建**与读取缺陷记录在本文件；sd 对 pgi 的**消费**缺陷
+> 记录在 audit-sd-rept.md。
 
 ## 与外部参考实现的语义一致性核对
 
-关键修复均对照官方源码复核，方向一致：
+- `psl lift` 负链坐标提升与 UCSC kent `pslLiftSubrangeBlat.c` 的 `liftSide` 行为
+  一致（子范围命名 pgr 1-based vs kent 0-based 为记录在案的有意差异）。
+- pgi 索引 k-mer 频率过滤：`emit_entry_hits` 的 canonical key 过滤、
+  `freq >= cutoff`（FastGA 语义，非 `>`）、前缀窗口 / 最大共享前缀 / 扩展范围过滤，
+  与 FastGA GIX 语义一致。
+- 软掩码语义：`build_from_seqs` 的 `mask`（小写→N，FastGA `-M` 语义）与
+  `build_from_path` 一致；pgi 与 lastz 对小写拷贝行为完全一致。
+- LAV→PSL 转换：`blocks_to_psl` 的 q/t 正 gap 计 insert、负 gap clamp 忽略、
+  1-based→0-based `checked_sub` 防溢出、`-` 链坐标翻转，与 UCSC `lavToPsl` 一致。
 
-* `psl lift` 负链坐标提升：与 UCSC kent `pslLiftSubrangeBlat.c` 的
-  `liftSide` 行为一致（子范围命名约定 pgr 1-based vs kent 0-based 为
-  记录在案的有意差异）。
-* pgi 索引 k-mer 频率过滤：`emit_entry_hits` 的 canonical key 过滤、
-  `freq >= cutoff`（FastGA 语义，非 `>`）、前缀窗口 / 最大共享前缀 /
-  扩展范围过滤，与 FastGA GIX 语义一致。
-* 软掩码语义：`build_from_seqs` 新增 `mask`（小写→N，FastGA `-M` 语义），
-  与 `build_from_path` 一致；pgi 与 lastz 对小写拷贝行为完全一致。
-* LAV→PSL 转换：`blocks_to_psl` 的 q/t 正 gap 计 insert、负 gap clamp 忽略、
-  1-based→0-based `checked_sub` 防溢出、`-` 链坐标翻转，与 UCSC
-  `lavToPsl` 一致。
-* 有意差异（已记录）：子范围命名 pgr 1-based vs kent 0-based；`stat`/
-  `statop` 类输出格式差异不涉及本族。
+## 排除的疑点（安全不变量，经核验无需修复）
 
-## 排除的疑点（经核验无需修复）
-
-* LAV `s`/`h` stanza 含空格文件名解析错位，与 UCSC lavToPsl 一致，记录不修。
-* `lav to-psl` 对畸形 LAV 静默输出空：LavReader 跳过空行/注释、未知 stanza 有
-  warn，lastz 输出不会畸形，属容错设计，记录不修。
-* `pgi build` 的 `unwrap()`/`expect` 逐一核对：均在测试代码或 clap required/
-  value_parser 约束下，运行期不可达，无潜在 panic。
-* 全量扫描家族生产代码 `unwrap()`：`blocks_to_psl` 的 `last_mut().expect` 有
-  非空前置保证；PgiReader 各字段解析均有长度/类型检查。无生产 panic 风险。
-* `libs/pgi` 非测试代码 `unwrap`/`expect`/`unreachable!` 全量核对：均在定长
-  切片取值、`Some` 前置守卫或 while 循环条件下不可达（如 `peak_rss_mb` 的
-  `unwrap_or(0)`、`tubes_for_group` 的 `(None, None)` 由 `bi < len || mi < len`
-  保证不可达），无生产 panic 风险。
-* `chain_tubes` 的 u128 排序键字段布局：`a_contig`(16b)@89、`b_contig`(16b)@73、
-  `strand`@72、`bucket`@40、`anti`@0。`anti`(≤2^33) 与 `bucket`(diag/64+2^26，
-  ≤27b) 各占不足 40 位，字段间无重叠（bits 40–66 vs 72+），`a_contig` 上限 16
-  位占 bits 89–104 < 128，无溢出/碰撞；`a_contig`/`b_contig` 的 `u16` 截断因
-  `n_contigs <= u16::MAX` 约束（`build_from_seqs` 保证 + 头解析校验）而安全。
-* reference 侧记录校验：`chain_to_psl` 直接以 `chain.a_contig` 索引
-  `a.contigs[...]`；`validate_record` 只覆盖 query 侧，但 reference 侧逐路径
-  安全——`align pgi` 命令只走 streaming 路径（`align_to_psl_streaming` /
-  `align_to_psl_ext_streaming`），reference 经 `PgiStream::next_batch` 逐记录
-  `validate_record(cid, pos, ...)`，`ac < contigs.len()`；非 streaming 的
-  `merge_seed_hits` 其 `a` 来自 `PgiIndex::read`（逐记录校验）或
-  `build_from_seqs`（构造即合法）。无 crafted reference 越界 panic 风险。
-* `emit_entry_hits` 的 `a` 侧记录不重复校验但逐路径安全：resident 路径来自
-  `build_from_seqs`（构造即合法）或 `PgiIndex::read`（逐记录 `validate_record`）；
-  streaming 路径经 `PgiStream::next_batch` 逐记录校验；`b` 侧经 `emit_entry_hits`
-  内 `validate_record` 校验。无越界 panic 风险。
-* 负链坐标：`chain_to_psl` 对 minus 链用 `reverse_range_pair(b_start, b_end,
-  b_len) = (b_len - b_end, b_len - b_start)` 与 `extend_window` 的 `reverse_range`
-  一致；`b_end <= b_len` 由 `validate_record`（`pos + k <= len`）保证，无下溢；
-  `q_starts` 内部块按 UCSC minus 约定置于 RC frame（`b_len - q_end`），回归
-  `psl_block_coordinates` / `extend_chain_rc_query` 覆盖。
-* `emit_entry_hits` 频率过滤两侧对称：`a` 侧 `ea_freq >= freq` 丢弃、`b` 侧
-  最大前缀/扩展范围均按 `>= freq` 处理（FastGA GIX 语义），无误用 `>` 的残余。
-* build `kmer_key_at` 切片越界排除：pending 位置均经 `start + k <= n` /
-  `j + k <= n` 守卫后才入队（`build.rs`），`seq[pos..pos+k]` 恒在界内，无 panic。
-* Myers 波前反向波镜像数学：`local_alignment` 的 `k_lo/k_hi = (m-n) ∓ dgmax/dgmin`、
-  `mida_rev = n+m-2-amid`、`(r_minp,r_maxp) = ((m-n)-maxp,(m-n)-minp)` 与 `rt/rq`
-  的镜像坐标 `(m-ar, n-br)` 逐一推导一致；self 模式对角线 0 边界在正/反向波
-  两侧均正确钳制。
-* 波前 DUB_TRIM 与 trim 端点：`(true,false)`/`(false,true)` 分支用对侧端点重跑单
-  对角线波（`k_lo==k_hi`、`mida=ab+bb`），起点坐标 `(ab,bb)` 与 `(at,bt)` 均落在
-  span 内；`at<=ab || bt<=bb` 前置返回正确拦截。
-* 自比对 banded DP 越界排除：对角带取 `dg0/dg1/dgmin/dgmax` 的并集，终点对角线
-  `d_end = d0 + n - m = at - bt = dg1` 恒在 `[k_lo, k_hi]`（`lo/hi` 均含 `dg1`），
-  `(d_end - k_lo)` 无越界；`debug_assert` 在 release 下也不会 OOB。
-* TrimSpec 数值域：`for_seqs` 的 `bias` 经 `match_frac∈[0,0.5]` 落入 `[3,9]`，
-  `BIAS_FACTOR[0..9]` 均有界；`mscore=1000·BIAS·0.3∈[207,300]`、`dscore∈[700,793]`，
-  `fill` 产生的 `score`∈[-10500,4500]、`table=s-peak`∈同域，均落于 `i16`。软掩码
-  （全 N）参考经 `total==0→0.5` 兜底，无除零/越界。
-* `tubes_for_group`/`extend_tube` 循环与坐标域：`anti = a_pos + b_pos` 最大 ~2^33、
-  `diag` 最大 ~2^32、`bucket` 最大 ~2^26，均在 i64 内无溢出；`ahgh` 初值 `-brk`
-  使首种子恒走 flush 分支正确起新 tube；`cov` 覆盖计账仅在 `cps > ahgh` 时转 `u64`，
-  无负值转 uint；`alow` 恒严格递增（`amid` 或 `eant`），无死循环，`dgmin = -amid`
-  随 `amid` 单调、clip 后不反复；`(None, None) => unreachable!()` 由 while 条件
-  保证 `bi`/`mi` 至少一个在界而不可达。
-* `extend_tube` 的 `eant`：`LocalAlign.t_end`/`q_end` 是 `usize`（wave.rs），
-  `(t_end + q_end) as i64` 在 64 位上无现实溢出（需各 > 2^63）；此前审计笔记中
-  "i32 溢出"的担忧不成立，字段并非 i32。
-* `dedupe_contained`：`overlap_frac` 的 `own <= 0` 返回 0、`(ov.max(0))` 防负；
-  `(None,None)=>unreachable!` 安全。
-* `wave_extend`/`forward_wave`/`traceback_forward`：为库公开 API（`pub fn
-  wave_extend`），仅测试消费，非死代码；`traceback_forward` 的
-  `debug_assert_eq!(k, k0)` 与 0-波蛇段闭环，ops 与 span 长度一致。
+- `chain_tubes` 的 u128 排序键字段布局：`anti`(≤2^33) 与 `bucket`(≤27b) 各占不足
+  40 位、字段间无重叠，`a_contig`/`b_contig` 的 `u16` 截断因 `n_contigs <=
+  u16::MAX` 约束而安全。
+- reference 侧记录校验：`align pgi` 只走 streaming 路径，reference 经
+  `PgiStream::next_batch` 逐记录 `validate_record`，`ac < contigs.len()`；非
+  streaming 的 `merge_seed_hits` 其 `a` 来自 `PgiIndex::read`（逐记录校验）或
+  `build_from_seqs`（构造即合法）。无 crafted reference 越界 panic。
+- `emit_entry_hits` 频率过滤两侧对称：`a` 侧 `ea_freq >= freq` 丢弃、`b` 侧最大
+  前缀/扩展范围均按 `>= freq` 处理（FastGA GIX 语义）。
+- build `kmer_key_at` 切片越界排除：pending 位置均经 `start + k <= n` 守卫后才入队。
+- Myers 波前反向波镜像数学与 `rt/rq` 的镜像坐标逐一推导一致；self 模式对角线 0
+  边界在正/反向波两侧均正确钳制。自比对 banded DP 对角带取并集，终点对角线恒在
+  `[k_lo, k_hi]`。
+- TrimSpec 数值域：`bias` 落入 `[3,9]`、`mscore∈[207,300]`、`dscore∈[700,793]`、
+  `score∈[-10500,4500]` 均落于 i16；全 N 参考经 `total==0→0.5` 兜底无除零。
+- `tubes_for_group`/`extend_tube` 循环与坐标域：`anti`/`diag`/`bucket` 均在 i64 内
+  无溢出；`cov` 覆盖计账仅在 `cps > ahgh` 时转 `u64`；`alow` 恒严格递增无死循环；
+  `(None, None) => unreachable!()` 由 while 条件保证不可达。
+- `extend_tube` 的 `eant`：`LocalAlign.t_end`/`q_end` 是 `usize`，`(t_end+q_end)
+  as i64` 在 64 位上无现实溢出（此前"i32 溢出"担忧不成立，字段并非 i32）。
+- `dedupe_contained`：`overlap_frac` 的 `own <= 0` 返回 0、`(ov.max(0))` 防负。
 
 ## 记录项（未改，低风险 / 待决策）
 
-* `align lastz -o dir` 重复使用旧 LAV 残留：影响链短（`sd run`/`s-align`/`sd
-  search lastz` 均用临时 workdir 免疫），且 LAV 是通用扩展名清理易误伤，
-  记录不修。
-* `.pgi` 显式输入 + 冲突 `-k`/`--smer`/`--window` 被静默忽略（exit 0）：
-  docs/align-pgi.md 明确说明 "apply only to genome-sequence inputs; .pgi
-  inputs carry their parameters in the index header"——文档化预期行为，
-  记录不修（sibling 索引路径的冲突报错是额外保护）。
-* crafted 索引可携带超大 contig `len`（u64 无上限），`oriented = b_len - k -
-  bpos` 超出 `u32` 时 `as u32` 截断、`chain_to_psl` 的 `*len as u32` 同样截
-  断——仅产生错误坐标，不 panic。真实索引受"单 contig ≤ 4.3 Gb"的已知限制
-  约束，故仅对畸形输入成立，按"简洁优先"记录不修。
-* `-f/--freq 0` 会因 `ea_freq >= 0` 恒成立而丢弃全部 reference 条目，静默输出
-  空 PSL（FastGA 默认 10，`0` 是无意义取值，非崩溃、非错误结果，按"简洁优先"
-  记录不修）。
+- `align lastz -o dir` 重复使用旧 LAV 残留：影响链短（`sd run`/`s-align`/`sd
+  search lastz` 均用临时 workdir 免疫），且 LAV 是通用扩展名清理易误伤，记录不修。
+- `.pgi` 显式输入 + 冲突 `-k`/`--smer`/`--window` 被静默忽略（exit 0）：
+  docs/align-pgi.md 明确说明 `.pgi` 输入在索引头携带参数——文档化预期行为。
+- crafted 索引可携带超大 contig `len`（u64 无上限），`as u32` 截断仅产生错误坐标
+  不 panic；真实索引受"单 contig ≤ 4.3 Gb"已知限制约束。按"简洁优先"记录不修。
+- `-f/--freq 0` 会因 `ea_freq >= 0` 恒成立而丢弃全部 reference 条目，静默输出空
+  PSL。FastGA 默认 10，`0` 无意义取值，非崩溃非错误，记录不修。
 
 ## 已知限制（有意保留）
 
-* 子范围命名 pgr 1-based vs kent 0-based（记录在案）：pgr 生成端/消费端
-  自洽，直接消费 UCSC/blat 生态子范围名时需先确认语义。
-* 单 contig 过大：pgi 索引 pos 为 u32，超 4.3 Gb 的单 contig 不被支持；且 PSL
-  坐标字段为 32 位有符号（`q_start`/`q_end`/`t_start`/`t_end as i32`、
-  `reverse_range` 用 `b_len as i32`），单 contig 超过 ~2.1 Gb 时坐标会回绕。
-  两者并存（PSL i32 上限 2.1 Gb 低于 u32 位置上限 4.3 Gb），均为格式固有上限
-  （UCSC 亦同）；真实基因组最大 contig ~250 Mb，远达不到。
-* `ref.2bit` 与 `ref.fa` 同 stem 时共享 `ref.pgi` 兄弟索引（有意保留）：
-  `.2bit` 是 `.fa` 的压缩变换，作为 drop-in 替换共享索引符合设计（docs
-  明确 "2bit inputs are preferred"）。与 `.fa`/`.fa.gz` 的分离不同（两者
-  可能是内容无关的独立文件），同目录下 `ref.fa` 与 `ref.2bit` 内容分歧属
-  罕见用户错误，且 mtime 新鲜度检查在 `ref.2bit` 更新时自动重建，已部分
-  缓解。若改为 `ref.2bit.pgi` 分离会破坏 drop-in 语义，故不修。
+- 子范围命名 pgr 1-based vs kent 0-based：pgr 生成端/消费端自洽，直接消费
+  UCSC/blat 生态子范围名时需先确认语义。
+- 单 contig 过大：pgi 索引 pos 为 u32（>4.3 Gb 不支持），且 PSL 坐标字段为 32 位
+  有符号（>~2.1 Gb 回绕）。均为格式固有上限（UCSC 亦同），真实基因组最大 contig
+  ~250 Mb 远达不到。
+- `ref.2bit` 与 `ref.fa` 同 stem 时共享 `ref.pgi` 兄弟索引（有意保留）：`.2bit`
+  是 `.fa` 的压缩变换，作为 drop-in 替换共享索引符合设计。与 `.fa`/`.fa.gz` 的
+  分离不同（两者可能是内容无关的独立文件）。
 
-## 修复的缺陷（共 52 处：34 处代码/行为 + 18 处 CLI/帮助/文档）
+## 修复的缺陷（根因模式）
 
-### 崩溃 / 越界 / 溢出（Zero Panic，14 处）
+### 崩溃 / 越界 / 溢出（Zero Panic）
 
-**lav d stanza 边界差一越界**。修复：守卫改 `+ 6`。回归
-   `truncated_d_stanza_errors_not_panics`。
-**构造 .pgi/.hv 头容量溢出 panic/OOM**（未校验 n_records/n_contigs）。
-   修复：头解析校验 + `try_reserve_exact`。回归 3 个 crafted 测试。
-**lav `l` 行负跨度回绕成超大 block**。修复：t_end < t_start 等报
-   InvalidData。回归 `negative_span_l_line_rejected`。
-**pgi build `positions.len() as u32` 静默截断**（>42 亿记录）。修复：
-    `payloads.len() <= u32::MAX` 防御检查。
-**`align_banded_local` 序列长度悬殊时 DP 数组越界**。修复：j_lo/j_hi
-    与对角带求交、空交集跳行。回归 `unbalanced_lengths_do_not_panic`。
-**lav `l` 行极值坐标 `-1` 下溢/跨度比较溢出**。修复：`checked_sub`。
-    回归 `extreme_l_line_values_do_not_panic`。
-**crafted .pgi 记录 contig id 越界 panic**：构造索引的 occurrence 记录携带
-    超出 contig 表的 cid 时，`emit_entry_hits` 的 `b.contigs()[bc]` 直接越界
-    panic。三个读取路径此前只校验头部不校验记录体。修复：
-    `PgiIndex::read` / `PgiStream::next_batch` 逐记录校验 `cid < n_contigs`
-    且 `pos + k <= contig len`；`PgiMmap`（惰性解码）在 `emit_entry_hits`
-    解码命中记录时同步校验，报友好错误。回归 `crafted_record_contig_rejected_
-    not_panic`、`mmap_merge_rejects_out_of_range_contig`、
-    `command_align_pgi_crafted_index_errors_not_panics`。
-**临时索引目录创建失败 panic**：`resolve_side` 的
-    `TempDir::new().expect("creating temporary index directory")` 在系统临时
-    目录不可写/磁盘满时 panic。修复：改为 `?` 传播友好错误（内部
-    `tmp.as_ref().expect` 有刚赋值的前置保证，不可达）。
-**`read_header` 按不受信任的 contig 名长度扩容**：`PgiIndex::read` /
-    `PgiStream::open`（`align pgi` 的 reference 流式读取与 `read_index_params`
-    都走它）逐 contig 读取 `nb` 后直接 `buf.resize(start + nb, 0)`；`nb` 来自
-    头部、无上限（可到 `u32::MAX`），构造索引可迫使数 GB 分配（OOM abort）；
-    而 mmap 路径经 `parse_header_bytes` 用实际缓冲区边界 `take_bytes` 校验
-    `nb`，两路径不一致。此前只校验 `n_contigs`/`n_records`，未校验逐名 `nb`。
-    修复：`read_header` 在扩容前校验 `nb <= MAX_CONTIG_NAME`（1 MiB），超限报
-    友好错误。回归 `crafted_huge_contig_name_rejected_not_panic`。
-**`emit_entry_hits` 前缀窗口在 k=64 时 `hi` 溢出**：`window(len)` 计算
-    `hi = lo + r`；k=64 时 `k_bits=128`、`mask=u128::MAX`，若某 k-mer 前 `len`
-    个碱基全为 T（位 104..128 置位），`lo = 2^128 - r`、`hi = lo + r = 2^128`
-    溢出 `u128`（debug panic / release 静默回绕，前缀范围错乱）。k=64 经
-    `-k 64` 可达（CLI 无上限、`build_from_seqs` 允许 k<=64）。mmap 路径对
-    `2^(2k)` 哨兵有 `k<64` 的特判，但 `2^128` 无法表示。修复：`hi` 改
-    `lo.saturating_add(r)`——饱和后仅排除全 T 的 `u128::MAX` 单键，非真实 seed，
-    可接受。回归 `merge_k64_high_key_no_prefix_overflow`（构造 index 直接触发
-   `window(12)` 的 `lo + r = 2^128` 路径）。
-**`build_from_seqs` 的 `k * 2` 参数校验溢出 panic**：`ensure!(k > 0 && k * 2
-   <= 128)` 在 `k` 为极端值（CLI `-k 18446744073709551615`）时 `k * 2` 溢出
-   panic（debug panic / release 静默回绕、校验失效）。修复：改为直接校验
-   `k <= 64`（`2*k` 显著位须存入 u128 kmer key），极端值报友好错误。回归
-   `command_align_pgi_extreme_kmer_errors_not_panics`。
-**`collect_one_contig` 的 `window + 2` 溢出 panic/OOM**：环缓冲容量
-   `(window + 2).next_power_of_two()` 在 `--window` 为极端值（如
-   `usize::MAX`）时 `window + 2` 溢出 panic；即使不溢出，超大 window 也会
-   迫使多 GB 的 `dq_idx`/`dq_hash` 分配（OOM）。修复：`SyncmerParams::validate`
-   增加 `window <= 1_000_000` 上限（默认 5，该上限极宽松），极端值报友好
-   错误。回归 `command_align_pgi_extreme_window_errors_not_panics` 与单测
-   `test_validate_rejects_extreme_window`。
-**`--parallel` 无范围校验导致 rayon 线程风暴**：`parallel_arg` /
-   `parallel_arg_with_default` 用 `value_parser!(usize)` 无界接收，`--parallel
-   18446744073709551615`（实测）会让 rayon 尝试创建近似无限线程，造成系统
-   级线程风暴（load 飙升至 1000+）；`--parallel 0` 也被静默当作默认值。
-   修复：改用 `RangedU64ValueParser::<usize>::new().range(1..=1024)`，clap
-   在构造任何线程池之前即拒绝 `0` 与 `>1024` 值（共享 helper，同时覆盖
-   lastz / sd / prefilter 等所有 `-p` 消费方）。回归
-   `command_align_pgi_extreme_parallel_errors_not_panics`。
-**构造 .pgi 头大 `k` 使 `pack_kmer`/`rc_key` 移位溢出 panic**：`parse_header_bytes`
-   读取头的 `k` 但未校验 `k <= 64`；构造 `k=2^20`（且 `kmer_bytes == k.div_ceil(4)`
-   通过、contig 长度容纳）的 .pgi 可被 `validate_compatible`（两 index 同 `k`）放行，
-   随后 merge 的 `lower_bound → pack_kmer` 对 u128 做 `>> 2*(k-1)`（移位 >= 128）
-   panic（实测"attempt to shift right with overflow"）。修复：`parse_header_bytes`
-   增加 `k in 1..=64` 校验（与 build 侧一致），恶意二进制 index 报友好错误。回归
-   `crafted_large_k_rejected_not_panic`。
+- **LAV 解析多处越界/下溢/溢出**：`d` stanza 边界差一越界（守卫改 `+ 6`）；`l`
+  行负跨度回绕成超大 block（`t_end < t_start` 报 InvalidData）；`l` 行极值坐标
+  `-1` 下溢/跨度比较溢出（`checked_sub`）。
+- **构造 .pgi/.hv 头容量溢出 panic/OOM**（未校验 n_records/n_contigs）。修复：头
+  解析校验 + `try_reserve_exact`。
+- **pgi build `positions.len() as u32` 静默截断**（>42 亿记录）。修复：
+  `payloads.len() <= u32::MAX` 防御检查。
+- **`align_banded_local` 序列长度悬殊时 DP 数组越界**。修复：j_lo/j_hi 与对角带
+  求交、空交集跳行。
+- **crafted .pgi 记录 contig id 越界 panic**：`emit_entry_hits` 的 `b.contigs()[bc]`
+  直接越界（读取路径只校验头部不校验记录体）。修复：`PgiIndex::read`/
+  `PgiStream::next_batch` 逐记录校验 `cid < n_contigs` 且 `pos + k <= contig len`；
+  `PgiMmap`（惰性解码）在解码命中记录时同步校验。
+- **临时索引目录创建失败 panic**：`TempDir::new().expect` 在系统临时目录不可写/盘
+  满时 panic。修复：改 `?` 传播友好错误。
+- **`read_header` 按不受信任的 contig 名长度扩容**：`nb` 来自头部、无上限，可迫使
+  数 GB 分配。修复：扩容前校验 `nb <= MAX_CONTIG_NAME`（1 MiB）。
+- **`emit_entry_hits` 前缀窗口在 k=64 时 `hi` 溢出**：k=64 时 `mask=u128::MAX`，
+  若某 k-mer 前 `len` 个碱基全为 T，`lo + r = 2^128` 溢出（`2^128` 无法表示）。
+  修复：`hi` 改 `lo.saturating_add(r)`（饱和后仅排除全 T 的 `u128::MAX` 单键，非
+  真实 seed）。
+- **`build_from_seqs` 的 `k * 2` 参数校验溢出 panic**（极端 `k`）。修复：直接校验
+  `k <= 64`。
+- **`collect_one_contig` 的 `window + 2` 溢出 panic/OOM**。修复：`SyncmerParams::
+  validate` 增加 `window <= 1_000_000` 上限。
+- **`--parallel` 无范围校验导致 rayon 线程风暴**：`--parallel 18446744073709551615`
+  让 rayon 创建近似无限线程（load 1000+），`--parallel 0` 被静默当默认值。修复：
+  `RangedU64ValueParser::<usize>::new().range(1..=1024)`，clap 在构造任何线程池前
+  拒绝（共享 helper，同时覆盖 lastz/sd/prefilter 等所有 `-p` 消费方）。
+- **构造 .pgi 头大 `k` 使 `pack_kmer`/`rc_key` 移位溢出 panic**：`parse_header_bytes`
+  未校验 `k <= 64`。修复：增加 `k in 1..=64` 校验（与 build 侧一致）。
 
-### 功能正确性 / 算法（12 处，含 1 处重大索引缺陷）
+### 功能正确性 / 算法
 
-**（重大）pgi 索引 k-mer key 与位置错配**（2 Mb 随机基因组 39% 错配、
-   self 比对 101 条伪块）。修复：pending 去重、flush 按位置重算 key、RC
-   用 `rc_key`。回归 `index_records_match_sequence_positions`。
-**align lastz 省略 query 未启用 self 模式**。修复：传 `self_mode`。
-    回归 `command_align_lastz_omitted_query_is_self`。
-**`psl lift` 负链外层坐标提升错误（违反 UCSC 约定）**。修复：
-    `qStart/qEnd += start_0`、`qStarts += (size - end_0)`，夹具修正。
-    回归 `test_lift_minus_strand_forward_coordinates`。
-**`psl lift` 的 `parse_subrange` 误切含 `.`/`:` 的 contig 名**：窗口名
-    `{contig}:{start}-{end}` 经共享 `Range` 解析器时，`NC_000913.1:1-200`
-    被读成 name="NC_000913" + chr="1"、`chr1:alt:1-200` 被读成 chr="alt"，
-    `lift_query` 在 sizes 表里查错键、静默跳过提升（仅 warn）。修复：
-    `parse_subrange` 改为取最后一个 `:`+数字后缀切分，前缀整体作为 contig
-    名；回归 `parse_subrange_keeps_dotted_and_colon_contigs`。
-**lastz self 模式用 basename 判断自比对，同名文件被交叉比对**：`run_lastz`
-    的 self 跳过条件 `t_base != q_base` 只比 basename——目录中含两个同名文件
-    （如 `a/dup.fa`、`b/dup.fa`）时，`(a/dup.fa, b/dup.fa)` 会以交叉比对
-    方式运行（4 个 LAV 中 2 个虚假交叉），对含共享序列的基因组产生错误命中。
-    修复：self 模式跳过所有 `target_file != query_file` 的作业（每个文件只
-    与其自身比对）。回归 `command_align_lastz_self_duplicate_basenames`。
-**`ref.fa` 与 `ref.fa.gz` 共享兄弟索引，内容不同时静默复用错误索引**：
-    `sibling_pgi_path` 的 `set_extension("")` + `set_extension("pgi")` 链把
-    `.fa` 替换掉，两文件都映射到 `ref.pgi`；同名同长但序列不同时 contig
-    校验（只比名字/长度）无法拦截，第二次运行静默复用第一次的索引（实测 0
-    块输出）。修复：`.gz` 输入去掉 `.gz` 后**追加** `.pgi`（`ref.fa.gz` →
-    `ref.fa.pgi`），与 `ref.fa` → `ref.pgi` 分离。回归
-    `command_align_pgi_gz_sibling_index_distinct`。
-**FASTA 原地修改后兄弟索引被静默复用**：`resolve_side` 复用同名兄弟 `.pgi`
-    时只校验 contig 名/长度；同名单长但序列不同的 FASTA 会静默复用旧索引
-    （k-mer 来自旧序列），对齐结果错误。修复：新增 mtime 校验（输入比索引
-    新则重建，与 e-kmer 缓存同一约定）。回归
-    `command_align_pgi_stale_sibling_index_rebuilt`。
-**`.pgi` 单输入自比对 + 仅 `--ref-seq` 报错**：`align pgi ref.pgi --ref-seq
-    ref.fa` 报 "extension sequences are needed for both sides"——self 模式下
-    query 侧复用 `.pgi` 输入的 `seqs=None`，两侧空/非空不一致触发 bail。
-    修复：`resolve_seqs` 后 self 模式下任一侧扩展序列为空时复用另一侧（两
-    方向对称）。验证：仅 `--ref-seq` / 仅 `--query-seq` / 双侧 / FASTA 直接
-    输入四者输出逐字节一致。回归
-    `command_align_pgi_single_ref_seq_on_self_pgi`。
-**align pgi 自动索引小写归一化 → 全零块**：构造含大小写混合拷贝的基因组
-    （fam 大写 + fam 小写）：修复前输出 match=0/mismatch=0/rep=0 的全零块。
-    根因：`build_from_seqs` 的碱基编码大小写不敏感 → 小写与大写拷贝共享 seed
-    → 链存在；但扩展 DP 大小写敏感 → 评分失败 → `extend_chain` 回退 raw 块
-    （全零）。修复：`build_from_seqs` 增加 `mask` 参数（与 `build_from_path`
-    一致），align pgi 自动索引传 `true`（跳过小写）。实测：混合大小写 0 块
-    （不再输出全零块）、全大写对照 2 块正常；小写作为软掩码跳过，pgi 与
-    lastz 双引擎语义统一。回归
-    `command_align_pgi_lowercase_copy_has_no_all_zero_blocks`。
-**默认参数静默复用不同 k 的兄弟索引**：`resolve_side` 的缓存参数冲突检查
-    只覆盖命令行显式传的 `-k/--smer/--window`（`ValueSource::CommandLine`）。
-    实测：`-k 20 --keep-index` 建 k=20 缓存后，`align pgi g.fa`（默认 40）
-    静默用 k=20 索引跑 k=40 语义的比对（输出不同，用户无感知）；显式 `-k
-    40` 则报错——两条路径行为不一致。修复：删除 `explicit(...)` 条件，**总是**
-    检查当前解析值（显式或默认）与缓存索引参数的一致性（smer/window 对称
-    生效）。回归 `command_align_pgi_default_kmer_conflicts_with_cached_index`。
-**`build_from_seqs` 在小 k 下产生重复 (kmer, pos, strand) 记录**：
-    `SyncmerParams::validate` 只约束 `smer < 32`、`window <= 1e6`，未约束
-    `smer`/`window` 与 `k` 的关系。`collect_one_contig` 的"两次选中"去重靠
-    `queued` 集合，但只在位置仍处于 pending 时生效；位置在 flush 时从
-    `queued` 移除。当 `k <= smer + window - 1`（如 `-k 8 --smer 8 --window 8`，
-    实测于 pos=16502 重复）时，位置在第二次选中前已被 flush 出队，随后被
-    重新选中入队、再次发射，索引含完全相同的两条记录——虚增该 k-mer 的频率
-    计数，使 `--freq` 过滤（`>= freq`）误把真实 seed 丢弃。默认参数（k=40,
-    8/5）不受影响（`40 > 8+5-1`）。修复：在 `build_from_seqs` 分组环节按
-    payload（cid,pos,strand）精确去重（保持顺序，不改变内存画像，不误删合法
-    记录——同一物理位置每链仅一条记录）。回归 `no_duplicate_records_small_k`
-    （覆盖 7 组参数 × 20 seed，含默认参数确保不变）。
-**`emit_entry_hits` 的 lcp 收窄窗口仅含高频条目时漏种子**：归并式 merge 用
-    前一个 `a` 条目与该条目的 lcp 把扫描窗口从 floor 窗口收窄到 `start` 前缀
-    窗口。空窗口时会回退到 floor 窗口，但收窄窗口**非空**时不再回退。FastGA
-    的 GIX 索引在构建期就剔除 `>= freq` 的高频 k-mer，因此其"收窄窗口只含高频
-    条目"等价于"收窄窗口为空"，必然回退；pgr 保留全部 k-mer、在 merge 期过滤，
-    于是收窄窗口可以**非空却只含高频条目**（`m < min_shared`），此时算法直接
-    返回空，漏掉落在 floor 窗口、共享前缀在 `[min_shared, start)` 内的低频种子
-    ——与 FastGA 语义不一致。修复：`m < min_shared` 且 `start > min_shared` 时
-    回退重扫 floor 窗口（与空窗口回退同一路径），并同步到测试内参考实现
-    `emit_entry_hits_ref`。回归
-    `lcp_narrowed_window_all_high_freq_falls_back_to_floor`。
+- **（重大）pgi 索引 k-mer key 与位置错配**（2 Mb 随机基因组 39% 错配、self 比对
+  101 条伪块）。修复：pending 去重、flush 按位置重算 key、RC 用 `rc_key`。
+- **align lastz 省略 query 未启用 self 模式**。修复：传 `self_mode`。
+- **`psl lift` 负链外层坐标提升错误（违反 UCSC 约定）**。修复：
+  `qStart/qEnd += start_0`、`qStarts += (size - end_0)`。
+- **`psl lift` 的 `parse_subrange` 误切含 `.`/`:` 的 contig 名**（`NC_000913.1:1-200`
+  被读成 name="NC_000913"、`chr1:alt:1-200` 被读成 chr="alt"），`lift_query` 查错键
+  静默跳过。修复：取最后一个 `:`+数字后缀切分，前缀整体作 contig 名。
+- **lastz self 模式用 basename 判断自比对，同名文件被交叉比对**（`a/dup.fa`、
+  `b/dup.fa`）。修复：self 模式跳过所有 `target_file != query_file` 的作业。
+- **`ref.fa` 与 `ref.fa.gz` 共享兄弟索引，内容不同时静默复用错误索引**。修复：
+  `.gz` 输入去掉 `.gz` 后**追加** `.pgi`（`ref.fa.gz` → `ref.fa.pgi`），与
+  `ref.fa` → `ref.pgi` 分离。
+- **FASTA 原地修改后兄弟索引被静默复用**（同名单长但序列不同）。修复：`resolve_side`
+  增加 mtime 校验（输入比索引新则重建）。
+- **`.pgi` 单输入自比对 + 仅 `--ref-seq` 报错**。修复：`resolve_seqs` 后 self 模式
+  下任一侧扩展序列为空时复用另一侧。
+- **align pgi 自动索引小写归一化 → 全零块**：`build_from_seqs` 碱基编码大小写不敏感
+  → 小写与大写拷贝共享 seed，但扩展 DP 大小写敏感 → 评分失败 → 回退全零块。修复：
+  `build_from_seqs` 增加 `mask` 参数，align pgi 自动索引传 `true`（跳过小写）。
+- **默认参数静默复用不同 k 的兄弟索引**：`resolve_side` 缓存参数冲突检查只覆盖
+  命令行显式传的 `-k/--smer/--window`。修复：删除 `explicit(...)` 条件，**总是**
+  检查当前解析值（显式或默认）与缓存索引的一致性。
+- **`build_from_seqs` 在小 k 下产生重复 (kmer, pos, strand) 记录**（`k <= smer +
+  window - 1` 时，位置在第二次选中前已被 flush 出队随后重新入队发射），虚增频率
+  计数使 `--freq` 过滤误丢真实 seed。修复：分组环节按 payload 精确去重。
+- **`emit_entry_hits` 的 lcp 收窄窗口仅含高频条目时漏种子**：FastGA 的 GIX 构建期
+  就剔除 `>= freq` 高频 k-mer，其"收窄窗口只含高频条目"等价于"为空"必然回退；pgr
+  保留全部 k-mer、merge 期过滤，收窄窗口可非空却只含高频条目，此时直接返回空漏掉
+  低频种子。修复：`m < min_shared` 且 `start > min_shared` 时回退重扫 floor 窗口。
 
-### 数据安全（`-o` 同输入保护 / 陈旧索引 / 静默数据丢失，2 处）
+### 数据安全（`-o` 同输入 / 陈旧 / 静默数据丢失）
 
-**`align pgi` 的 `-o` 指向输入时静默覆盖输入**：`align pgi g.fa -o g.fa` 等把
-    输入 FASTA/.pgi 覆盖为 PSL（exit 0、无提示）；`--ref-seq`/`--query-seq`
-    同样可能被覆盖。修复：`align pgi` 对 `-o` 及 `--ref-seq`/`--query-seq`
-    均加 `ensure_outfile_distinct`。实测覆盖输入报 "also an input file" 且
-    输入完好。
-**`align pgi` 的 `-o` 可静默覆盖兄弟索引**：`ensure_outfile_distinct` 只保护
-    `[ref, query, ref_seq, query_seq]`，未包含基因组输入映射的兄弟索引路径
-    （`ref.fa` → `ref.pgi`、`ref.fa.gz` → `ref.fa.pgi`）。实测 `align pgi
-    ref.fa -o ref.pgi` 把 PSL 输出写到 `ref.pgi`，覆盖/破坏该兄弟索引，下一次
-    运行时 `resolve_side` 把 PSL 当 pgi 读，报 "reading header / failed to fill
-    whole buffer"。修复：在 `execute` 中把每个基因组输入的 `sibling_pgi_path`
-    一并加入 `ensure_outfile_distinct`（跳过 `stdin`）。实测 `-o ref.pgi` /
-    `-o ref.fa.pgi` / `--keep-index -o ref.pgi` 均报 "output file ... is also an
-    input file" 且索引完好；正常 `-o out.psl` 不受影响。回归
-    `command_align_pgi_output_not_overwrite_sibling_index`。
+- **`align pgi` 的 `-o` 指向输入时静默覆盖输入**。修复：对 `-o` 及 `--ref-seq`/
+  `--query-seq` 均加 `ensure_outfile_distinct`。
+- **`align pgi` 的 `-o` 可静默覆盖兄弟索引**（`ref.fa` → `ref.pgi`）。修复：把每个
+  基因组输入的 `sibling_pgi_path` 一并加入 `ensure_outfile_distinct`（跳过
+  `stdin`）。
 
-### 性能（1 处）
+### 性能
 
-**`align pgi --parallel` 未约束自动索引构建的 rayon 并行度**：`resolve_side`
-    （内部 `build_from_seqs` → `radix_sort_u128_par`）在自定义线程池创建前
-    执行，索引构建走全局 rayon 池，`--parallel N` 只约束 merge/扩展阶段。
-    文档承诺 "--parallel: rayon thread count"，行为不一致。修复：把从
-    `resolve_side`（索引构建）到 merge/扩展的整个流程移入 `pool.install`，
-    `--parallel` 现约束整个命令的 rayon 用量（`sd search --engine pgi` 与
-    `rept e-align` 经由 `align pgi` 同步受益）。`-p 1/2/8` 输出逐字节一致
-    （确定性未破坏）。
+- **`align pgi --parallel` 未约束自动索引构建的 rayon 并行度**：`resolve_side` 在
+  自定义线程池创建前执行，索引构建走全局 rayon 池，`--parallel` 只约束 merge/扩展
+  阶段（文档承诺约束整个命令）。修复：把从 `resolve_side` 到 merge/扩展的整个流程
+  移入 `pool.install`（`sd search --engine pgi` 与 `rept e-align` 同步受益）。
 
-### 外部工具与参数 / CLI（5 处）
+### 外部工具与参数 / CLI
 
-**`align pgi --self` 未校验 `--ref-seq`/`--query-seq` 一致**：`ref.pgi --self
-   --ref-seq a.fa --query-seq b.fa` 会在 self 模式比对两个不同文件。修复：
-   `--self` 时校验两者一致（不一致或只给一个均报错），新增 2 个集成测试。
-**省略 query 的单输入 self 模式未校验 `--ref-seq`/`--query-seq` 一致**：此前的
-   `--self` 一致性校验只挂在 `if is_self` 分支下；省略第二个输入（`self_mode =
-   query_input.is_none()`）时该分支被跳过，`align pgi ref.pgi --ref-seq a.fa
-   --query-seq b.fa` 会静默接受两个**不同**的扩展序列文件，在 self 模式下把
-   a.fa 对 b.fa 交叉比对（a、b 只要 contig 名/长与索引一致即通过
-   `validate_contigs`），输出错误结果而非报错——与 `--self` 路径行为不一致。
-   修复：扩展序列一致性校验移到 `self_mode` 分支（单输入与 `--self` 统一生效）：
-   两侧都给出时必须相同（否则报 " ... expect the two extension sequences to be
-   the same ..."）；仅给一侧时，省略 query 的 self 模式按既有逻辑复用该侧（
-   `command_align_pgi_single_ref_seq_on_self_pgi` 的预期行为），而显式 `--self`
-   仍要求两侧都给（保持既有报错）。回归
-   `command_align_pgi_single_input_conflicting_extension_sequences`。同步更新
-   `docs/align-pgi.md` 的 `--ref-seq`/`--query-seq` 说明。
+- **`--self` / 省略 query 的 self 模式未校验 `--ref-seq`/`--query-seq` 一致**（可在
+  self 模式把两个不同文件交叉比对）。修复：扩展序列一致性校验移到 `self_mode` 分支
+  （单输入与 `--self` 统一生效）：两侧都给出必须相同；仅给一侧时省略 query 的 self
+  模式复用该侧，显式 `--self` 仍要求两侧都给。
+- **lastz 静默失败**（只打日志返回 Ok）。修复：统计失败数并 bail；记录首个失败
+  stderr。
+- **参数校验缺失/不一致（align 侧）**：kmer/window/parallel 正值有限性统一校验。
 
-**lastz 静默失败**（只打日志返回 Ok）。修复：统计失败数并 bail。
-**lastz 失败原因被吞**（status 丢 stderr）。修复：`cmd.output()` 记录
-    首个失败的 stderr。
-**参数校验缺失/不一致（align 侧）**：kmer/window/parallel 正值有限性。
-    修复：统一校验，帮助同步。
+### CLI / 文档（一次性小修，已精简）
 
-### CLI / 文档（18 处）
-
-**噪音与帮助文本多处小修**：lav mask stanza 静默、`#` 元数据行跳过、lastz
-    `[multiple]`/`-s` 修正、align.md 示例输出修正、pgi 帮助默认 syncmer 修正。
-**文档一致性（align 侧）**：`.pgi` 命名说明。
-**lastz 单序列约束帮助/文档未同步**。修复：完整补齐。
-**align-pgi.md `--freq` 语义错误**：写 "more than this many times"，代码与
-    帮助均为 "at least this many times"（`>= freq`）→ 文档修正。
-**`pgr align` 的 about 写 "into PSL blocks"，但 lastz 子命令输出 LAV**。
-    改为 "Aligns genomes or .pgi indexes"。
-**`align pgi` 兄弟索引命名描述错误**：`sibling_pgi_path` 用 `set_extension`
-    替换最终扩展名，docs/align-pgi.md 却写 "ref.fa.gz → ref.fa.pgi"。修复
-    文档为"最终扩展名替换为 .pgi，ref.fa 与 ref.fa.gz 均映射到 ref.pgi"
-    （复核 51 后改为"追加 .pgi"的分离命名，文档恢复原意）。
-**align-pgi.md `--merge-gap` 说明补齐序列校验语义**：两侧间隔均非空时合并
-    还要求中段同源（banded 对齐验证），近对角线的独立拷贝对保持分离。
-**align-pgi.md `--max-gap` 说明补齐 greedy 门控语义**：双侧间隙 ≥ 200 bp 时
-    仅同源中段才桥接，近距离倒位对保持分离。
-**align-pgi.md 兄弟索引说明补齐 mtime 失效约定**。
-**align-pgi.md 补充 sibling 缓存索引参数一致性**：当前 `-k/--smer/--window`
-    （显式或默认）必须与缓存匹配，不匹配报错而非静默复用不同 seed（缺陷 36）。
-**align-pgi.md 明确 `--ref-seq` 校验范围**（contig 表）并要求序列与索引来源
-    一致（自动 sibling 路径由 mtime 检查保证）；未实现 k-mer 内容校验
-    （syncmer 哈希对比复杂度高、阈值易误报，文档说明足够）。
-**align-pgi.md Notes 补充小写（软掩码）处理**：自动索引小写→N 无 seed/块，
-    `pgr pgi build --mask` 同语义。
-**`align pgi` after_help 的 `--freq` 语义写 "more than"**：帮助文本写
-    "K-mers occurring more than --freq times on either side are skipped"，但
-    代码（`emit_entry_hits`：`if ea_freq >= freq`）、`-f` 参数帮助与
-    docs/align-pgi.md 均为 "at least"（`>=`，FastGA 语义）。"more than" 与代码/
-    其余文档矛盾，会把用户引向 `> freq` 的错误预期。修复：改为 "at least
-    --freq times"。
-**`align pgi` after_help 使用不存在的 `--k` 长选项**：该参数实际注册为
-    `.short('k').long("kmer")`（无 `--k` 别名），after_help 写 `--k/--smer/
-    --window`，`--k` 会直接报 "unexpected argument"。修复：改用 `--kmer`（与
-    `--smer`/`--window` 命名风格一致）。
-**`sibling_pgi_path` 陈旧 doc 注释**：原写 "ref.fa / ref.fa.gz / ref.2bit all
-    map to ref.pgi"，与 `.gz` 分离为 `ref.fa.pgi` 的实现不符。修复：更正注释
-    （仅注释，无行为变化）。
-**`align lastz --lastz-args` 帮助未提示 `=` 写法**：值以 `-` 开头时需用
-    `--lastz-args=<val>` 形式（clap 对空格形式的值是标准行为）。修复：Arg help
-    与 `docs/align-lastz.md` 均提示该写法。
-**`align pgi` after_help 引用不存在的 `pgr psl to_chain`**：实际子命令为 `pgr
-    psl to-chain`（`to_chain.rs` 的 `Command::new("to-chain")`），`to_chain` 仅是
-    内部模块/函数名；用户按帮助去壳 `pgr psl to_chain` 会得到 "unexpected
-    argument"。修复：改为 `` `pgr psl to-chain` ``。`pgr pl chainnet` 与
-    `docs/align-pgi.md` 核验无误（后者本就用 `to-chain`），全库其余 `to_chain`
-    均为内部符号，非用户可见命令。
-**`align pgi` after_help 示例 5 的"Lower the partial-seed floor"与 `--min-shared
-    16` 矛盾**：`--min-shared` 是**提高**最小共享长度下限（`16 > 12`），写
-    "Lower the partial-seed floor (default is FastGA's plen floor of 12)" 会把
-    用户引向"应传小于 12 的值"的错误预期。修复：改为中性的 "Adjust the
-    partial-seed floor"。`docs/align-pgi.md` 的 `--min-shared` 说明（"minimum
-    shared seed length (bp); default is FastGA's plen floor (12)"）方向正确，
-    无需改动。
-
-## 验证
-
-* 引擎交叉验证：pgi 与 lastz 检出同一对 1200 bp 拷贝（边界修剪 2 bp）；合成
-  基因组上两引擎各 4 条命中覆盖相同两个重复家族（坐标差异仅边界修剪 4–8 bp）。
-* 端到端坐标：`.2bit` 输入与 FASTA 路径逐字节一致；`--ref-seq` 单侧 / 双侧 /
-  直接 FASTA 输入输出逐字节一致；`psl lift` 对 `>chr1:alt` 与 `>NC_000913.1`
-  输出键完整、区间与真实坐标一致。
-* 鲁棒性：截断/负跨度 lav、越界 PAF、垃圾 BED/.pgi、构造头、空输入、全 N、
-  极值参数、短行、随机二进制喂各命令等畸形输入全部友好报错或空输出，零 panic。
-* 确定性：`--parallel 1/2/8` 下输出逐字节一致；`align pgi` 反复运行逐字节
-  一致。
-* 数据安全：`align pgi -o` 同输入报 "also an input file" 且输入完好；`-o` 指向
-  兄弟索引（`ref.pgi`/`ref.fa.pgi`）报 "output file ... is also an input file"
-  且索引完好；`.pgi` sibling mtime 重建、`.gz` 与 `.fa` 兄弟索引分离、默认 k
-  冲突报错均实测复现。
-* 性能：`align pgi --parallel N` 现约束整个命令 rayon 用量；`-p 2` 端到端
-  输出与修复前一致。
-* 新增回归测试（主要）：`command_align_pgi_crafted_index_errors_not_panics`、
-  `command_align_pgi_gz_sibling_index_distinct`、
-  `command_align_pgi_stale_sibling_index_rebuilt`、
-  `command_align_pgi_default_kmer_conflicts_with_cached_index`、
-  `command_align_pgi_lowercase_copy_has_no_all_zero_blocks`、
-  `command_align_pgi_single_ref_seq_on_self_pgi`、
-  `command_align_pgi_single_input_conflicting_extension_sequences`、
-  `command_align_pgi_output_not_overwrite_sibling_index`、
-  `command_align_lastz_self_duplicate_basenames`、
-  `command_align_lastz_omitted_query_is_self`、
-  `command_align_pgi_extreme_kmer_errors_not_panics`、
-  `command_align_pgi_extreme_window_errors_not_panics`、
-  `command_align_pgi_extreme_parallel_errors_not_panics`、
-  `index_records_match_sequence_positions`、
-  `no_duplicate_records_small_k`、
-  `lcp_narrowed_window_all_high_freq_falls_back_to_floor`、
-  `crafted_record_contig_rejected_not_panic`、
-  `mmap_merge_rejects_out_of_range_contig`、
-  `crafted_huge_contig_name_rejected_not_panic`、
-  `crafted_large_k_rejected_not_panic`、
-  `test_validate_rejects_extreme_window`、
-  `merge_k64_high_key_no_prefix_overflow`、
-  `parse_subrange_keeps_dotted_and_colon_contigs`、
-  `test_lift_minus_strand_forward_coordinates`、
-  `truncated_d_stanza_errors_not_panics`、`negative_span_l_line_rejected`、
-  `extreme_l_line_values_do_not_panic`、`unbalanced_lengths_do_not_panic` 等。
-* `cargo test --lib libs::pgi` 67 通过、`cargo test --test cli_align_pgi` 29
-  通过；`cargo test` 全量通过；本族 release 模式全绿（pgi、alignment 各 lib +
-  相关 CLI）；`cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings`
-  干净。
+`--freq` 语义（"more than"→"at least"，`>=` FastGA 语义）、`--k`→`--kmer` 长选项、
+`pgr psl to_chain`→`to-chain` 命令名、`--min-shared` 示例措辞、`--lastz-args` `=`
+写法提示等均修正；`docs/align-pgi.md` 的 `.pgi` 命名、mtime 失效、缓存参数一致性、
+软掩码说明、`--merge-gap`/`--max-gap` 语义补齐。
 
 ## 结论
 
-`align` 命令族审核完成，累计修复 **52 处缺陷**（34 处代码/行为 + 18 处 CLI/
-帮助/文档），并经多轮纵深复核（`libs/pgi` 索引构建/读取、`libs/lastz`、
-`libs/fmt/lav`、`libs/fmt/psl`、`alignment` DP、sibling/缓存索引新鲜度与
-`-o` 覆盖保护、`--parallel` 确定性、`emit_entry_hits` 频率过滤与 lcp 收窄窗口、
-k=64 前缀域、`chain_tubes` 排序键布局、负链坐标、reference 侧记录校验、极端
-`-k`/`--window`/`--parallel` 参数边界、构造 .pgi 头大 `k`、`tubes_for_group`/
-`extend_tube` 边界、wave.rs 波前算法与 TrimSpec 数值域），未再发现新的问题，
-审核收敛。
-
-收尾回归核对确认报告所述修复均已落地且状态一致：
-* 代码逐项核对：`cmd_pgr/align/pgi.rs`（`--self` 校验、`ensure_outfile_distinct`
-  含 sibling 索引、`pool.install` 约束 `--parallel`、mtime / 参数一致性检查、
-  `.gz` 分离命名）、`libs/pgi/build.rs`（`mask` 软掩码、pending 去重、按位置
-  重算 key、`rc_key`）、`libs/pgi/align.rs`（`saturating_add` 防 k=64 前缀溢出、
-  `freq >=` 双侧过滤、streaming 逐记录校验、负链 RC frame）、`libs/pgi/mmap.rs`
-  （惰性解码 + 越界校验、截断拒绝）均与报告一致。
-* 文档核对：`docs/align-pgi.md` 的 `--freq`("at least")、`--kmer`（非 `--k`）、
-  `.gz` 分离命名、mtime 失效、缓存参数一致性、软掩码说明均与代码一致。
-
-> 注：工作区另有 `fas_multiz/merge.rs`、`alignment/slice.rs` 等**其他命令族的
-> 未提交 WIP**（含一次 stale clippy 缓存下的 E0596 误报，`touch` 后
-> `cargo check`/`clippy` 复检全绿），与本 pgi align 审核无关，未纳入本次范围。
+`align` 命令族审核完成，累计修复 **52 处缺陷**（34 处代码/行为 + 18 处 CLI/帮助/
+文档），经多轮纵深复核未再发现新问题，审核收敛。

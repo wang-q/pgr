@@ -66,7 +66,7 @@ VecDeque 是单切片）后较初版（37.9/42.1 µs）提升 ~11%，剩余常�
 
 库级基准证实：集合运算线性化（20k span 时 ~100–220×）与批量构建
 （100k 时 ~105×）都是数量级收益，且随规模增长；这与 CLI 基准
-（bench-rg-prop.md、interval-overlap.md）互补——CLI 看端到端，criterion
+（bench-rg-prop.md、../design/runlist.md）互补——CLI 看端到端，criterion
 看纯库层。旧的 O(n·m)/O(n²) 实现保留在 bench 内作基线，便于后续回归
 监控。
 

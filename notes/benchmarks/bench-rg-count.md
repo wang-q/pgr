@@ -52,7 +52,7 @@ pgr 约快 **3.2–3.3×**（普通 3.21×，病态 3.27×）；内存约为 rgr
 
 1. **coitrees 查询有界**：病态长区间对 pgr 几乎无影响（235 vs 224 ms，
    +5%）；rgr 在本数据上也未见明显退化（758 vs 753 ms）。注意这与
-   `notes/benchmarks/interval-overlap.md` 里 lapper `find()` 在超长区间上
+   `notes/design/runlist.md.md` 里 lapper `find()` 在超长区间上
    退化 ~71× 的场景不同——`count()` 走 BITS 路径，对单条超长区间的敏感度
    低于 `find()`。真实差距主要来自查询本身：coitrees 100k 次窗口查询的
    常数远小于 lapper。

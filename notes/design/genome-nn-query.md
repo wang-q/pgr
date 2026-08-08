@@ -210,7 +210,7 @@ pairwise 比较。归纳为三条路线：
 ### 6.1 HV 数据形态（前提纠正）
 
 - HV = 固定 D 维稠密 `Vec<i32>`（D=4096）：`.hv` 文件 = 4096 × 4 B
-  + 头部 ≈ **16 KB/基因组**（与 `pbit-decisions.md` 的 16 KB/样本一致）。
+  + 头部 ≈ **16 KB/基因组**（与 `pbit.md` §附录的 16 KB/样本一致）。
 - "bit（±1）"是每维 ±1 的**编码方式**，不是打包位向量；稀疏路径
   s=1 只保证值稀疏，文件仍按稠密 i32 存储。
 - 规模账：1 万 ≈ 160 MB；4 万 ≈ 640 MB；百万 ≈ 16 GB。
@@ -242,9 +242,9 @@ pairwise 比较。归纳为三条路线：
     bridge 维护成本。
   * **技术面**：HNSW 在 4096 维的召回/延迟高度依赖实现——rust-cv
     `hnsw` 0.11 实测 N=30k 时 recall@10 上限仅 ~0.92（ef=400）、
-    ef=10 仅 0.73（`benchmarks/bench-hv-ann-recall.md`）；同数据下
+    ef=10 仅 0.73（`design/hv.md`）；同数据下
     GSearch 同源 `hnsw_rs` 0.3.4 可达 0.974–0.990，但查询慢 7–10×
-    （`benchmarks/bench-hv-ann-hubnsw.md`），HubNSW 单层化（scale 0.2）
+    （`design/hv.md`），HubNSW 单层化（scale 0.2）
     只带来 0.4–1.8 pp 的微弱改善。GSearch 的 sketch（s=12,000 寄存器，
     u16–u64 计 24–96 KB）与我们的 16 KB HV **同量级**，其优势在 HNSW
     图查询 O(log N) 而非 sketch 更小（SetSketch 低内存变体才明显更省，
@@ -266,14 +266,14 @@ pairwise 比较。归纳为三条路线：
 
 ### 6.4 推荐与待定
 
-- **ANN 召回实测结论（2026-08-08，`benchmarks/bench-hv-ann-recall.md`）**：
+- **ANN 召回实测结论（2026-08-08，`design/hv.md`）**：
   * N=1k：HNSW 召回 0.98（ef≥10），比精确快 ~3×；
   * N=10k：ef=20 召回 0.90、0.46 ms/查询（精确 10 ms）；
   * N=30k：召回上限 0.92（ef=400 + ef_c=200），ef=10 仅 0.73；
     查询 0.65–1.5 ms vs 精确 30 ms（快 20–46×）；
   * 召回上限由查询 ef 决定，构建 ef_c 64→200 仅提升 0.6–1.2 pp——
     4096 维高维诅咒是主因，不是图质量（rust-cv 实现结论）。
-- **hnsw_rs / HubNSW 对照（2026-08-08，`benchmarks/bench-hv-ann-hubnsw.md`）**：
+- **hnsw_rs / HubNSW 对照（2026-08-08，`design/hv.md`）**：
   * N=30k：`hnsw_rs`（GSearch 同源）ef=200–400 召回 0.974–0.990，
     但查询 10.4–18 ms（精确 24.3 ms），只快 2.3–6.5×；HubNSW 单层化
     （scale=0.2）与多层召回几乎持平（中高 ef 略好 0.4–1.8 pp），
@@ -282,7 +282,7 @@ pairwise 比较。归纳为三条路线：
   * 结论修正：此前"4096 维 HNSW 召回天花板 <0.92"是 rust-cv 特定实现
     的结论；换成召回优先的 hnsw_rs 后 ANN 收益大幅缩水（接近精确扫描
     量级），降维仍是大规模下的首选。
-- **距离层标定（2026-08-08，`benchmarks/bench-hv-ani-calibration.md`）**：
+- **距离层标定（2026-08-08，`design/hv.md`）**：
   HV 距离 vs skani ANI 在 135 个真实基因组上：仅 ANI 90–98% 区间中等
   可靠（Spearman 0.5–0.6），**≥99% 近缘与 <85% 远缘失效**（ρ≈0.38 /
   0.05）；D=16384 只改善中远缘，不救近缘；Mash 同种内 ρ=−0.97、
@@ -325,7 +325,7 @@ pairwise 比较。归纳为三条路线：
 
 1. **换顶层入口点**：基本无用。顶层只有极少数节点（GTDB 规模实测
    3 层、顶层 4 个节点），贪心下探到第 0 层后入口影响很小；HubNSW
-   实验（`benchmarks/bench-hv-ann-hubnsw.md`）把多层压成单层后召回
+   实验（`design/hv.md`）把多层压成单层后召回
    几乎不变，也侧面说明 4096 维下瓶颈不在入口选择。
 2. **外部知识查询路由（最有希望）**：不用一棵全局 HNSW，而是按
    系统发育 / 性状分片（如按 Necom 聚类出的 clade），每个 clade 有
@@ -351,7 +351,7 @@ pairwise 比较。归纳为三条路线：
 - 工程现实：核心场景中 Necom 聚类时反正要建树，把树的分组与代表固化为
   查询路由表几乎是免费的；真正的问题是新基因组进库时树要不要重建。
 
-**实验结论（2026-08-08，`benchmarks/bench-hv-ann-clade.md`）**：合成
+**实验结论（2026-08-08，`design/hv.md`）**：合成
 cohort 注入 16 个 clade 结构（clade 内 2,048 共享核心 + 256 全局核心），
 对比全局 HNSW vs 16 棵 clade 内 HNSW + 代表路由（R=1/2/4），recall@10
 对全局精确 top-10：
@@ -405,11 +405,11 @@ PhageCloud；④ hnswlib-rs vs 原版 hnswlib 三维对照；⑤ 分片 top-K
 
 | 链路步骤 | 已有证据 | 缺口（对照 7.1） | 补证据实验（按优先级） |
 |---|---|---|---|
-| ① sketch/HV 距离 | dist mash 与 Mash 逐位一致；SIMD/HV 性能；合成数据 Jaccard 基准；RNG 检验；**P1 完成（2026-08-08）**：135 真实基因组上 HV 与 skani ANI 标定（`benchmarks/bench-hv-ani-calibration.md`） | frac/mini 未标定；无完整度/长度鲁棒性；sampler/k/D 扫描未做 | **P1 剩余**：完整度鲁棒性（模拟删 contig）；frac/mini 同 cohort 标定；sampler/k 扫描（对标 A①②⑤） |
-| ② HV 最近邻检索 | 合成数据 recall@10（rust-cv/hnsw_rs/HubNSW/路由）；**P1 完成（2026-08-08）**：真实数据上以 ANI 为真值的**排序** recall@10（HV 0.62 vs Mash 0.76，`benchmarks/bench-hv-ani-calibration.md`） | 图检索（HNSW/路由）尚未在真实 HV 向量上以 ANI 真值重测；未用阈值过滤分离"距离误差 vs 检索误差" | **P1 剩余**：把 cohort 的 HV 向量喂 `hv_ann_clade`/`hv_ann_hubnsw` 类 bench，以 ANI top-10 为真值测图检索召回（对标 B①–④） |
-| ③ 聚类/构树/剪枝（Necom） | 算法本身（MST 等） | 聚类结果 vs 已知分类/GTDB 的一致率；距离误差→聚类误差的传播 | **P2 部分完成（2026-08-08）**：真实 E. coli 物种内聚类（mash→UPGMA→cut）形成 7 簇结构（`bench-e2e-cluster-ref-pbit.md`）；物种级一致率见 #11（mash K10 ARI 0.74）；扰动稳定性见 #12 |
-| ④ 选参考 + 比对（pgi） | pgi 对齐正确性/性能基准 | 参考选择策略对下游收益的量化；比对精度 vs ANI/AAI 真值 | **P2 完成（2026-08-08）**：中心/最长/随机三策略实测——**最长参考最优**（delta/gzip 0.520 vs 中心 0.554、随机 0.521），中心参考（距离和最小）反而最差；pgi 距离 vs ANI 标定见 #16（`bench-e2e-cluster-ref-pbit.md`） |
-| ⑤ PBit 归档 | pbit 压缩基准（孤立） | 端到端收益：聚类→参考→比对→pbit vs 朴素方案 | **P2 完成（2026-08-08）**：端到端全链跑通（dist→necom→pgi→pbit），100 样本 × 3 策略 279 对 ≈ 12 分钟；LZ 路径 delta = gzip-9 的 52–55%，to-fa 覆盖率 ≥0.998（`bench-e2e-cluster-ref-pbit.md`） |
+| ① sketch/HV 距离 | dist mash 与 Mash 逐位一致；SIMD/HV 性能；合成数据 Jaccard 基准；RNG 检验；**P1 完成（2026-08-08）**：135 真实基因组上 HV 与 skani ANI 标定（`design/hv.md`） | frac/mini 未标定；无完整度/长度鲁棒性；sampler/k/D 扫描未做 | **P1 剩余**：完整度鲁棒性（模拟删 contig）；frac/mini 同 cohort 标定；sampler/k 扫描（对标 A①②⑤） |
+| ② HV 最近邻检索 | 合成数据 recall@10（rust-cv/hnsw_rs/HubNSW/路由）；**P1 完成（2026-08-08）**：真实数据上以 ANI 为真值的**排序** recall@10（HV 0.62 vs Mash 0.76，`design/hv.md`） | 图检索（HNSW/路由）尚未在真实 HV 向量上以 ANI 真值重测；未用阈值过滤分离"距离误差 vs 检索误差" | **P1 剩余**：把 cohort 的 HV 向量喂 `hv_ann_clade`/`hv_ann_hubnsw` 类 bench，以 ANI top-10 为真值测图检索召回（对标 B①–④） |
+| ③ 聚类/构树/剪枝（Necom） | 算法本身（MST 等） | 聚类结果 vs 已知分类/GTDB 的一致率；距离误差→聚类误差的传播 | **P2 部分完成（2026-08-08）**：真实 E. coli 物种内聚类（mash→UPGMA→cut）形成 7 簇结构（`design/genome-nn-query.md`）；物种级一致率见 #11（mash K10 ARI 0.74）；扰动稳定性见 #12 |
+| ④ 选参考 + 比对（pgi） | pgi 对齐正确性/性能基准 | 参考选择策略对下游收益的量化；比对精度 vs ANI/AAI 真值 | **P2 完成（2026-08-08）**：中心/最长/随机三策略实测——**最长参考最优**（delta/gzip 0.520 vs 中心 0.554、随机 0.521），中心参考（距离和最小）反而最差；pgi 距离 vs ANI 标定见 #16（`design/genome-nn-query.md`） |
+| ⑤ PBit 归档 | pbit 压缩基准（孤立） | 端到端收益：聚类→参考→比对→pbit vs 朴素方案 | **P2 完成（2026-08-08）**：端到端全链跑通（dist→necom→pgi→pbit），100 样本 × 3 策略 279 对 ≈ 12 分钟；LZ 路径 delta = gzip-9 的 52–55%，to-fa 覆盖率 ≥0.998（`design/genome-nn-query.md`） |
 | ⑥ 参数层 | D=4096 沿用 hypergen；采样/哈希理论笔记 | 参数（D、k、采样密度）对距离方差的实证曲线 | **P3**：真实数据上 D/k 扫描 → Jaccard/ANI 误差曲线（对标 A①） |
 
 ### 7.3 依赖与前提
@@ -427,7 +427,7 @@ skani ANI，9,045 对）；关键发现——HV 只在 ANI 90–98% 中等可靠
 （Spearman 0.5–0.6），≥99% 近缘与 <85% 远缘失效，D=16384 只救中远缘
 不救近缘；Mash 同种内 ρ=−0.97，recall@10 比 HV 高 14 pp。② 的排序
 recall@10 已测，图检索部分待补。详见
-`benchmarks/bench-hv-ani-calibration.md`。
+`design/hv.md`。
 
 ### 7.4 实验执行计划（真实数据，2026-08-08 起）
 
@@ -444,25 +444,25 @@ recall@10 已测，图检索部分待补。详见
 
 | # | 实验 | 方法要点 | 产出证据 | 状态 |
 |---|---|---|---|---|
-| 1 | frac/mini vs ANI | 同 cohort 跑 `dist frac`/`dist mini`（--list-files），与 skani ANI 求 Spearman/RMSE/recall@10，和 HV/Mash 并列 | dist 家族谁最贴近 ANI；"frac 用于 ANI"建议是否成立 | ✅ frac≈Mash（ρ0.97–0.99）；mini≈HV 近缘失效（详见 `benchmarks/bench-hv-ani-calibration.md` 补充节） |
-| 2 | 完整度鲁棒性 | 子集基因组删 contig 至 90/70/50%，重算 HV/Mash/skani ANI，测距离漂移 | 完整度→距离误差曲线（对标 GSearch A⑤） | ✅ 近缘对 50% 完整度 HV +43%/Mash +84%，ANI 稳定；中等对稳定（详见 `benchmarks/bench-completeness-robustness.md`） |
-| 3 | sampler/k/D 扫描 | 子集上扫 minimizer k/w、frac scale、syncmer、稀疏 s、D | 参数→误差曲线；默认参数有据 | ✅ frac 默认 s=1000 已近上限（RMSE≈1.15 ANI 点）；mini k/w/hasher 影响小；syncmer HV 不稳定（详见 `benchmarks/bench-parameter-scan.md`） |
+| 1 | frac/mini vs ANI | 同 cohort 跑 `dist frac`/`dist mini`（--list-files），与 skani ANI 求 Spearman/RMSE/recall@10，和 HV/Mash 并列 | dist 家族谁最贴近 ANI；"frac 用于 ANI"建议是否成立 | ✅ frac≈Mash（ρ0.97–0.99）；mini≈HV 近缘失效（详见 `design/hv.md` 补充节） |
+| 2 | 完整度鲁棒性 | 子集基因组删 contig 至 90/70/50%，重算 HV/Mash/skani ANI，测距离漂移 | 完整度→距离误差曲线（对标 GSearch A⑤） | ✅ 近缘对 50% 完整度 HV +43%/Mash +84%，ANI 稳定；中等对稳定（详见 `design/genome-nn-query.md.md`） |
+| 3 | sampler/k/D 扫描 | 子集上扫 minimizer k/w、frac scale、syncmer、稀疏 s、D | 参数→误差曲线；默认参数有据 | ✅ frac 默认 s=1000 已近上限（RMSE≈1.15 ANI 点）；mini k/w/hasher 影响小；syncmer HV 不稳定（详见 `design/hv.md`） |
 | 4 | 长度/大小偏差 | 距离残差 vs N50/contig 数/总长（元数据现成） | HV 归一化对大小是否敏感 | ✅ 种内误差由碎片化驱动（N50 低/contig 多 → 误差大），大小差异也有贡献（详见同上） |
-| 5 | 距离 CI | `dist frac --ci` 与自助法，看 CI 与误差关系 | 单对距离可靠性区间 | ✅ frac CI 对 skani ANI 覆盖率仅 8.4%（CI=采样误差，非金标准区间；详见 `benchmarks/bench-taxonomy-ci-tree.md`） |
-| 6 | 真实 HV 图检索 | cohort 真实 HV 向量（pgi to-hv 或复用 hv.tsv）喂 HNSW，以 ANI top-10 为真值 | 图检索层真实数据召回（P1 ② 收尾） | ✅ 全局 HNSW recall_HV≥0.993、recall_ANI 0.664=精确；差距全在距离层（详见 `benchmarks/bench-hv-ann-real.md`） |
-| 7 | 真实 clade 路由 | 用 cohort 自身 mash 距离聚类（necom hier/cut）做 clade，代表路由 + clade 内 HV 检索 | §6.5 真实验证（收益/误路由代价） | ✅ 135 小 clade 路由反降（R=1 0.70）；**2,088 正向案例**：C=8/R=2 HV 路由 0.942、保 94% 全量 Mash recall；recall≈路由准确率（线性公式定量确认）（详见 `benchmarks/bench-hv-ann-real.md` 补充节） |
+| 5 | 距离 CI | `dist frac --ci` 与自助法，看 CI 与误差关系 | 单对距离可靠性区间 | ✅ frac CI 对 skani ANI 覆盖率仅 8.4%（CI=采样误差，非金标准区间；详见 `design/genome-nn-query.md.md`） |
+| 6 | 真实 HV 图检索 | cohort 真实 HV 向量（pgi to-hv 或复用 hv.tsv）喂 HNSW，以 ANI top-10 为真值 | 图检索层真实数据召回（P1 ② 收尾） | ✅ 全局 HNSW recall_HV≥0.993、recall_ANI 0.664=精确；差距全在距离层（详见 `design/hv.md`） |
+| 7 | 真实 clade 路由 | 用 cohort 自身 mash 距离聚类（necom hier/cut）做 clade，代表路由 + clade 内 HV 检索 | §6.5 真实验证（收益/误路由代价） | ✅ 135 小 clade 路由反降（R=1 0.70）；**2,088 正向案例**：C=8/R=2 HV 路由 0.942、保 94% 全量 Mash recall；recall≈路由准确率（线性公式定量确认）（详见 `design/hv.md` 补充节） |
 | 8 | E. coli NR 全量 HV | 2,115 NR 基因组 HV 建库 + 精确 top-k 延迟 | 万级规模账 | ✅ **2,088 全量实测（2026-08-08）**：精确 5.55 ms、HNSW ef10 0.45 ms（12×）、recall_HV 0.958–0.984；HV vs Mash 真值 recall@10=0.09（种内排序脱钩，详见 `benchmarks/bench-scale-and-pbit.md` #8b） |
 | 9 | 全 NR HV 可行性 | 15,574 NR 建库时间/内存估算 | 万级上限 | ✅ 估算：建库 ~3 CPU·时（0.7 s/基因组，可并行）；向量 249 MB；精确扫描 ~37 ms/查询（外推自 #8） |
 | 10 | SQLite vs SIMD | BLOB+SIMD vs sqlite-vector-rs 真实 HV 延迟/召回 | §6.2 实证 | ✅ 双路径都实测（`benchmarks/bench-scale-and-pbit.md` #10a/#10b）：BLOB+扫描 2.46 ms/查询、DB 35 MB；sqlite-vector-rs vtab 1.58 ms/查询、recall@10 1.000、DB 69.9 MB；裸 usearch ef≥50 recall≥0.999（sqlite-vec 因 C 核心未评测，用户决定） |
-| 11 | Necom 聚类 vs 物种 | cohort 距离矩阵 → necom clust → ARI/NMI vs species 标签 | 聚类一致性（对标 C①） | ✅ mash K16 ARI 0.68/HV 0.65，K10 最优（mash 0.74/HV 0.57）（详见 `benchmarks/bench-clustering-validation.md`） |
+| 11 | Necom 聚类 vs 物种 | cohort 距离矩阵 → necom clust → ARI/NMI vs species 标签 | 聚类一致性（对标 C①） | ✅ mash K16 ARI 0.68/HV 0.65，K10 最优（mash 0.74/HV 0.57）（详见 `design/genome-nn-query.md.md`） |
 | 12 | 聚类稳定性 | 距离加噪/自助重聚类，测再现度 | 聚类对距离误差敏感性 | ✅ ≤20% 噪声 ARI≥0.73，40% 崩至 0.36（详见同上） |
 | 13 | groups.tsv 一致性 | groups.tsv 成员 vs species 标签/ANI 分布 | 现成分组能否当 clade/路由键 | ✅ 仅 13 个科/目级大组，物种纯度 0.03，不能当物种级路由键（详见同上） |
 | 14 | 参考→pgi→pbit 端到端 | 子集（5–10 基因组）多参考 vs 单参考 vs 无参考压缩率 | 选参考收益量化（§7.2④） | ✅ **LZ 内容回退落地**（§8.5 路线 1，119 测试过）：6 样本边际 delta = gzip-9 的 51–81%（近缘 51–56%、E. albertii 81%），~100% 无损；完整参考对 draft 覆盖更好（`benchmarks/bench-scale-and-pbit.md` #14f/#14g） |
 | 15 | ANI 物种阈值 | 同种/异种 ANI 分布找 ~95% 边界 | CLI/文档阈值实证 | ✅ 95% 阈值实证成立（同种误伤 0.8%/异种漏判 11.4%）（详见同上） |
-| 16 | pgi 距离 vs ANI | 子集 dist pgi vs skani ANI 标定 | pgi 有偏结论量化 | ✅ 总体 ρ=−0.92，近缘段（≥95%）ρ=−0.71 弱（详见 `benchmarks/bench-pgi-calibration.md`） |
+| 16 | pgi 距离 vs ANI | 子集 dist pgi vs skani ANI 标定 | pgi 有偏结论量化 | ✅ 总体 ρ=−0.92，近缘段（≥95%）ρ=−0.71 弱（详见 `design/pgi-align.md.md`） |
 | 17 | pgi to-hv 一致性 | pgi to-hv 与 FASTA 直算 HV 对比 | 两条 HV 路径等价 | ✅ pgi→HV 保距（ρ=0.97 vs pgi 距离）；与 FASTA 直算参数不同不可直接比（详见同上） |
 | 18 | 树一致性 | minhash 树 vs bac120 树 cophenetic 相关 | 距离树 vs 标记基因树吻合度 | ✅ 137 物种对 ρ=0.57；近缘段 ρ≈0.3–0.4 弱（详见同上） |
-| 19 | 标记基因路由 | bac120 蛋白做快速先验，测路由准确率 | §6.5 生物学路由键选择 | ✅ 8×bac120 标记蛋白 aa 最近邻路由准确率 0.756（ANI 上限 0.800、HV 0.822）（详见 `benchmarks/bench-marker-routing.md`） |
+| 19 | 标记基因路由 | bac120 蛋白做快速先验，测路由准确率 | §6.5 生物学路由键选择 | ✅ 8×bac120 标记蛋白 aa 最近邻路由准确率 0.756（ANI 上限 0.800、HV 0.822）（详见 `design/hv.md`） |
 | 20 | dist mash 全量计时 | NR 子集两两计时 | 距离矩阵成本 | ✅ 0.13 ms/对（8 线程）：2,115 NR ≈ 5 min，15,574 ≈ 4.3 CPU·时 |
 | 21 | HV 确定性 | 重复运行 dist hv 输出比对 | 可复现性 | ✅ 值完全确定，仅并行写盘行序不同（排序后逐行一致） |
 | 22 | 结果回流 | 全部结论更新 §6.4/§7 + 用户文档 | 决策闭环 | 🔄 §6.4/§7 已随实验持续更新；用户文档（docs/*.md）阈值/默认参数建议待与语言问题一起处理 |
@@ -481,7 +481,7 @@ recall@10 已测，图检索部分待补。详见
 
 **执行日志（2026-08-08 第三轮）**：
 - #19 ✅：8×bac120 标记蛋白 aa 最近邻路由准确率 0.756（ANI 金标准上限
-  0.800、HV 路由 0.822），详见 `benchmarks/bench-marker-routing.md`。
+  0.800、HV 路由 0.822），详见 `design/hv.md`。
 - #14 🔄：naive pbit create 静默丢数据（contig 名不匹配）→ 深挖发现
   `append_sample_with_paf` 命名门 bug，已修复 + 回归测试（617 测试通过）；
   CIGAR 路径 3 条约束（需 cg:Z PAF、段全覆盖、段内目标）记录于
@@ -655,7 +655,7 @@ recall@10 已测，图检索部分待补。详见
   center（距离和最小）/ longest（总长最大）/ random 各选 1 参考；
   簇内非参考样本 × 参考做 align pgi → psl to-paf → pbit create
   （纯 LZ + --paf CIGAR 双路径）；delta/gzip-9 对比 + to-fa 覆盖率。
-- 结果 ✅（`benchmarks/bench-e2e-cluster-ref-pbit.md`）：279 对，
+- 结果 ✅（`design/genome-nn-query.md.md`）：279 对，
   **longest 最优**（delta/gzip 0.520 vs center 0.554、random 0.521；
   longest < center 71/98 查询）；center 参考（典型 draft、内容覆盖
   少）反而最差；单参考随机性影响 3–4 pp；to-fa 覆盖率 ≥0.998；
@@ -713,20 +713,20 @@ recall@10 已测，图检索部分待补。详见
 
 | # | 决策点 | 建议 | 关键证据 | 来源 |
 |---|---|---|---|---|
-| 1 | 距离度量 | 物种内（≥98% ANI）聚类/选参考用 **`dist mash`/`dist frac`**；HV 定位为嵌入/粗筛/路由（85–98% 带），不做 ANI 精排 | frac≈Mash（ρ0.97–0.99，recall@10 0.76）；HV 近缘 ρ0.38、<85% ρ0.05；HV recall@10 0.62 | `bench-hv-ani-calibration.md` |
-| 2 | frac 参数 | 默认 scale=1000 合理（RMSE≈1.15 ANI 点）；s=100 仅近缘段微增，s=10000 近缘变差 | 30 基因组扫描 | `bench-parameter-scan.md` |
-| 3 | minimizer | mini 近缘缺陷是结构性的（同种 ρ≈0.61），k/w/hasher 无法解决 | 同上 | `bench-parameter-scan.md` |
-| 4 | HV 维度 | D=16384 只救中远缘，近缘段无改善——近缘场景不必升维 | D 对比 | `bench-hv-ani-calibration.md` |
-| 5 | 完整度 | 种内聚类前过滤低质量组装；完整度 <50% 距离膨胀 HV +43%/Mash +84%（ANI 稳定） | 删 contig 实验 | `bench-completeness-robustness.md` |
-| 6 | 检索 | ≤10k 精确扫描够用（494 规模 1.17 ms/查询）；HNSW 图检索误差可忽略（recall_HV≥0.993），HV→ANI 差距全在距离层 | 真实 HV ANN | `bench-hv-ann-real.md`、`bench-scale-and-pbit.md` |
-| 7 | 路由 | clade 须 ≥K 成员；小 clade 硬路由有害（R=1 掉到 0.70）；**生物学先验可用**——8 个 bac120 标记蛋白路由准确率 0.756（ANI 上限 0.800）；2,088 规模 C=8/R=2 时 HV 路由 0.942、保 94% 全量 Mash recall，recall≈路由准确率 | 合成 + 真实（135/2,088）+ 标记实验 | `bench-hv-ann-clade.md`、`bench-hv-ann-real.md`、`bench-marker-routing.md` |
-| 8 | 聚类 | Necom 物种级恢复良好（mash K10 ARI 0.74 / HV 0.57）；≤20% 距离噪声稳定（ARI≥0.73） | 聚类验证 | `bench-clustering-validation.md` |
-| 9 | ANI 阈值 | 95% 物种边界实证成立（同种误伤 0.8%、异种漏判 11.4%）；90% 为保守提示 | 物种标签分布 | `bench-taxonomy-ci-tree.md` |
-| 10 | 树 | minhash 树近缘段与 bac120 树弱一致（ρ0.3–0.4）→ 物种级参考拓扑用 bac120 | 两树 cophenetic | `bench-taxonomy-ci-tree.md` |
-| 11 | pgi | pgi 距离近缘段弱（ρ−0.71）；`pgi to-hv` 保距（ρ0.97），可作 pgi→HV 嵌入 | pgi 标定 | `bench-pgi-calibration.md` |
-| 12 | PBit | **v1006 起 ACGTN 严格无损**（无匹配段 Raw 存储；唯一有损 = 简并 → N，用户允许）；**v1007 起 CIGAR 支持任意参考区间**（段级混合编码），PAF 驱动真正生效（98.6% 对 delta/gzip 54%→39%）；**v1009 起 `pbit to-paf` 无损还原输入 PAF**（809/809 行逐字段一致：大链按 `paf_id` 合并且 cg/cs/gi/bi 重算、ms 存表；碎链行原样存储；含 PAF 恢复区 delta/gzip 0.448）；**v1010 起 Identity 零载荷**（纯 `=` 段指向参考区间） | pbit 深挖 v1007–v1010，能力状态统一维护于 `design/pbit.md` | `bench-scale-and-pbit.md` #14a–d/#14h/#14k/#14l |
-| 13 | 规模 | 2,088 全量实测：精确 5.55 ms、HNSW ef10 0.45 ms（12×）；建库 15 min（8 并行流式）；15,574 外推 ≈ 37 ms | `bench-scale-and-pbit.md` #8b | `bench-scale-and-pbit.md` |
-| 14 | **参考选择** | 簇内选参考**不要选距离中心**（典型 draft、内容覆盖少，压缩率最差：longest vs center 差 3.4 pp，71/98 查询 longest 更优）；**"必须 Complete"的规则不来自压缩率**——配对实验 draft-longest 反而 -2 pp（56/75 对，contig 颗粒对齐 + 质粒/未装配内容共享）；Complete 优先的正当理由是比对质量/坐标可解释性/下游一致性；簇内无 Complete 时用最长 draft 或并入相邻簇；单参考随机性影响 3–4 pp，小簇可多参考摊平 | 100 样本 × 3 策略 + Complete/draft 配对 | `bench-e2e-cluster-ref-pbit.md` |
+| 1 | 距离度量 | 物种内（≥98% ANI）聚类/选参考用 **`dist mash`/`dist frac`**；HV 定位为嵌入/粗筛/路由（85–98% 带），不做 ANI 精排 | frac≈Mash（ρ0.97–0.99，recall@10 0.76）；HV 近缘 ρ0.38、<85% ρ0.05；HV recall@10 0.62 | `design/hv.md` |
+| 2 | frac 参数 | 默认 scale=1000 合理（RMSE≈1.15 ANI 点）；s=100 仅近缘段微增，s=10000 近缘变差 | 30 基因组扫描 | `design/hv.md` |
+| 3 | minimizer | mini 近缘缺陷是结构性的（同种 ρ≈0.61），k/w/hasher 无法解决 | 同上 | `design/hv.md` |
+| 4 | HV 维度 | D=16384 只救中远缘，近缘段无改善——近缘场景不必升维 | D 对比 | `design/hv.md` |
+| 5 | 完整度 | 种内聚类前过滤低质量组装；完整度 <50% 距离膨胀 HV +43%/Mash +84%（ANI 稳定） | 删 contig 实验 | `design/genome-nn-query.md` |
+| 6 | 检索 | ≤10k 精确扫描够用（494 规模 1.17 ms/查询）；HNSW 图检索误差可忽略（recall_HV≥0.993），HV→ANI 差距全在距离层 | 真实 HV ANN | `design/hv.md`、`benchmarks/bench-scale-and-pbit.md` |
+| 7 | 路由 | clade 须 ≥K 成员；小 clade 硬路由有害（R=1 掉到 0.70）；**生物学先验可用**——8 个 bac120 标记蛋白路由准确率 0.756（ANI 上限 0.800）；2,088 规模 C=8/R=2 时 HV 路由 0.942、保 94% 全量 Mash recall，recall≈路由准确率 | 合成 + 真实（135/2,088）+ 标记实验 | `design/hv.md`、`design/hv.md`、`design/hv.md` |
+| 8 | 聚类 | Necom 物种级恢复良好（mash K10 ARI 0.74 / HV 0.57）；≤20% 距离噪声稳定（ARI≥0.73） | 聚类验证 | `design/genome-nn-query.md` |
+| 9 | ANI 阈值 | 95% 物种边界实证成立（同种误伤 0.8%、异种漏判 11.4%）；90% 为保守提示 | 物种标签分布 | `design/genome-nn-query.md` |
+| 10 | 树 | minhash 树近缘段与 bac120 树弱一致（ρ0.3–0.4）→ 物种级参考拓扑用 bac120 | 两树 cophenetic | `design/genome-nn-query.md` |
+| 11 | pgi | pgi 距离近缘段弱（ρ−0.71）；`pgi to-hv` 保距（ρ0.97），可作 pgi→HV 嵌入 | pgi 标定 | `design/pgi-align.md` |
+| 12 | PBit | **v1006 起 ACGTN 严格无损**（无匹配段 Raw 存储；唯一有损 = 简并 → N，用户允许）；**v1007 起 CIGAR 支持任意参考区间**（段级混合编码），PAF 驱动真正生效（98.6% 对 delta/gzip 54%→39%）；**v1009 起 `pbit to-paf` 无损还原输入 PAF**（809/809 行逐字段一致：大链按 `paf_id` 合并且 cg/cs/gi/bi 重算、ms 存表；碎链行原样存储；含 PAF 恢复区 delta/gzip 0.448）；**v1010 起 Identity 零载荷**（纯 `=` 段指向参考区间） | pbit 深挖 v1007–v1010，能力状态统一维护于 `design/pbit.md` | `benchmarks/bench-scale-and-pbit.md` #14a–d/#14h/#14k/#14l |
+| 13 | 规模 | 2,088 全量实测：精确 5.55 ms、HNSW ef10 0.45 ms（12×）；建库 15 min（8 并行流式）；15,574 外推 ≈ 37 ms | `benchmarks/bench-scale-and-pbit.md` #8b | `benchmarks/bench-scale-and-pbit.md` |
+| 14 | **参考选择** | 簇内选参考**不要选距离中心**（典型 draft、内容覆盖少，压缩率最差：longest vs center 差 3.4 pp，71/98 查询 longest 更优）；**"必须 Complete"的规则不来自压缩率**——配对实验 draft-longest 反而 -2 pp（56/75 对，contig 颗粒对齐 + 质粒/未装配内容共享）；Complete 优先的正当理由是比对质量/坐标可解释性/下游一致性；簇内无 Complete 时用最长 draft 或并入相邻簇；单参考随机性影响 3–4 pp，小簇可多参考摊平 | 100 样本 × 3 策略 + Complete/draft 配对 | `design/genome-nn-query.md` |
 
 ### 8.2 核心场景工作流（证据修订版）
 
@@ -779,3 +779,352 @@ v1010 Identity）、pgi 长链链化明确不做）。
 | 新小节（dist.md 或独立） | ANI 阈值：≥95% 同种（实测误伤 0.8%/漏判 11.4%）；90% 为保守提示 | #15 |
 
 > 状态：清单已定，待语言处理时落地（#22）。
+
+---
+
+## 证据附录：真实数据聚类验证：Necom 聚类 vs 物种标签、距离噪声稳定性（#11/#12）
+
+> 日期：2026-08-08。cohort 同 `design/hv.md`（135 基因组，
+> 16 个物种目录/14 个有效物种标签）。对应 `design/genome-nn-query.md`
+> §7.4 #11/#12。
+
+## #11 Necom 聚类 vs 物种标签
+
+方法：mash（NWR .msh）与 HV（k21/w5/D4096）距离矩阵 → `necom mat
+to-phylip` → `necom clust hier --method ward` → `necom cut simple -k K`
+→ `necom eval partition` vs 物种标签（cluster format）。
+
+| 距离 | K | ARI | 同质度 homogeneity | RI |
+|---|---|---|---|---|
+| mash | 10 | **0.739** | 0.785 | 0.931 |
+| mash | 16 | 0.681 | 0.878 | 0.935 |
+| mash | 25 | 0.588 | 0.902 | 0.924 |
+| mash | 40 | 0.333 | 0.924 | 0.900 |
+| HV | 10 | 0.573 | 0.711 | 0.899 |
+| HV | 16 | 0.646 | 0.835 | 0.924 |
+| HV | 25 | 0.525 | 0.909 | 0.916 |
+| HV | 40 | 0.256 | 0.928 | 0.894 |
+
+结论：物种级划分（K≈10–16）两种距离都能较好恢复（ARI 0.57–0.74），
+Mash 各 K 下都优于 HV（+0.07–0.17）；K 过大（40）时 ARI 骤降（过度
+细分，同质度上升但一致率崩）。注意 E. coli 与 Escherichia sp. 混聚在
+一起（sp. 标签实际多为 E. coli），物种标签本身有噪声。
+
+## #12 距离噪声下的聚类稳定性
+
+方法：HV 距离矩阵加乘性高斯噪声（σ = 5/10/20/40%），每水平 3 个种子
+重聚类（ward, K=16），与原聚类算 ARI。
+
+| 噪声 σ | ARI（3 次重复均值 ± SD） |
+|---|---|
+| 5% | 0.918 ± 0.014 |
+| 10% | 0.821 ± 0.141 |
+| 20% | 0.726 ± 0.110 |
+| 40% | 0.363 ± 0.101 |
+
+结论：物种级聚类对 ≤20% 距离噪声稳健（ARI ≥0.73）；40% 噪声破坏聚类。
+结合 `design/hv.md`（HV 近缘区间排序噪声大），物种级
+划分不受影响，但**种内亚结构（如 E. coli 内部的分群）对距离噪声更
+敏感**，后续应专门用 E. coli 子集验证。
+
+## 复现
+
+```bash
+# 距离矩阵 → phylip → ward 聚类 → cut → eval：
+# necom mat to-phylip mash.pair -o mash.phylip
+# necom clust hier --method ward mash.phylip -o tree.nwk
+# necom cut simple -k 16 tree.nwk -o clust.tsv
+# necom eval partition clust.tsv --other species.pair \
+#     --input-format cluster --other-format pair
+# 稳定性脚本：/tmp/hv_calib/run_stability.py
+```
+
+---
+
+## 证据附录：基因组完整度对 HV / Mash / ANI 距离的影响（#2）
+
+> 日期：2026-08-08。方法：1 个 E. coli 锚点基因组，3 个不同亲缘靶
+> （近缘 E. coli ANI≈98% / 中等 E. albertii ANI≈90% / 远缘 Yersinia
+> enterocolitica），对靶基因组随机删 contig 至 90/70/50% 完整度
+> （seed=42 固定），重算 HV（k21/w5/D4096）、Mash（k21/s10000，与
+> NWR 同参数）、skani ANI。对应 `design/genome-nn-query.md` §7.4 #2。
+
+## 结果
+
+### 近缘对（E. coli vs E. coli，完整 ANI ≈ 98.07）
+
+| 完整度 | HV 距离 | Mash 距离 | skani ANI |
+|---|---|---|---|
+| 100% | 0.0618 | 0.0243 | 98.07 |
+| 90% | 0.0653 | 0.0280 | 98.01 |
+| 70% | 0.0714 | 0.0336 | 98.03 |
+| 50% | 0.0883 | 0.0448 | 98.00 |
+
+距离膨胀：HV +43%（相对），Mash +84%；ANI 几乎不变（−0.07）。
+
+### 中等对（E. coli vs E. albertii，完整 ANI ≈ 90.02）
+
+| 完整度 | HV 距离 | Mash 距离 | skani ANI |
+|---|---|---|---|
+| 100% | 0.1081 | 0.0867 | 90.02 |
+| 90% | 0.1082 | 0.0867 | 90.02 |
+| 70% | 0.1082 | 0.0867 | 90.02 |
+| 50% | 0.1086 | 0.0876 | 90.02 |
+
+三种距离全部稳定（<1% 变化）。
+
+### 远缘对（E. coli vs Yersinia enterocolitica）
+
+| 完整度 | HV 距离 | Mash 距离 | skani ANI |
+|---|---|---|---|
+| 100% | 0.2073 | 0.2607 | 无（skani 无比对） |
+| 90% | 0.2023 | 0.2680 | 无 |
+| 70% | 0.2688 | 0.2767 | 无 |
+| 50% | 0.2317 | 0.2800 | 无 |
+
+Mash 单调膨胀（+7%）；HV 非单调、噪声大；skani 在远缘（ANI<85% 且
+截断后）无法给出 ANI——与 `design/hv.md` 的覆盖率一致。
+
+## 结论
+
+1. **完整度主要影响 k-mer 计数型距离（HV/Mash），不影响 ANI 本身**：
+   近缘对 50% 完整度时 Mash/HV 距离显著膨胀（+84%/+43%），而 skani
+   ANI 稳定在 98.0。机理 = 不完整基因组丢失共享 k-mer，Jaccard 低估 →
+   距离高估。
+2. **敏感性随亲缘距离非单调**：中等对（90% ANI）几乎不受影响（共享
+   k-mer 富余），近缘对受影响最大——与"近缘分辨率本就差"叠加，完整度
+   差异会在物种内聚类中制造伪距离（不完整株显得更远）。
+3. **对设计的含义**：用 Mash/HV 做物种内聚类前应过滤/标记低完整度
+   基因组（GSearch 建议完整度 >50%，我们的数据支持该阈值——50% 时
+   近缘距离已 +43%）；ANI 层面 skani 对完整度稳健，标定不受影响。
+4. 局限：随机删 contig 模拟，真实 MAG 缺失可能有偏（如偏向低覆盖区）；
+   后续可换"删最大 contig 子集"或读段层面模拟复核。
+
+## 复现
+
+```bash
+# 脚本: /tmp/hv_calib/run_completeness.py（读 gz FASTA → 随机保留
+# contig → pgr dist hv / mash sketch+dist / skani dist）
+```
+
+---
+
+## 证据附录：真实数据第二批验证：frac CI 校准、groups 分组、ANI 阈值、树一致性
+
+> 日期：2026-08-08。数据与 cohort 同 `design/hv.md`
+> （135 基因组，skani ANI 全矩阵）。对应 `design/genome-nn-query.md`
+> §7.4 的 #5/#13/#15/#18。
+
+## #5 frac 的 ANI 置信区间 vs skani ANI（覆盖率）
+
+方法：`pgr dist frac --merge --ci` 全 cohort 输出每对 ANI 95% CI
+（0–1 标度），与 skani ANI（0–100）对比，CI 乘 100 后计算覆盖率。
+
+| ANI 区间 | n | CI 覆盖率 | CI 宽度中位数 | \|CI 中心 − skani ANI\| 中位数 |
+|---|---|---|---|---|
+| ≥99% | 122 | 15.6% | 0.10 | 0.21 |
+| 95–99% | 1,339 | 21.4% | 0.17 | 0.23 |
+| 90–95% | 2,427 | 1.4% | 0.51 | 0.92 |
+| 85–90% | 721 | 0.0% | 0.67 | 1.27 |
+| <85% | 1,328 | 11.8% | 2.42 | 1.91 |
+| 全部 | 5,937 | **8.4%** | 0.53 | 0.96 |
+
+结论：frac 的 CI 覆盖的是 **FracMinHash 估计自身的采样误差**（Hera et
+al. 2023 公式），不能当作"覆盖金标准 ANI"的区间——frac 与 skani 的
+系统偏差（近缘 ~0.2、远缘 ~1.9 ANI 单位）远大于 CI 宽度。文档/帮助文本
+应注明 CI 语义，避免用户误读。
+
+## #13 NWR groups.tsv（minhash 树 height 0.4 分组）与物种一致性
+
+groups.tsv 覆盖 680 个代表基因组，**只有 13 个组**（组大小中位数 34，
+最大 169）——在 Enterobacterales + Pasteurellales 全数据集上 height
+0.4 切出的是**科/目级大组**，不是物种级 clade。
+
+- 物种纯度：中位数 0.029（几乎每组都混合几十个物种）；属纯度中位数
+  0.472（31% 的组单属）。
+- mash.dist 组内距离中位数 0.197 vs 组间 0.284——区分度弱。
+
+结论：groups.tsv 不能直接当物种级路由键；#7 的真实 clade 实验要用
+更低的切割高度（或物种标签）在 cohort 自身距离上重新聚。
+
+## #15 ANI 物种阈值（物种标签为真值的实证）
+
+skani ANI 按物种标签分层（排除 "sp."）：
+
+| 关系 | n | ANI q05 / q50 / q95 |
+|---|---|---|
+| 同种 | 1,034 | 96.1 / 98.2 / 99.1 |
+| 同属异种 | 3,827 | 83.4 / 91.0 / 97.8 |
+| 跨属 | 1,076 | 80.6 / 81.1 / 82.6 |
+
+阈值判定（同种 vs 异种）：
+
+| ANI 阈值 | 异种误判为同种（<阈值占比） | 同种误伤（<阈值占比） |
+|---|---:|---:|
+| 90 | 25.4% | 0.0% |
+| 92 | 68.1% | 0.2% |
+| 95 | 88.6% | 0.8% |
+| 97 | 93.2% | 19.9% |
+
+结论：~95% 阈值与经典物种边界一致（95% 阈值下同种误伤仅 0.8%、
+异种漏判 11.4%）；90–92% 更保守。同种内 ANI 下限可达 91.7（个别
+异常株/标注噪声），建议 CLI/文档以 95% 为默认"同种"判据、90% 为
+"近似同种"提示。
+
+## #18 minhash 距离树 vs bac120 标记基因树（物种级 cophenetic）
+
+注意：两棵树 tip 命名体系不同（旧版 `Atl_hermannii_...` vs 新版
+`At_herm_...`），需按 GCF accession 映射；bac120 树另有物种级
+`Species___N` tip（`[S=...]` 注释使 necom 无法解析 condensed 版，
+用 order 版 + accession 映射解决）。
+
+- 共有物种：137（minhash 675 / bac120 146），物种对 9,316。
+- cophenetic Spearman = **0.568**，Pearson = 0.919（深度分裂主导）。
+- 分距离段：minhash 距离 0–0.05（近缘物种对）ρ=0.31；0.05–0.15
+  ρ=0.39；0.15–0.4 ρ=0.71；>0.4 ρ=0.005。
+
+结论：minhash 距离树与标记基因树在中远缘一致尚可，**近缘物种对的
+排序一致性弱（ρ≈0.3–0.4）**——树层面再次印证 k-mer 距离在近缘下的
+分辨率缺陷（与 `design/hv.md` 的距离层结论一致）。
+bac120（保守标记基因）树更适合做物种级参考拓扑。
+
+## 复现
+
+```bash
+# #5:  pgr dist frac cohort.fa.lst --list-files --merge --ci -o frac.ci.tsv
+# #13: groups.tsv + genome.taxon.tsv + mash.dist.tsv（纯 python 分析）
+# #15: ani.full.tsv + genome.taxon.tsv（纯 python 分析）
+# #18: necom nwk label/distance + accession 映射（analyze_trees4.py）
+```
+
+---
+
+## 证据附录：端到端验证：聚类 → 选参考 → 比对 → PBit 归档（2026-08-08）
+
+对应 `design/genome-nn-query.md` §7.2 ③④⑤（P2）与核心工作流
+"物种内聚类选参考 + PBit 归档"。目的：量化**参考选择策略**对
+归档压缩率的影响，为实施方案提供决策依据。
+
+## 数据与子集
+
+- 数据源：`~/data/Escherichia/`（Enterobacterales NR，E. coli 全库
+  51,318 组装；cohort = 2,088 个 E. coli NR 基因组，
+  `/tmp/hv_calib/meta2115.tsv` + `mash2115.tsv` 全对距离现成）。
+- Pilot：随机 30 个；全量：**farthest-point 采样 100 个**（基于
+  mash2115.tsv 距离，seed 42，保证覆盖物种内多样性）。
+- 所有样本 FASTA 路径校验存在（`ASSEMBLY/Escherichia_coli/<name>/`）。
+
+## 方法
+
+1. `pgr dist mash --merge --list-files` 全对距离（30 样本 435 对 /
+   100 样本 4,950 对；0.01–0.04 mash 距离 = ANI ~96–99%）。
+2. `necom mat to-phylip` + `necom clust upgma` + `necom cut simple`：
+   30 样本 k=4（23/3/3/1）；100 样本 k=7（44/35/9/8/2/1/1）。
+3. 每簇按三种策略各选 1 个参考：
+   - **center**：簇内到其他成员 mash 距离和最小；
+   - **longest**：FASTA 解压总长最大；
+   - **random**：固定 seed 随机。
+4. 簇内每个非参考样本 × 参考：
+   `pgr align pgi`（PSL）→ `pgr psl to-paf` → `pgr pbit create`
+   （纯 LZ 与 `--paf` CIGAR 两条路径）。
+5. delta 压缩率 =（pbit 归档 − 参考 self-archive）/ gzip-9 样本大小；
+   `pgr pbit to-fa` 抽查覆盖率。
+
+## 结果
+
+### Pilot（30 样本，26 查询 × 3 策略 = 78 对）
+
+| 策略 | LZ delta/gzip（mean） | 备注 |
+|---|---|---|
+| center | 0.499 | 中心参考最差 |
+| longest | **0.466** | 簇内最长参考最优 |
+| random | 0.490 | 介于两者 |
+
+### 全量（100 样本，98 查询 × 3 策略 = 279 对）
+
+| 策略 | LZ delta/gzip mean | median | min | max |
+|---|---|---|---|---|
+| center | 0.5535 | 0.5505 | 0.4486 | 0.6327 |
+| longest | **0.5198** | 0.5172 | 0.4334 | 0.6378 |
+| random | 0.5213 | 0.5262 | 0.4302 | 0.6276 |
+
+逐查询配对（n=98）：**longest < center 71/98**、random < center 61/98；
+longest vs random 无稳定差异（39/49）。按簇看，longest 在 4/5 个
+有样本的簇最优或接近最优；random 在 clade 1 偶然更优（0.496 vs
+longest 0.532），说明**单参考的随机性影响可达 3–4 pp**。
+
+### 参考特征（解释 longest 优势）
+
+| 策略 | 参考 contig 数（中位） | 参考总长（平均） |
+|---|---|---|
+| center | 52 | 4.81 Mb |
+| longest | **28** | **5.38 Mb** |
+| random | 74 | 4.99 Mb |
+
+center 参考（簇内距离和最小）倾向选"典型 draft"，内容覆盖量反而
+最少；压缩率主要由**参考的内容覆盖量（总长 × 完整度）**决定，而非
+与样本的平均相似度。
+
+### 覆盖与 CIGAR 路径
+
+- to-fa 覆盖率抽查（8/8）：100 版 ≥0.9984（KTE66 draft 极端 0.16%；
+  其余 ≤0.02%），完整参考下多为 100%——LZ 内容匹配基本无损。
+- CIGAR（`--paf`）与纯 LZ 归档大小差平均仅 32 B（max 143 B）：
+  已知段相位约束使 CIGAR 路径基本回退 LZ（#14e），端到端无差异。
+
+### Complete vs draft 参考（配对对照，2026-08-08 补充）
+
+用户提出生产规则："选作参考的应该必须是 Complete"。本 cohort
+（farthest-point 100 个 E. coli）中组装级别分布：Contig 48 /
+Scaffold 27 / Complete Genome 22 / Chromosome 3（仅 25% 达标），
+7 个簇中有 **2 簇完全没有 Complete/Chromosome 成员、1 簇仅 1 个**。
+
+配对实验（控制"簇内最长"变量，只变组装级别）：clade 0/1 各选
+complete-longest（48/GF60，Complete Genome，5–9 contigs 含质粒）与
+draft-longest（49832/531，Contig，~200 contigs）两个参考，对同一批
+75 个查询做 pbit（LZ）：
+
+| 参考 | delta/gzip（mean） | complete 更优的对数 |
+|---|---|---|
+| complete-longest | 0.5249 | 19/75 |
+| draft-longest | **0.5049** | —（draft 更优 56/75） |
+
+即**压缩率维度 Complete 参考不占优**（draft-longest 反而 -2 pp）。
+机制假说：① 查询 75% 是 draft，其 contig 颗粒与 draft 参考的 contig
+天然对齐（LZ 内容匹配的 `best_ref_group` 命中率高）；② draft 参考含
+质粒/未装配片段，与 draft 查询共享更多内容；③ Complete 参考的 4 kb
+参考段是染色体上切出的，与查询 contig 边界错位。覆盖率两种参考都
+≈100%（抽查），差异在编码效率而非覆盖。
+
+**方案含义**：Complete 参考的正当理由不在压缩率，而在比对质量、
+坐标可解释性与下游一致性；生产规则应定为"参考优先 Complete
+（Chromosome 次之），若簇内无 Complete 则用簇内最长 draft（压缩率
+不差）或并入相邻簇"，而不是"必须 Complete"。
+
+## 结论与决策建议
+
+1. **参考选择影响压缩率 ~3.4 pp（longest vs center）**；在 E. coli
+   物种内（ANI 96–99%）最长/高完整度参考是稳定优选的简单启发式。
+2. **不要用"距离中心"当参考**：中心参考是典型 draft，内容覆盖少，
+   压缩率反而最差。压缩率维度上"最长 draft" ≥ "Complete"（配对
+   实验，见上节）——**完整度不是压缩率的充分条件**；但生产规则仍
+   建议 Complete 优先（比对/可解释性/一致性理由，见上节方案含义）。
+3. 单参考随机性影响 3–4 pp：小簇（<10 成员）时参考选择比簇划分更
+   影响结果；多参考（每簇 2–3 个）可摊平随机性（待验证）。
+4. 端到端流程（dist → necom → pgi → pbit）全部就绪、耗时可控：
+   100 样本 × 3 参考策略 ≈ 12 分钟（8 线程），pgi align ~1.5 s/对、
+   pbit ~3.5 s/样本。
+
+## 复现
+
+```bash
+# 子集选择（farthest-point，seed 42）
+cd /tmp/e2e   # 脚本与中间产物
+python3 - <<'PY'   # 见 bench 文档注释；cohort100.tsv/list100.txt 已生成
+PY
+pgr dist mash --merge --list-files -p 8 list100.txt -o dist100.pair
+necom mat to-phylip dist100.pair.clean -o dist100.phylip
+necom clust upgma dist100.phylip -o tree100.nwk
+necom cut simple tree100.nwk -k 7 -o clust100_k7.tsv
+python3 run_e2e_100.py   # 279 任务：align + pbit（LZ/CIGAR）
+```

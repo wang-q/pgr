@@ -10,7 +10,7 @@
 
 - pbit 编码演进 v1006–v1010：LZ 内容匹配化 → 跨相位 CIGAR（段级混合）→
   `to-paf` 无损还原输入 PAF（809/809 逐字段一致）→ Identity 零载荷，
-  详见 `design/pbit.md` §PAF 驱动编码的演进 + `bench-scale-and-pbit.md`
+  详见 `design/pbit.md` §PAF 驱动编码的演进 + `benchmarks/bench-scale-and-pbit.md`
   #14f/#14i–l；
 - **主链/碎链判定（定稿 + 落地）**：链级贪心（query 覆盖段数 → 相似度 →
   输入序，`BIG_CHAIN_MIN_LEN` 退役）；碎链也可编码其覆盖的段；无 `cg:Z`
@@ -45,14 +45,15 @@ fmt/clippy/test 确认。
 - [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项
       （来源：`design/pgi-query-layer.md`）。
 - [ ] `dist mash` 序列级并行：等单文件多 contig 大规模场景（文件级并行
-      已覆盖多文件，见 `benchmarks/bench-dist-mash-compat.md` 性能节）。
+      已覆盖多文件，见 `design/hv.md` 性能节）。
 - [ ] 物种内聚类选参考 + PBit 归档（核心用例，UI 待讨论）：场景工作流见
       `design/genome-nn-query.md` §5；缺口 = `dist` 输出与 Necom 格式对齐、
       参考挑选、pbit 自动路由（`design/pbit.md` 决策点 1 触发场景）；
-      HV 最近邻/SQLite/ANN 调研结论见 §6 与 `bench-hv-ann-*.md`、
-      `bench-scale-and-pbit.md` #10b。
+      HV 最近邻/SQLite/ANN 调研结论见 §6 与 `design/hv.md`（证据附录）、
+      `benchmarks/bench-scale-and-pbit.md` #10b。
 - [ ] 标定/检索剩余：E. coli NR 全量（15,574）实跑（2,088 已实测，
-      `bench-scale-and-pbit.md` #8b）；pbit 多参考/高分歧样本验证（#14 路线）；
+      `benchmarks/bench-scale-and-pbit.md` #8b）；pbit **多参考**样本验证待做
+      （高分歧已在 #14g 实测：E. albertii ANI≈90%，delta/gzip 78–81%）；
       §7.4 #10/#9/#14/#19 状态见 `genome-nn-query.md`。
 
 ## 2. 低风险审计记录项（可顺手修）
@@ -84,3 +85,29 @@ fmt/clippy/test 确认。
 - **pgi 长链链化（pbit 路线 3）：明确不做**（2026-08-09 用户裁定——项目
   优势 = 引入 UCSC chainnet 经典链化管线，自研 chain 效果始终不如它；
   链化依赖由 chainnet 承担，见 `design/pbit.md` §PAF 驱动编码的演进）。
+
+## 5. 待实现 / 待决策（2026-08-09 文档扫描补充）
+
+- [x] ~~**`spanr cover` 名字截断问题**~~ → **已完成（代码核对，2026-08-09）**：
+      pgr 内建 runlist 区间操作替代外部 spanr；`rept/trf.rs` 已实现"带点
+      contig 名映射 → span 处理后恢复"的名字映射规避（原待决策选项③）。
+- [ ] **repeat masking：pgi 参数标定 + 真核验证**：CLI 透传已实现
+      （`align pgi` 的 `-f/--min-shared/-k/--smer/--window`），但默认值
+      未按 §2.5 调整（`--freq` 10 → 100、`--min-shared` 12 → 16 待验证）；
+      真核（拟南芥/玉米等转座子丰富）与 RepeatMasker masked 输出对比
+      recall（E. coli 无转座子无参考价值）；polyA/卫星低复杂度缺口由
+      `rept trf` 兜底（来源：`design/repeat-masking.md` §2.4/§2.5）。
+- [ ] **paf 查询层扩展（待实现）**：`--min-tree-coverage`（Caf Tree
+      Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
+      `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
+      一并处理）（来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
+- [ ] **用户文档改动清单落地（#22）**：dist.md 部分**已完成**（frac 无偏/
+      ANI 推荐、hv 粗分层、mini 排序用已写入 docs/dist.md）；剩余
+      pbit.md（强制 PAF 说明——当前仍写"可选 PAF/LZ 兜底"，过时）、
+      align-pgi.md（链粒度与 pbit 段不匹配）、pgi.md（近缘距离弱）
+      （来源：`genome-nn-query.md` §8.6）。
+- [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
+      （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
+      （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree
+      用于 PAF 链式化 / POA 排序仍待评估（PAF 当前未明确需要链式化）
+      （来源：`chain-algorithms.md` §12.3）。

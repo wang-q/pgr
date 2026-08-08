@@ -101,7 +101,7 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
   图分类）需求，这套 bind/permute 是现成方案。
 * **带权重/多重度的 bundle（可考虑）**：同一向量在 bundle 中出现多次 →
   结果偏向主导向量。pgr 现在聚合是去重集合（无权重），重复内容已被证明
-  干扰排序（见 [[../benchmarks/dist-cohort-validation.md]] §2 的 k=40 集合
+  干扰排序（见 [[../design/hv.md]] §2 的 k=40 集合
   受重复影响）；若未来要保留 k-mer 多重度（类似 Dashing 2 SetSketch），
   加权聚合是一条路，但需先定义"权重=什么"（拷贝数？覆盖度？）。
 * **binary/bipolar 双类型与三种距离**：对 ±1 向量，cosine 与 hamming

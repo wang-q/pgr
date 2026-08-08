@@ -1,5 +1,23 @@
 # pbit 设计笔记（含多参考扩展）
 
+## 本文档结构
+
+1. 设计基础（2026-08-09）：从目标推导的 7 条原则，所有决策的前提；其后
+   为历史决策记录
+2. 核心设计：编码模型——参考分段 + 样本三级编码 + 段级混合 + 主链/碎链
+   + 无损保证（快速总览）
+3. 当前状态：命令族、能力演进 v1004–v1010、行为增强
+4. 快速参考：子命令表
+5. 编码模型详解：LZ-diff / CIGAR / Identity / Raw 各路径
+6. 大链与碎链：定义、旧现状、判定细节定稿、实现与验证
+7. 文件格式规范：字节级布局（Header/Reference/Delta/Sample/PAF
+   Recovery/Footer）
+8. PAF 驱动编码的演进：#14 诊断 → v1010 的三条路线与约束解除
+9. 专题：遮蔽（v1005）、统一序列访问 API（不做）、多参考
+10. 附录：早期开放项决策稿（2026-08-03，选项对比与拍板记录）
+
+---
+
 ## 设计基础（2026-08-09 明确）
 
 > 本文档所有设计决策的**前提**。原则：决策必须能回溯到下面的基础；没有
@@ -30,7 +48,7 @@
    `gi`/`bi` ≈ 3.4%，`ms` ≈ 1.3%，matches/block/mapq ≈ 1.5%。
    推论：PAF 存储/压缩优化的焦点在 **cg/cs 文本**；碎链行恢复区实测
    ~100 KB/样本（flate2 后），使 delta/gzip +9 pp（0.356 → 0.448），
-   见 [bench-scale-and-pbit.md](../benchmarks/bench-scale-and-pbit.md) #14k。
+   见 [benchmarks/bench-scale-and-pbit.md](../benchmarks/bench-scale-and-pbit.md) #14k。
 5. **计算优先于存储（可计算的不存储）**：归档只存"无法从其他信息推导"
    的字段；能从归档内容重算的字段一律不存、导出时重算。大链行按此
    原则：`qname/qlen/qstart/qend/strand/tname/tlen/tstart/tend/matches/
@@ -66,7 +84,7 @@
 以下为历史决策记录（前提见上"设计基础"）：
 
 > **✅ 已决策（2026-08-03）**：作者按推荐确认全部 6 项开放项（详见
-> [[pbit-decisions.md]] 文末拍板清单）：路由保持手动 + 多参考未指定时警告
+> §附录 文末拍板清单）：路由保持手动 + 多参考未指定时警告
 > （已实现）、Sample Index 不加 ref_id、append-ref 不重路由、维持单参考
 > 压缩模型、版本策略维持"不兼容 + bump"、HV sketch 内嵌暂缓。暂停解除，
 > 可继续开发。
@@ -90,7 +108,7 @@
 > 5. **版本策略**：不做旧版本兼容，格式改动直接 bump 版本；长期归档需求
 >    出现时用 `convert` 逃生舱。
 > 6. **决策 B（HV sketch 内嵌）**：暂缓，触发条件 = 出现"无源 FASTA、仅归档、
->    需距离粗筛"的真实工作流（设计稿见 [[pbit-decisions.md]]）。
+>    需距离粗筛"的真实工作流（设计稿见 §附录）。
 >    **（2026-08-09 变更为明确不做**——HV 评测未达预期，后续换其他形式，
 >    见 `todo.md` §5）。
 
@@ -185,7 +203,7 @@ pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别�
 
 ## 编码模型详解
 
-### LZ-diff（默认路径）
+### LZ-diff（兜底路径）
 
 样本段按 `segment_size` 分段，与参考段（整条 2bit 记录）做 LZ-diff
 （k-mer 哈希索引找最长匹配，`kmer_len`/`min_match_len` 控制），差异
@@ -320,7 +338,7 @@ CIGAR 短，只是次级收益）。"连续"是单条 PAF 记录的天然属性�
 4. **覆盖关系只在段级隐式存在**："嵌套小链不许抢大链"靠 10 kb 过滤
    实现，并没有链级的主/碎消解步骤。
 
-实测影响（`bench-scale-and-pbit.md` #14k，00_3076 vs 00_3230）：809 条
+实测影响（`benchmarks/bench-scale-and-pbit.md` #14k，00_3076 vs 00_3230）：809 条
 PAF 记录中按长度分类，碎链行原样存储约 ~100 KB/样本（大头 cg/cs 文本），
 PAF 恢复区使 delta/gzip 0.356 → 0.448（+9 pp）。
 
@@ -474,11 +492,13 @@ for each sample:
   for each contig:
     str contig_name
     u32 segment_count
-    for each segment（固定 16 字节）:
+    for each segment（固定 24 字节）:
       u32 ref_group_id
       u32 delta_id
       u32 ref_start     参考文件全局坐标（v1007 起，CIGAR/Identity 用；LZ-diff/Raw 填 0）
       u32 ref_end       同上（参考文件全局坐标）
+      u32 q_start       样本 contig 内偏移（v1007 起）
+      u32 paf_id        源 PAF 记录 id（v1009 起；LZ-diff/Raw 填 u32::MAX）
 str cmd_line
 ```
 
@@ -507,7 +527,7 @@ LZ-diff 兜底又要求样本 contig 与参考**同名**，跨组装样本无法
    的"按 contig 名找参考段"改成"按内容找相似参考段"（canonical k-mer
    倒排索引 + `best_ref_group`）。不改归档格式、不依赖长链对齐，任意
    组装命名可用；压缩率低于 CIGAR 但**立即可用**（真实近缘样本 delta =
-   gzip-9 的 53%，~100% 无损，`bench-scale-and-pbit.md` #14f）。
+   gzip-9 的 53%，~100% 无损，`benchmarks/bench-scale-and-pbit.md` #14f）。
 2. **跨相位 CIGAR 编码**（→ **v1007，2026-08-08 已实现**）：delta 引用
    "任意参考区间"而非固定段（`SegmentDesc.ref_start/ref_end` 改参考文件
    全局坐标 + 新增 `q_start`），按链/段混合编码（CIGAR 覆盖部分 +
@@ -691,12 +711,174 @@ pbit 失去"压缩格式"的意义。参考索引在需要比对/距离时现建
 
 > 注意：k=40 syncmer 集合受采样位置漂移影响，与真实身份率的排序相关只有
 > ~0.5；`dist hv` 已修复为稀疏投影（每 k-mer 更新 `--sparse` 个维度），
-> 详细数据见 `notes/benchmarks/dist-cohort-validation.md`。
+> 详细数据见 `notes/design/hv.md`。
+
+## 附录：早期开放项决策稿（2026-08-03，决策已全部落地）
+
+> 目的：把 [[pbit.md]] 顶部暂停的 5 个开放项 + 决策 B（HV sketch 内嵌）
+> 收敛为"选项 + 证据 + 推荐"，作者逐项确认即可解锁继续开发。
+> 日期：2026-08-03。所有证据来自 `src/libs/pbit/`、`src/cmd_pgr/pbit/`
+> 与 `notes/design/hv.md` 的当前实现。
+
+> **✅ 已确认（2026-08-03）**：作者按推荐全部采纳（1A 2A 3A 4A 5A 6A）。
+> 1A 的"多参考未指定路由时警告"已实现于 `cmd_pgr/pbit/mod.rs`
+> `resolve_ref_id`。本文保留选项对比供未来重新评估。
+
+> **状态核对（2026-08-09）**：6 项决策全部仍有效且已落地（详见
+> [[pbit.md]] 顶部"已决策"摘要）；唯一变更是**决策 B（HV sketch 内嵌）
+> 由"维持暂缓"改为"明确不做"**（HV 评测未达预期，后续换其他形式，见
+> `todo.md` §4 与 `pbit.md`）。本文档定位 = 早期决策过程记录（选项对比 +
+> 证据 + 拍板清单），权威状态以 `pbit.md` 为准。
+
+### 背景事实（影响全部决策）
+
+1. **路由只影响压缩率，不影响正确性**：任何参考都能压缩任何样本（LZ-diff
+   找最长匹配），路由只决定"锚"选得好不好 → 压缩率差异。
+2. **pbit 是中间产物**：泛基因组流程中归档、索引、图都可重建，格式演化
+   不做长期兼容负担（已确认）。
+3. **样本段已带全局 `ref_group_id`**（Sample Index 每条 segment 16 字节
+   固定字段），跨参考路由在**格式上已经可表达**，只是压缩器按"单参考"
+   实现。
+
+---
+
+### 开放项 1：样本 vs 参考的路由
+
+**现状**：用户指定（TSV 第 4 列参考名/序号）；默认参考 0；
+`-i` 模式固定参考 0（`cmd_pgr/pbit/create.rs:107`、`append.rs:75`
+经 `resolve_ref_id` 解析）。
+
+**选项**：
+
+| 选项 | 含义 | 优点 | 缺点 |
+|---|---|---|---|
+| A. 保留手动（推荐） | TSV 第 4 列指定；多参考且未指定时**警告**而非静默用参考 0 | 零行为变更；用户有完全控制 | 多参考时漏填第 4 列会静默选错锚 |
+| B. 自动路由 | 按 k-mer 草图相似度（`dist seq` k=8 syncmer 风格，O(序列长)）自动选最相似参考 | 消除人为错误；无 TSV 依赖 | 每样本多一次参考草图标定成本；与手动的结果可能不一致，回放困难 |
+| C. 手动 + `--auto-route` 开关 | A 为主，未指定时可用开关走 B | 兼容现有流程，行为显式 | CLI 多一个参数 |
+
+**证据**：`dist seq`（k=8 syncmer 草图）是当前与身份率最贴近的粗筛层
+（Spearman 0.82，见 design/hv.md 证据附录），成本 O(序列长)；
+大肠杆菌任意两株 ≥90% 身份，锚的选择对压缩率影响很小。自动路由的真正
+价值在**跨物种/多样性 cohort**（此时参考间差异大）。
+
+**推荐**：**选项 A 起步**——只补一个"多参考 + 未指定路由 → 警告"的
+改进；`--auto-route`（选项 C）留到真实多样性 cohort 出现、且能用
+压缩率数据证明收益时再实现（避免推测性开发）。
+
+### 开放项 2：Sample Index 是否加 ref_id
+
+**现状**：不加。segment 存 `ref_group_id`（全局唯一，跨参考连续编号），
+经 Reference Table（`group_start`/`group_count`）反查 ref_id。
+
+**分析**：
+- 加 ref_id = 每条 segment 16→20 字节（+25% 索引体积）+ 与 Reference
+  Index 重复数据、存在不一致风险。
+- 反查成本：参考数通常个位数，线性/二分扫 Reference Table 可忽略。
+- "反查可得"的简洁决策已被 v1004 落地，无已知消费方需要热路径反查。
+
+**推荐**：**保持不加**。若未来出现每段热路径反查（不预期），在
+Reference Table 上补二分查找即可，无需格式变更。
+
+### 开放项 3：`append-ref` 的语义
+
+**现状**：只加参考、不改已有样本路由（`append_ref.rs`：追加 2bit 段 +
+重写 Reference Index，旧样本段与 delta 原样保留）。
+
+**选项**：
+
+| 选项 | 含义 | 优点 | 缺点 |
+|---|---|---|---|
+| A. 保持"不重路由"（推荐） | append-ref 只追加，样本锚不变 | O(参考段数) 轻量；语义清晰 | 换到更好的锚需手动重建 |
+| B. 自动重路由/重压缩 | append-ref 后把已有样本对全参考重压缩 | 压缩率随参考集优化 | 一次 append-ref 变 O(全部样本重压缩)；隐式巨量耗时，违反最小惊讶 |
+
+**证据**：增量流程里样本通常在其最佳参考已存在后才加入（先 `create -r ref`
+再逐批 `append`），"换锚"是例外场景而非常规。重压缩 = 重新读全部样本 +
+重跑 LZ-diff，在 4 万级 cohort 上是小时级操作，不应藏在 `append-ref` 里。
+
+**推荐**：**选项 A**。若"换锚"需求出现，做成显式独立子命令
+（如未来的 `pbit re-anchor`），不在 append-ref 中隐式触发。
+
+### 开放项 4：多参考压缩模型
+
+**现状**：样本整体路由到一个参考（`Compressor::set_cur_ref_id` 每样本
+设置；`append_sample` 的 contig→ref_group_ids 查找限定在当前参考的
+段范围）。**格式已支持每段 ref_group_id**，跨参考在格式层无阻碍。
+
+**选项**：
+
+| 选项 | 含义 | 压缩率影响 | 成本 |
+|---|---|---|---|
+| A. 单参考/样本（推荐，现状） | 样本全部 contig 用一个锚 | 多样 cohort 中"染色体 vs 质粒"等跨参考混合场景吃亏 | 无 |
+| B. 按 contig 路由 | 每个 contig 独立选参考 | 中等 | 压缩器改造：逐 contig 做方向检测 + 参考段查找 |
+| C. 按段/混合参考 | 段内跨参考匹配 | 理论最高 | LZ-diff 跨参考索引、PAF 投影歧义、复杂度大增 |
+
+**证据**：压缩器以"contig 级方向检测 + 单参考段集合"组织（`compressor.rs`
+`append_sample`），B 需要把方向检测与段查找按 contig×参考重做；C 会破坏
+"段→单参考"的简单映射，且收益需实测证明。
+
+**推荐**：**选项 A**，但把"格式已支持每段 ref_group_id"写进设计笔记
+（v1005 若做 B 无需格式变更，只是压缩器改造）。触发条件：出现真实
+跨参考混合 cohort 且压缩率差距可量化。
+
+### 开放项 5：版本策略
+
+**现状**：已确认不做旧版本兼容，格式改动直接 bump 版本（当前 1004）。
+
+**推荐**：**维持**。补充一条逃生舱：若未来出现"长期归档"需求，用
+`convert`（读旧版写新版）显式迁移，而不是让读取端做多版本兼容。
+这是决策而非开放项，建议在 pbit.md 中把该条从"待决策"移到"已决策"。
+
+---
+
+### 决策 B：HV sketch 内嵌（算法设计笔记）
+
+**目标**：让 pbit 归档自带样本间距离能力（`dist hv` 风格），不依赖
+`.pgi`（决策 A 已排除内嵌索引）。
+
+**现状与证据**：
+- `.hv` 目前只能从 `.pgi` 投影得到（`pgi to-hv`，`libs/pgi/to_hv.rs`），
+  消费端 `dist hv a.hv b.hv` 直接比较；
+- 修复后的稀疏投影 `.hv` 是 `dist pgi` 的 50× 快、排序 ρ=0.97 的近似层；
+  但 dim=1024 的旧稠密投影在大规模集合上饱和退化（Spearman −0.05，不可用，
+  见 design/hv.md 证据附录）；
+- `dist seq`（k=8 syncmer 草图）不依赖任何索引，直接从 FASTA 计算，已是
+  最优粗筛层（Spearman 0.82）。
+
+**核心判断**：`dist seq` 已经从"源 FASTA 在时"的粗筛需求；内嵌 sketch
+只对"源 FASTA 已删除、只剩归档"的场景有价值。这是窄场景，支撑"暂缓"。
+
+**若实现（作为设计稿，不立即做）**：
+
+1. 在 `create`/`append` 压缩样本时，直接从样本序列计算 sketch，
+   **不经过 pgi**：k=8 syncmer 采样（复用 `libs/syncmer`）→ 每 k-mer
+   更新 `--sparse` 个随机维度（复用 `libs/hv::hash_hv_sparse`）→ 稀疏
+   HV 存入 Sample Index（flate2 块内，v1005 格式 bump）。
+2. 规模估算（需实测校准）：dim=4096 × i32 = 16 KB/样本（稠密全量）；
+   稀疏存储只存被更新维度 ≈ (k-mer 数 × sparse) 条。4 万样本量级约
+   0.6–2 GB，占归档总量比例需 cohort 数据实测。
+3. 消费者：新增 `pgr pbit dist`（归档内样本两两距离/近邻），复用
+   `libs/hv::calc_distances` 的余弦实现。
+4. 对比基线：实现后须与 `dist seq`（FASTA 侧）在 10 株 cohort 上对比
+   Spearman，证明内嵌值不值得那部分体积。
+
+**推荐**：**维持暂缓**。触发条件 = 出现"无源 FASTA、仅归档、需距离
+粗筛"的真实工作流；届时按上述设计稿实现并先跑 4 的对比验证。
+
+---
+
+### 拍板清单（逐项回复即可）
+
+1. 路由：A（手动 + 多参考警告）/ C（加 `--auto-route`）？
+2. Sample Index 加 ref_id：否（推荐）/ 是？
+3. append-ref：不重路由（推荐）/ 需显式 re-anchor？
+4. 多参考压缩：单参考/样本（推荐）/ 按 contig 路由？
+5. 版本策略：维持"不兼容 + bump"（推荐）？
+6. 决策 B（HV sketch 内嵌）：维持暂缓（推荐）/ 按设计稿实现？
 
 ## 参考资料
 
 - 多参考扩展设计过程与 .pgi 消费者规划：旧 `pbit-index-extension.md` 已并入
   本文（该文件现为跳转 stub）；
-- 距离消费者验证数据：`notes/benchmarks/dist-cohort-validation.md`；
+- 距离消费者验证数据：`notes/design/hv.md`；
 - pgi 比对管线（`.pgi` 的消费者）：`notes/design/pgi-align.md`；
 - AGC 算法参考：`notes/references/agc-cpp.md`。
