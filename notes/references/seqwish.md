@@ -76,9 +76,22 @@ fn select1(&self, i: usize) -> usize { self.positions[i] } // O(1)
 fn rank1(&self, i: usize) -> usize { self.positions.binary_search(&i).unwrap_or_else(|x| x) }
 ```
 
+**FM-index 只做「名→rank」单向查表**。`name_index` 的唯一生产调用方是 `rank_of_seq_named`
+（名→id，被 [alignments.rs](../../../seqwish-master/src/alignments.rs#L100-L105) 在解析 PAF 时
+调用）。查询流程：构造模式串 `">{name} "` → `search().locate()` 得字节位置 → 用
+`name_boundaries.rank1` 换算成 1-based 序列 id，且强制要求 `occ == 1`（重名返回 None）。
+其余查询**全部不走 FM-index**：`nth_name`（rank→名）用 `name_boundaries` select + 直接切
+`name_text`；序列 offset/length、`at`/`at_pos` 取碱基、`seq_id_at` 全靠 `seq_boundaries`
+SparseBitVec + `seq_mmap`。也就是说 FM-index 是「名→id」这一单项查表的专用结构；其 `locate`
+采样参数 `2`（每 2^2=4 位采一个样本）也只为一个方向服务——若仅需 name→rank，其实可换不含
+locate 采样的更省 CSA，这里保留 locate 是对齐 C++ 接口的痕迹。构建细节：`Text::new` 要求文本以
+唯一 0 字符结尾，故先 append `\0` 喂给 crate、存回 `name_text` 时再 pop 掉。
+
 **对 pgr 的启示**：pgr 现有 `src/libs/io.rs` 用 HashMap 存序列名→offset，对 4 万大肠杆菌尚可，
 但若扩到 HPRC 规模（数百单倍型、Gb 级），FM-index + SparseBitVec 是更省内存的方案。"稀疏 bitvec
-只存 1-bit 位置"这个朴素思路在小 m / 大 N 场景下完胜压缩位向量。
+只存 1-bit 位置"这个朴素思路在小 m / 大 N 场景下完胜压缩位向量。即便要换，也应借鉴 seqwish 的
+**双层结构**——只把「名→id」这一个查表换成 FM-index，其余 offset/length/取碱基仍用 O(1) 位向量，
+而不是整体替换。
 
 ### 3.3 AdaptiveTree：磁盘/内存双后端区间树
 
