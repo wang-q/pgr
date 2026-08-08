@@ -16,7 +16,10 @@ pub const PBIT_VERSION_MAJOR: u32 = 1;
 ///
 /// v5 (2026-08-05): sample `ContigSegs` gains `mask_blocks` (soft-mask
 /// intervals, inherited from 2bit semantics), stored in the sample index.
-pub const PBIT_VERSION_MINOR: u32 = 5;
+///
+/// v6 (2026-08-08): `DeltaEncoding::Raw` added; segments with no matching
+/// reference content are stored verbatim so the archive is strictly lossless.
+pub const PBIT_VERSION_MINOR: u32 = 6;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 
@@ -26,6 +29,9 @@ pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 pub enum DeltaEncoding {
     LzDiff = 0,
     Cigar = 1,
+    /// Verbatim (flate2-compressed) sample sequence; used for segments with
+    /// no matching reference content so the archive stays lossless.
+    Raw = 2,
 }
 
 impl DeltaEncoding {
@@ -33,6 +39,7 @@ impl DeltaEncoding {
         match v {
             0 => Ok(Self::LzDiff),
             1 => Ok(Self::Cigar),
+            2 => Ok(Self::Raw),
             _ => Err(anyhow!("invalid DeltaEncoding: {}", v)),
         }
     }

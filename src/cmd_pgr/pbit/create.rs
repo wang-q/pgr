@@ -22,7 +22,9 @@ Notes:
 * Sample names are derived from the input FASTA basenames (use `--name` to
   override with a TSV file of `name<TAB>path[<TAB>paf_path][<TAB>ref_name]` lines)
 * Reference and sample FASTA files may be plain text or gzipped (.gz)
-* Contigs in sample FASTA that do not match any reference contig are skipped
+* Sequences with no matching reference content are stored verbatim (Raw
+  deltas), so the archive is lossless for ACGTN input; degenerate IUPAC
+  codes are the only accepted loss (see below)
 * Only ACGTN characters are supported; IUPAC degenerate codes (R, Y, S, W,
   K, M, B, D, H, V) are lossily mapped to N
 * `--paf` files are paired with `-i` files by order; `--name` and `--paf`

@@ -435,6 +435,23 @@ impl<R: Read + Seek> Decompressor<R> {
                 let ref_slice = &ref_dna[seg.ref_start as usize..seg.ref_end as usize];
                 apply_cigar(ref_slice, &ops, &xi_bases)?
             }
+            DeltaEncoding::Raw => {
+                // Verbatim segment: packed_data is flate2-compressed original
+                // sequence; the reference segment is not used.
+                let mut decoder = flate2::read::GzDecoder::new(&packed[..]);
+                let mut raw = Vec::new();
+                decoder
+                    .by_ref()
+                    .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
+                    .read_to_end(&mut raw)?;
+                if raw.len() > MAX_DELTA_UNCOMPRESSED {
+                    anyhow::bail!(
+                        "Raw delta decompressed size exceeds maximum {} bytes",
+                        MAX_DELTA_UNCOMPRESSED
+                    );
+                }
+                raw
+            }
         };
 
         // Apply reverse-complement if needed.

@@ -629,7 +629,6 @@ impl<W: Write + Seek> Compressor<W> {
                 );
             };
             let (group_start, group_count) = (meta.group_start, meta.group_count);
-            let ref_name = meta.ref_name.clone();
             let ref_group_ids: Vec<u32> = self
                 .contig_ref_groups
                 .get(contig_name)
@@ -656,20 +655,17 @@ impl<W: Write + Seek> Compressor<W> {
                             &[gid],
                             false,
                         )?;
-                        any = true;
+                    } else {
+                        // No content match in the reference: store the segment
+                        // verbatim so the archive stays lossless.
+                        self.encode_segment_raw(sample_name, contig_name, seg)?;
                     }
+                    any = true;
                 }
                 if any {
                     self.collection
                         .register_sample_contig(sample_name, contig_name)
                         .mask_blocks = mask_blocks;
-                } else {
-                    log::warn!(
-                        "contig '{}' in sample '{}' has no content match in reference {}; skipping",
-                        contig_name,
-                        sample_name,
-                        ref_name
-                    );
                 }
                 continue;
             }
@@ -786,6 +782,39 @@ impl<W: Write + Seek> Compressor<W> {
 
         self.collection
             .add_segment(sample_name, contig_name, ref_group_id, delta_id, 0, 0);
+        Ok(())
+    }
+
+    /// Store a segment verbatim (flate2-compressed) so sequences with no
+    /// matching reference content are preserved losslessly. Raw deltas are
+    /// attached to ref_group 0 and their reference segment is never read
+    /// during decode.
+    fn encode_segment_raw(
+        &mut self,
+        sample_name: &str,
+        contig_name: &str,
+        seg: &[u8],
+    ) -> Result<()> {
+        let packed_data = flate2_compress(seg)?;
+        let gid = 0u32;
+        let existing = self.deltas[gid as usize]
+            .iter()
+            .position(|d| d.packed_data == packed_data && d.encoding == DeltaEncoding::Raw);
+        let delta_id = match existing {
+            Some(id) => id as u32,
+            None => {
+                let entry = DeltaEntry {
+                    is_rev_comp: false,
+                    raw_length: seg.len() as u32,
+                    packed_data,
+                    encoding: DeltaEncoding::Raw,
+                };
+                self.deltas[gid as usize].push(entry);
+                (self.deltas[gid as usize].len() - 1) as u32
+            }
+        };
+        self.collection
+            .add_segment(sample_name, contig_name, gid, delta_id, 0, 0);
         Ok(())
     }
 
@@ -1055,6 +1084,11 @@ impl<W: Write + Seek> Compressor<W> {
                         false,
                     )?;
                     any_encoded = true;
+                } else {
+                    // No PAF coverage and no content match: store the segment
+                    // verbatim so the archive stays lossless.
+                    self.encode_segment_raw(sample_name, contig_name, seg)?;
+                    any_encoded = true;
                 }
             }
 
@@ -1064,12 +1098,6 @@ impl<W: Write + Seek> Compressor<W> {
                 self.collection
                     .register_sample_contig(sample_name, contig_name)
                     .mask_blocks = mask_blocks;
-            } else {
-                log::warn!(
-                    "contig '{}' in sample '{}' not covered by PAF alignments or a matching reference contig; skipping",
-                    contig_name,
-                    sample_name
-                );
             }
         }
         Ok(())
@@ -1298,12 +1326,14 @@ mod tests {
     }
 
     #[test]
-    fn test_skip_unknown_contig() -> Result<()> {
+    fn test_raw_fallback_lossless() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let ref_path = dir.path().join("ref.fa");
         let ref_seq = random_dna(1000, 42);
         write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
 
+        // A contig with no content match in the reference must be stored
+        // verbatim (Raw delta) and round-trip exactly, not silently skipped.
         let sample_path = dir.path().join("sample.fa");
         let sample_seq = random_dna(1000, 99);
         write_fasta(
@@ -1316,10 +1346,17 @@ mod tests {
         comp.append_sample("sample1", sample_path.to_str().unwrap())?;
         comp.finish()?;
 
-        // The sample should have 0 contigs (all skipped).
         let mut file = std::fs::File::open(&out_path)?;
         let header = PbitHeader::read_from(&mut file)?;
         assert_eq!(header.sample_count, 1);
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let out_str = String::from_utf8(buf)?;
+        let lines: Vec<&str> = out_str.lines().collect();
+        let seq: String = lines[1..].concat();
+        assert_eq!(seq, String::from_utf8(sample_seq).unwrap());
         Ok(())
     }
 

@@ -407,9 +407,9 @@ PhageCloud；④ hnswlib-rs vs 原版 hnswlib 三维对照；⑤ 分片 top-K
 |---|---|---|---|
 | ① sketch/HV 距离 | dist mash 与 Mash 逐位一致；SIMD/HV 性能；合成数据 Jaccard 基准；RNG 检验；**P1 完成（2026-08-08）**：135 真实基因组上 HV 与 skani ANI 标定（`benchmarks/bench-hv-ani-calibration.md`） | frac/mini 未标定；无完整度/长度鲁棒性；sampler/k/D 扫描未做 | **P1 剩余**：完整度鲁棒性（模拟删 contig）；frac/mini 同 cohort 标定；sampler/k 扫描（对标 A①②⑤） |
 | ② HV 最近邻检索 | 合成数据 recall@10（rust-cv/hnsw_rs/HubNSW/路由）；**P1 完成（2026-08-08）**：真实数据上以 ANI 为真值的**排序** recall@10（HV 0.62 vs Mash 0.76，`benchmarks/bench-hv-ani-calibration.md`） | 图检索（HNSW/路由）尚未在真实 HV 向量上以 ANI 真值重测；未用阈值过滤分离"距离误差 vs 检索误差" | **P1 剩余**：把 cohort 的 HV 向量喂 `hv_ann_clade`/`hv_ann_hubnsw` 类 bench，以 ANI top-10 为真值测图检索召回（对标 B①–④） |
-| ③ 聚类/构树/剪枝（Necom） | 算法本身（MST 等） | 聚类结果 vs 已知分类/GTDB 的一致率；距离误差→聚类误差的传播 | **P2**：真实 cohort 聚类 vs GTDB 标签的 ARI/一致率；扰动距离矩阵看聚类稳定性（对标 C①） |
-| ④ 选参考 + 比对（pgi） | pgi 对齐正确性/性能基准 | 参考选择策略对下游收益的量化；比对精度 vs ANI/AAI 真值 | **P2**：不同选参考策略（中心/最长/随机）→ pgi → pbit 压缩率对比；pgi 距离 vs ANI 标定（对标 A②C③） |
-| ⑤ PBit 归档 | pbit 压缩基准（孤立） | 端到端收益：聚类→参考→比对→pbit vs 朴素方案 | **P2**：端到端压缩率 vs 单参考/无参考/直接 gzip（对标 C） |
+| ③ 聚类/构树/剪枝（Necom） | 算法本身（MST 等） | 聚类结果 vs 已知分类/GTDB 的一致率；距离误差→聚类误差的传播 | **P2 部分完成（2026-08-08）**：真实 E. coli 物种内聚类（mash→UPGMA→cut）形成 7 簇结构（`bench-e2e-cluster-ref-pbit.md`）；物种级一致率见 #11（mash K10 ARI 0.74）；扰动稳定性见 #12 |
+| ④ 选参考 + 比对（pgi） | pgi 对齐正确性/性能基准 | 参考选择策略对下游收益的量化；比对精度 vs ANI/AAI 真值 | **P2 完成（2026-08-08）**：中心/最长/随机三策略实测——**最长参考最优**（delta/gzip 0.520 vs 中心 0.554、随机 0.521），中心参考（距离和最小）反而最差；pgi 距离 vs ANI 标定见 #16（`bench-e2e-cluster-ref-pbit.md`） |
+| ⑤ PBit 归档 | pbit 压缩基准（孤立） | 端到端收益：聚类→参考→比对→pbit vs 朴素方案 | **P2 完成（2026-08-08）**：端到端全链跑通（dist→necom→pgi→pbit），100 样本 × 3 策略 279 对 ≈ 12 分钟；LZ 路径 delta = gzip-9 的 52–55%，to-fa 覆盖率 ≥0.998（`bench-e2e-cluster-ref-pbit.md`） |
 | ⑥ 参数层 | D=4096 沿用 hypergen；采样/哈希理论笔记 | 参数（D、k、采样密度）对距离方差的实证曲线 | **P3**：真实数据上 D/k 扫描 → Jaccard/ANI 误差曲线（对标 A①） |
 
 ### 7.3 依赖与前提
@@ -646,6 +646,42 @@ recall@10 已测，图检索部分待补。详见
   后 warm 查询 1.55 ms。**#10 转 ✅（22/22）**。
   待语言处理时落地（#22 技术主体就绪）。
 
+**执行日志（2026-08-08 第十三轮）**：
+- 目标：**核心工作流端到端验证（P2，§7.2 ③④⑤）**——真实 E. coli
+  物种内跑通"dist mash → necom 聚类 → 选参考 → pgi 比对 → pbit 归档"
+  全链，量化参考选择策略对压缩率的影响（用户核心场景）。
+- 方法：2,088 个 E. coli NR 中 farthest-point 采样 100 个；mash 全对
+  距离（4,950 对）→ UPGMA → cut k=7（44/35/9/8/2/1/1）；每簇按
+  center（距离和最小）/ longest（总长最大）/ random 各选 1 参考；
+  簇内非参考样本 × 参考做 align pgi → psl to-paf → pbit create
+  （纯 LZ + --paf CIGAR 双路径）；delta/gzip-9 对比 + to-fa 覆盖率。
+- 结果 ✅（`benchmarks/bench-e2e-cluster-ref-pbit.md`）：279 对，
+  **longest 最优**（delta/gzip 0.520 vs center 0.554、random 0.521；
+  longest < center 71/98 查询）；center 参考（典型 draft、内容覆盖
+  少）反而最差；单参考随机性影响 3–4 pp；to-fa 覆盖率 ≥0.998；
+  CIGAR 与 LZ 差平均 32 B（相位约束，基本回退 LZ）。
+- 补充（用户质疑"参考必须 Complete"）：clade 0/1 配对实验（75 对，
+  控制"最长"只变组装级别）——draft-longest 参考压缩率反而更优
+  （0.505 vs Complete 0.525，56/75 对），机制 = contig 颗粒对齐 +
+  质粒/未装配内容共享；cohort 中 7 簇有 2 簇无 Complete 成员。
+  **"参考必须 Complete"的规则不来自压缩率**，而是比对/可解释性/
+  一致性（§8.1 决策 14 修正）。
+
+**执行日志（2026-08-08 第十四轮）**：
+- 目标：用户要求 pbit **严格无损**（"什么样的东西进去，什么样的
+  东西出来"）；此前只核对了碱基计数覆盖率（99.99%），不严格。
+- 核对结果：逐碱基（名称+顺序+位置）抽查 12 个真实样本，7 个有
+  缺失（6–614 bp）；极端样本 Es_coli_188（66 万 N）缺 20 万 bp。
+  根因 = 无参考匹配的段/contig 被静默跳过（内容匹配路径
+  `best_ref_group=None` 丢弃段；PAF 路径丢弃整 contig）。
+- 修复（v1006）：`DeltaEncoding::Raw = 2`——未匹配段 flate2 压缩
+  原文存储（挂 ref_group 0、解码不读参考段），两处跳过分支全部
+  替换；`test_raw_fallback_lossless` 钉死往返一致；pbit create
+  帮助文本同步。修复后逐碱基核对 10 样本：9/10 完全一致，188 的
+  差异全部为简并碱基 → N（用户明确允许的已知边界）。
+- 影响：Raw 段占比小，端到端压缩率结论（决策 14）不变；119 个
+  pbit 测试 + 全量 621 测试通过，fmt/clippy 干净。
+
 ## 8. 证据汇总与设计决策建议（2026-08-08）
 
 > 目的：把 §7.4 的 20+ 项实验收敛为对核心场景（物种内聚类选参考 +
@@ -667,15 +703,17 @@ recall@10 已测，图检索部分待补。详见
 | 9 | ANI 阈值 | 95% 物种边界实证成立（同种误伤 0.8%、异种漏判 11.4%）；90% 为保守提示 | 物种标签分布 | `bench-taxonomy-ci-tree.md` |
 | 10 | 树 | minhash 树近缘段与 bac120 树弱一致（ρ0.3–0.4）→ 物种级参考拓扑用 bac120 | 两树 cophenetic | `bench-taxonomy-ci-tree.md` |
 | 11 | pgi | pgi 距离近缘段弱（ρ−0.71）；`pgi to-hv` 保距（ρ0.97），可作 pgi→HV 嵌入 | pgi 标定 | `bench-pgi-calibration.md` |
-| 12 | PBit | naive create 静默丢数据（须 PAF/同名 contig）；CIGAR 路径约束：cg:Z、段全覆盖、段内目标；真实链粒度 1.1 kb << 4 kb 段，需长链化 | pbit 深挖 | `bench-scale-and-pbit.md` #14a–d |
+| 12 | PBit | **v1006 起 ACGTN 严格无损**：无参考匹配的段 Raw 存储（不再静默跳过，逐碱基核对 10/10）；唯一有损 = IUPAC 简并 → N（用户允许）；CIGAR 路径约束：cg:Z、段全覆盖、段内目标；真实链粒度 1.1 kb << 4 kb 段，需长链化 | pbit 深挖 + 无损核对 | `bench-scale-and-pbit.md` #14a–d/#14h |
 | 13 | 规模 | 2,088 全量实测：精确 5.55 ms、HNSW ef10 0.45 ms（12×）；建库 15 min（8 并行流式）；15,574 外推 ≈ 37 ms | `bench-scale-and-pbit.md` #8b | `bench-scale-and-pbit.md` |
+| 14 | **参考选择** | 簇内选参考**不要选距离中心**（典型 draft、内容覆盖少，压缩率最差：longest vs center 差 3.4 pp，71/98 查询 longest 更优）；**"必须 Complete"的规则不来自压缩率**——配对实验 draft-longest 反而 -2 pp（56/75 对，contig 颗粒对齐 + 质粒/未装配内容共享）；Complete 优先的正当理由是比对质量/坐标可解释性/下游一致性；簇内无 Complete 时用最长 draft 或并入相邻簇；单参考随机性影响 3–4 pp，小簇可多参考摊平 | 100 样本 × 3 策略 + Complete/draft 配对 | `bench-e2e-cluster-ref-pbit.md` |
 
 ### 8.2 核心场景工作流（证据修订版）
 
 1. **输入 + 质控**：QC 名单（NWR pass.lst 式）+ N50/完整度门（决策 5）；
 2. **距离**：`dist mash`/`dist frac` 两两（决策 1、2），输出 pair TSV；
 3. **聚类/构树**：Necom（ward/MST），以物种标签 ARI 校准 K（决策 8）；
-4. **选参考**：组内中心/最长，**共线性优先**（pbit 约束 3，决策 12）；
+4. **选参考**：组内**最长/高完整度优先**（决策 14；不选距离中心），
+   **共线性优先**（pbit 约束 3，决策 12）；
 5. **比对**：`align pgi` → PSL（注意链粒度限制，决策 12）；
 6. **归档**：`pbit create --paf` + **`to-fa` 覆盖率质量门**（决策 12）；
 7. **查询/检索**（可选）：HV 嵌入 + SQLite/精确扫描 ≤10k；HNSW 仅在大

@@ -84,10 +84,11 @@
 - [x] **bac120 标记基因路由（#19，2026-08-08）**：8 个保守标记蛋白 aa
       最近邻路由准确率 0.756（ANI 金标准上限 0.800，HV 路由 0.822）
       （`benchmarks/bench-marker-routing.md`）。
-- [ ] **pbit PAF 闭环（#14，2026-08-08）**：已修 `--paf` 跨组装命名
-      bug（118 测试过）；最根本约束 = 段相位对齐（indel 即破坏，新增
-      `indel_breaks_phase` 测试；`benchmarks/bench-scale-and-pbit.md`
-      #14b–e）。真实压缩率需"跨相位/跨记录组装"或"长链链化"设计改动。
+- [x] **pbit 严格无损（#14h，2026-08-08）**：v1006 新增
+      `DeltaEncoding::Raw`——无参考匹配的段不再静默跳过，Raw 存储；
+      逐碱基核对 10 样本 9/10 完全一致（唯一差异 = 简并→N，用户
+      允许）；PAF 路径约束与长链化需求仍挂账（`benchmarks/bench-scale-and-pbit.md`
+      #14b–e/#14h）。
 - [x] **pbit 重构路线 1：LZ 内容匹配化（2026-08-08 落地，#14 ✅）**：
       canonical k-mer 倒排索引 + `best_ref_group`，无 PAF/同名也可
       ~100% 无损；真实 delta = gzip-9 的 53%（近缘）~78%（分歧）
@@ -95,9 +96,11 @@
 - [ ] **pbit 路线 2/3（2026-08-08 挂账）**：跨相位 CIGAR 编码（格式
       升级候选）；pgi 长链链化（依赖对齐器）；cg:Z 生产者（CIGAR 长期
       优化，非阻塞）。
-- [ ] **聚类/选参考/PBit 端到端验证（P2）**：Necom 聚类 vs GTDB 标签
-      一致率；参考策略（中心/最长/随机）→ pgi → pbit 压缩率对比
-      （§7.2③–⑤，数据需求：一个物种的真实 cohort）。
+- [x] **聚类/选参考/PBit 端到端验证（P2，2026-08-08）**：真实 E. coli
+      cohort（farthest-point 100）跑通 dist mash → necom → 选参考 →
+      pgi → pbit 全链；**最长/高完整度参考最优**（delta/gzip 0.520 vs
+      中心 0.554，71/98 查询），中心参考反而最差；to-fa ≥0.998；
+      §8.1 决策 14 新增（详见 `benchmarks/bench-e2e-cluster-ref-pbit.md`）。
 
 ## 3. 低风险审计记录项（可顺手修）
 
