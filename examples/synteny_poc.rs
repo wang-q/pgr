@@ -65,9 +65,14 @@ fn psl_coverage(
     start_i: usize,
     end_i: usize,
 ) -> Vec<ContigCover> {
-    let name_to_id: HashMap<&str, usize> =
-        contig_names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
-    let mut out: Vec<ContigCover> = (0..contig_names.len()).map(|_| ContigCover::default()).collect();
+    let name_to_id: HashMap<&str, usize> = contig_names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str(), i))
+        .collect();
+    let mut out: Vec<ContigCover> = (0..contig_names.len())
+        .map(|_| ContigCover::default())
+        .collect();
     let mut raw: Vec<(usize, u32, u32)> = Vec::new();
     let data = std::fs::read_to_string(path).expect("read psl");
     for line in data.lines() {
@@ -78,7 +83,9 @@ fn psl_coverage(
         if f.len() <= end_i {
             continue;
         }
-        let Some(&id) = name_to_id.get(f[name_i]) else { continue };
+        let Some(&id) = name_to_id.get(f[name_i]) else {
+            continue;
+        };
         let start: u32 = f[start_i].parse().unwrap();
         let end: u32 = f[end_i].parse().unwrap();
         raw.push((id, start, end));
@@ -149,8 +156,18 @@ fn main() {
     let cov_len1: u64 = cov1.iter().map(|c| c.bp()).sum();
     let total2: u64 = pgi2.contigs().iter().map(|(_, l)| *l).sum();
     let cov_len2: u64 = cov2.iter().map(|c| c.bp()).sum();
-    println!("genome1 total_len={} anchor_cov={} ({:.2}%)", total1, cov_len1, 100.0 * cov_len1 as f64 / total1 as f64);
-    println!("genome2 total_len={} anchor_cov={} ({:.2}%)", total2, cov_len2, 100.0 * cov_len2 as f64 / total2 as f64);
+    println!(
+        "genome1 total_len={} anchor_cov={} ({:.2}%)",
+        total1,
+        cov_len1,
+        100.0 * cov_len1 as f64 / total1 as f64
+    );
+    println!(
+        "genome2 total_len={} anchor_cov={} ({:.2}%)",
+        total2,
+        cov_len2,
+        100.0 * cov_len2 as f64 / total2 as f64
+    );
     println!("shared kmers (present in both): {}", n_shared_kmers);
     println!(
         "genome1 shared-pos: {} | covered {} ({:.2}%) | UNCOVERED {} ({:.2}%)",
@@ -182,9 +199,27 @@ fn main() {
         }
         let lz_bp: u64 = lz.iter().map(|c| c.bp()).sum();
         println!("---- genome1 uncovered-region composition (vs lastz) ----");
-        println!("lastz cov: {} ({:.2}%)", lz_bp, 100.0 * lz_bp as f64 / total1 as f64);
-        println!("uncovered by pgi anchors: {} ({:.2}%)", uncov, 100.0 * uncov as f64 / total1 as f64);
-        println!("  capturable (uncovered & lastz): {} ({:.2}% of genome; {:.2}% of uncovered)", capturable, 100.0 * capturable as f64 / total1 as f64, 100.0 * capturable as f64 / uncov as f64);
-        println!("  non-ortholog (uncovered & !lastz): {} ({:.2}% of genome; {:.2}% of uncovered)", nonortholog, 100.0 * nonortholog as f64 / total1 as f64, 100.0 * nonortholog as f64 / uncov as f64);
+        println!(
+            "lastz cov: {} ({:.2}%)",
+            lz_bp,
+            100.0 * lz_bp as f64 / total1 as f64
+        );
+        println!(
+            "uncovered by pgi anchors: {} ({:.2}%)",
+            uncov,
+            100.0 * uncov as f64 / total1 as f64
+        );
+        println!(
+            "  capturable (uncovered & lastz): {} ({:.2}% of genome; {:.2}% of uncovered)",
+            capturable,
+            100.0 * capturable as f64 / total1 as f64,
+            100.0 * capturable as f64 / uncov as f64
+        );
+        println!(
+            "  non-ortholog (uncovered & !lastz): {} ({:.2}% of genome; {:.2}% of uncovered)",
+            nonortholog,
+            100.0 * nonortholog as f64 / total1 as f64,
+            100.0 * nonortholog as f64 / uncov as f64
+        );
     }
 }
