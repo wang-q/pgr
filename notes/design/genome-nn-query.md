@@ -753,7 +753,9 @@ recall@10 已测，图检索部分待补。详见
 
 - #10 sqlite-vector-rs vtab 实测完成（#10b）；sqlite-vec（C 核心）按
   用户决定不再评测；
-- pbit 真实压缩率：需"pgi 长链链化"或"pbit 跨记录组装"（todo 已挂）；
+- pbit 真实压缩率：依赖现有 chainnet 链路（**pgi 长链链化已明确不做**，
+  2026-08-09 用户裁定——自研 chain 不如 UCSC chainnet，见
+  `design/pbit.md` §PAF 驱动编码的演进）；"pbit 跨记录组装"仍可选；
 - pgr `psl to-paf` 的 cg:Z 生产者（链级，与上一条相关）；
 - 用户文档（docs/*.md）阈值与默认参数建议随语言处理一起落地。
 
@@ -762,7 +764,7 @@ recall@10 已测，图检索部分待补。详见
 pbit 的编码路线与约束现状已统一维护在
 [design/pbit.md](../design/pbit.md)（"PAF 驱动编码的演进"章节；三条路线
 现状：LZ 内容匹配化 v1006 ✅、跨相位 CIGAR v1007 ✅（+ v1009 to-paf、
-v1010 Identity）、pgi 长链链化挂账）。
+v1010 Identity）、pgi 长链链化明确不做）。
 
 ### 8.6 用户文档改动清单（发现 → docs/*.md，语言处理时套用）
 
