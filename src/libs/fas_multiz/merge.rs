@@ -349,8 +349,16 @@ fn merge_blocks_with_dp(
     }
 
     for &block in &ordered[2..] {
-        if let Some(next) = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
-            acc = next;
+        match merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
+            Some(next) => acc = next,
+            // The block cannot be spliced into the accumulated alignment (e.g.
+            // it shares no non-reference species to score a crossover with).
+            // Do not drop it silently: the command promises to keep the union
+            // of all input species, so surface the loss.
+            None => log::warn!(
+                "multiz: dropping block (species: {}) that cannot be merged into the accumulated alignment",
+                block.names.join(",")
+            ),
         }
     }
 

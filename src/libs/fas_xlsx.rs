@@ -68,16 +68,21 @@ pub fn export_to_xlsx(
             }
 
             for (_, var) in vars {
-                match var {
+                // Advance the cursor by the number of columns each variation
+                // actually occupies: a substitution fills one column, while a
+                // multi-base indel spans up to three (`paint_indel` uses
+                // `indel.length.min(3)`). Advancing by exactly one here would
+                // make the next variation overwrite the indel's extra columns.
+                let consumed = match var {
                     Variation::Substitution(sub) => {
                         paint_sub(worksheet, &format_of, &mut opt, &sub)?
                     }
                     Variation::Indel(indel) => {
                         paint_indel(worksheet, &format_of, &mut opt, &indel)?
                     }
-                }
+                };
 
-                opt.col_cursor += 1;
+                opt.col_cursor += consumed;
                 if opt.col_cursor > opt.wrap {
                     opt.col_cursor = 1;
                     opt.sec_cursor += 1;
@@ -141,7 +146,7 @@ fn paint_indel(
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
     indel: &Indel,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u16> {
     let mut pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
     let col_taken = indel.length.min(3) as u16;
@@ -160,7 +165,14 @@ fn paint_indel(
         let bg_idx = if indel.occurred == "unknown" {
             "unknown".to_string()
         } else {
-            let idx = u32::from_str_radix(&indel.occurred, 2)? % opt.color_loop;
+            // `occurred` is a binary string as long as the number of ingroup
+            // sequences. For blocks with more than 32 sequences it exceeds the
+            // u32 range of `from_str_radix`, so fold the bits into the color
+            // index modulo `color_loop` instead (identical result for short
+            // strings, no overflow for long ones).
+            let idx = indel.occurred.bytes().fold(0u32, |acc, b| {
+                (acc * 2 + (b == b'1') as u32) % opt.color_loop
+            });
             idx.to_string()
         };
         let format_key = format!("indel_{}", bg_idx);
@@ -218,7 +230,7 @@ fn paint_indel(
             )?;
         }
     }
-    Ok(())
+    Ok(col_taken)
 }
 
 fn paint_sub(
@@ -226,7 +238,7 @@ fn paint_sub(
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
     sub: &Substitution,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u16> {
     let pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
     let pos_format = format_of
@@ -255,7 +267,13 @@ fn paint_sub(
         };
 
         let base_color = if occurred == '1' {
-            let bg_idx = u32::from_str_radix(&sub.pattern, 2)? % opt.color_loop;
+            // `pattern` is a binary string as long as the number of ingroup
+            // sequences; for blocks with more than 32 sequences a direct
+            // `from_str_radix` would overflow u32. Fold the bits modulo
+            // `color_loop` instead (identical for short strings).
+            let bg_idx = sub.pattern.bytes().fold(0u32, |acc, b| {
+                (acc * 2 + (b == b'1') as u32) % opt.color_loop
+            });
             format!("sub_{}_{}", base, bg_idx)
         } else {
             format!("sub_{}_unknown", base)
@@ -282,7 +300,7 @@ fn paint_sub(
             format,
         )?;
     }
-    Ok(())
+    Ok(1)
 }
 
 fn get_vars(

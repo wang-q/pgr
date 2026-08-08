@@ -351,3 +351,48 @@ fn command_to_xlsx_unequal_length_no_panic() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_to_xlsx_many_sequences_no_overflow() -> anyhow::Result<()> {
+    // A block with more than 32 ingroup sequences makes the per-variation
+    // occurrence `pattern` a binary string wider than u32, which a direct
+    // `from_str_radix` color-index parse used to fail on. It must succeed and
+    // produce a valid workbook.
+    let mut content = String::new();
+    // First sequence differs at the last base to create a substitution.
+    content.push_str(">A.chr1(+):1-4\nACGA\n");
+    for i in 1..40 {
+        content.push_str(&format!(">S{}.chr{}(+):1-4\nACGT\n", i, i));
+    }
+    let input = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(input.path())?,
+        content.as_bytes(),
+    )?;
+    let out = tempfile::NamedTempFile::new()?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg(input.path())
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "to-xlsx with >32 ingroup sequences must not fail: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(out.path()).unwrap();
+    let sheet = workbook.worksheet_range_at(0).unwrap().unwrap();
+    // 40 ingroup rows for the single substitution plus a header row.
+    assert!(
+        sheet.height() >= 41,
+        "unexpected sheet height: {}",
+        sheet.height()
+    );
+
+    Ok(())
+}

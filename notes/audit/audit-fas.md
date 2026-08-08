@@ -230,6 +230,48 @@ gap，经 `cons.replace('-',"")` 后为空。修复：在 `consensus_block` 生�
 属数据丢失。经核验，参考不一致时本就无法在共享坐标系下单义拼接，丢弃是该架构下的
 设计取舍，且与"非连续 block 数据丢失"同源，记录为已知限制，不修复。
 
+## 本次复审新增修复（2026-08-08）
+
+对 `fas` 命令族追加两轮纵深复审，新发现并修复以下缺陷（均已补回归测试/文档澄清并通过
+全部 fas 测试、clippy、fmt）：
+
+### 数据正确性（4 处）
+
+**`to-xlsx` 列游标推进错误导致单元格重叠/数据损坏**：`export_to_xlsx` 每绘制一个变异后
+固定 `opt.col_cursor += 1`。但 `paint_indel` 的多碱基 indel 实际占用 `indel.length.min(3)`
+列（合并单元格），固定 +1 会让下一个变异绘制在 indel 已占用的列上，覆盖其扩展列。修复：
+`paint_sub`/`paint_indel` 返回实际占用列数（`paint_indel` 返回 `col_taken`），游标按其
+推进。
+
+**`to-xlsx` 序列数 >32 时颜色索引溢出**：`paint_indel` 用 `u32::from_str_radix(&occurred,2)`
+、`paint_sub` 用 `u32::from_str_radix(&pattern,2)` 把与内群序列等长的二进制串解析为 u32 以
+取色索引。当 block 内群序列数 >32 时二进制串超过 u32 位宽，`from_str_radix` 返回溢出错误，
+命令失败。修复：改为按字节折叠模 `color_loop` 计算索引（`(acc*2 + (b=='1')) % color_loop`），
+对短串结果一致、对长串无溢出。
+
+**`multiz` 渐进合并失败时静默丢弃物种**：`merge_blocks_with_dp` 对 `merge_two_blocks_with_dp`
+返回 `None` 的中间块直接丢弃（不保留其物种），与"保留各输入物种并集"的承诺不符。修复：改为
+`match` 捕获 `None` 分支，`log::warn!` 提示被丢弃的 block 及其物种。
+
+**`multiz` 覆盖率过滤误删单碱基参考块**：`derive_windows_from_blocks` 原有的 `DupeTree`
+覆盖率过滤中，`DupeTree::add` 忽略 `start == end` 的零宽单碱基区间，导致单碱基参考 block
+派生的窗口被过滤掉。修复：移除该覆盖率过滤（每个窗口本就从至少一个输入的参考区间派生出，
+覆盖恒成立）。
+
+### 文档一致性（2 处）
+
+**`consensus` 输出格式描述与实现不符**：`docs/fas.md` 原称"每个 block 的首条序列变为一致性
+序列，其余序列保留"，但 `consensus_block` 实际用共识序列替换所有内群序列，仅 `--outgroup`
+时保留末条外群。已更新为准确描述。
+
+**`calling 变异` 措辞**：`docs/fas.md` 变异组描述中 `从比对中 calling 变异` 中英混杂，改为
+`从比对中检测变异（calling variants）`。
+
+> 说明：本次追加复审逐命令复核全部 20 个子命令执行路径、`docs/fas.md` 与帮助文本一致性、
+> `-o`/输出路径覆盖保护（含辅助输入文件与 `separate`/`split` 目录输出）、Zero Panic 边界
+> （空 block、全 gap、短外群、负链、>32 序列、倒置区间），未再发现其他新缺陷；既有已知限制
+> 保持不修复。
+
 ## 验证
 
 * 数据安全：`-o` 同路径（单文件与 `create` 的 `.loc`、`separate`/`split` 目录）、

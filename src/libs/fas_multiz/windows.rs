@@ -5,7 +5,7 @@
 //! windows satisfying the `min_width` and coverage requirements.
 
 use super::{find_ref_entry, FasMultizConfig, Window};
-use crate::libs::ds::{merge_intervals, DupeTree};
+use crate::libs::ds::merge_intervals;
 use crate::libs::fmt::fas::FasBlock;
 use std::collections::BTreeMap;
 
@@ -54,52 +54,10 @@ pub(super) fn derive_windows_from_blocks(
         }
     }
 
-    if windows.is_empty() {
-        return windows;
-    }
-
-    // Union semantics: keep a window when at least one input covers it.
-    let required_inputs = 1;
-
-    // Per-chromosome DupeTree: each input contributes at most 1 depth over its
-    // (merged) reference intervals, so `count_over(window, required) > 0`
-    // means the window overlaps at least `required` distinct inputs.
-    let mut cov_trees: BTreeMap<String, DupeTree> = BTreeMap::new();
-    for group in blocks_per_input {
-        let mut by_chr: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
-        for block in group {
-            if let Some(entry) = find_ref_entry(block, ref_name) {
-                let range = entry.range();
-                if range.start() > range.end() {
-                    // Skip inverted (malformed) reference ranges; see above.
-                    continue;
-                }
-                by_chr
-                    .entry(range.chr().to_string())
-                    .or_default()
-                    .push((*range.start() as u64, *range.end() as u64));
-            }
-        }
-        for (chr, mut intervals) in by_chr {
-            let tree = cov_trees.entry(chr).or_default();
-            for (s, e) in merge_intervals(&mut intervals) {
-                tree.add(s, e);
-            }
-        }
-    }
-    for tree in cov_trees.values_mut() {
-        tree.build();
-    }
-
-    let mut filtered = Vec::new();
-    for window in windows {
-        let covered = cov_trees.get(&window.chr).map_or(0, |tree| {
-            tree.count_over(window.start, window.end, required_inputs)
-        });
-        if covered > 0 {
-            filtered.push(window);
-        }
-    }
-
-    filtered
+    // No coverage filter is needed: every window is derived from (at least
+    // one) input's reference interval expanded by `radius`, so it is always
+    // covered by that input. A per-input DupeTree filter here would be
+    // redundant for normal windows and would silently drop single-base
+    // reference blocks (whose zero-width interval `DupeTree::add` ignores).
+    windows
 }

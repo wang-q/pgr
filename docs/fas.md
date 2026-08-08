@@ -27,7 +27,7 @@
   - `create`：根据区间链接创建 block FA 文件。
   - `separate`：按物种将 block 拆分为独立文件。
   - `split`：按比对块或染色体拆分 block FA 文件。
-- **变异（Variation）**：从比对中 calling 变异。
+- **变异（Variation）**：从比对中检测变异（calling variants）。
   - `to-vcf`：将替换（SNP）导出为 VCF 格式。
   - `to-xlsx`：将替换和 indel 导出为 Excel 文件。
   - `variation`：以 TSV 格式列出变异（替换）。
@@ -233,7 +233,7 @@ pgr fas consensus [OPTIONS] <infiles>...
 - `-p, --parallel <int>`：线程数（默认：1）。并行模式下输出顺序可能与输入不同。
 - `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-输出格式：block FA 格式，每个 block 的首条序列变为一致性序列，其余序列保留。
+输出格式：block FA 格式。每个 block 输出一条共识序列替换所有内群序列；仅当指定 `--outgroup` 时，block 的最后一条外群序列会被保留在输出 block 中。
 
 ### join
 
