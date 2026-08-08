@@ -13,6 +13,9 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 * `--min-freq` and `--max-freq` must be in [0, 1] and `--min-freq` <= `--max-freq`
 * `--outgroup` treats the last sequence of each block as the outgroup
+* `--length` is the minimum aligned length; blocks shorter than it are skipped
+* `--colors` must be in [1, 15]
+* `--spacing` is the number of blank rows between wrapped sections
 
 Examples:
 1. Export variations to an Excel file:
@@ -26,6 +29,9 @@ Examples:
 
 4. Omit singleton and complex variations:
    pgr fas to-xlsx tests/fas/example.fas --no-single --no-complex
+
+5. Skip blocks shorter than 100 bp and use 8 colors:
+   pgr fas to-xlsx tests/fas/example.fas --length 100 --colors 8
 
 "###,
         )
@@ -71,6 +77,31 @@ Examples:
                 .num_args(1)
                 .help("Maximal frequency"),
         )
+        .arg(
+            Arg::new("length")
+                .long("length")
+                .short('l')
+                .value_parser(value_parser!(usize))
+                .num_args(1)
+                .default_value("1")
+                .help("Minimum aligned length; shorter blocks are skipped"),
+        )
+        .arg(
+            Arg::new("spacing")
+                .long("spacing")
+                .value_parser(value_parser!(u16))
+                .num_args(1)
+                .default_value("1")
+                .help("Blank rows between wrapped sections"),
+        )
+        .arg(
+            Arg::new("colors")
+                .long("colors")
+                .value_parser(value_parser!(u16))
+                .num_args(1)
+                .default_value("15")
+                .help("Number of background colors (1-15)"),
+        )
         .arg(crate::cmd_pgr::args::outfile_arg_with_default(
             "variations.xlsx",
         ))
@@ -80,6 +111,14 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let opt_wrap = *args.get_one::<u16>("wrap").unwrap();
+    let opt_length = *args.get_one::<usize>("length").unwrap();
+    let opt_spacing = *args.get_one::<u16>("spacing").unwrap();
+    let opt_colors = *args.get_one::<u16>("colors").unwrap();
+    anyhow::ensure!(
+        (1..=15).contains(&opt_colors),
+        "--colors must be in [1, 15]: {}",
+        opt_colors
+    );
     let is_indel = args.get_flag("indel");
     let is_outgroup = args.get_flag("outgroup");
     let is_nosingle = args.get_flag("no_single");
@@ -114,6 +153,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         &infiles,
         outfile,
         opt_wrap,
+        opt_length,
+        opt_spacing,
+        opt_colors,
         is_indel,
         is_outgroup,
         is_nosingle,

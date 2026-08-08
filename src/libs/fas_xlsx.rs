@@ -14,6 +14,9 @@ pub fn export_to_xlsx(
     infiles: &[String],
     outfile: &str,
     wrap: u16,
+    length: usize,
+    spacing: u16,
+    colors: u16,
     is_indel: bool,
     is_outgroup: bool,
     no_single: bool,
@@ -32,7 +35,7 @@ pub fn export_to_xlsx(
         sec_height: 0,
         max_name_len: 1,
         wrap,
-        color_loop: 15,
+        color_loop: colors as u32,
         seq_count: 0,
         is_outgroup,
     };
@@ -47,6 +50,14 @@ pub fn export_to_xlsx(
                 seqs.push(entry.seq());
             }
 
+            // Skip blocks whose aligned length is below the threshold. The
+            // aligned length is the sequence width (including gaps), which is
+            // identical across all entries of a block, so the first entry
+            // suffices.
+            if seqs.first().map_or(0, |s| s.len()) < length {
+                continue;
+            }
+
             let vars = get_vars(
                 &seqs,
                 is_outgroup,
@@ -58,10 +69,10 @@ pub fn export_to_xlsx(
             )?;
 
             opt.seq_count = seqs.len() as u32;
-            opt.sec_height = opt.seq_count + 2;
+            opt.sec_height = opt.seq_count + 1 + spacing as u32;
             opt.col_cursor = 1;
 
-            paint_name(worksheet, &format_of, &mut opt, &block)?;
+            let section_start = opt.sec_cursor;
 
             if opt.is_outgroup {
                 opt.seq_count -= 1;
@@ -88,6 +99,18 @@ pub fn export_to_xlsx(
                     opt.sec_cursor += 1;
                 }
             }
+
+            // Names go into every section the block's variations spanned, not
+            // just the first one; otherwise wrapped sections end up nameless.
+            let section_end = opt.sec_cursor;
+            paint_name(
+                worksheet,
+                &format_of,
+                &mut opt,
+                &block,
+                section_start,
+                section_end,
+            )?;
 
             opt.sec_cursor += 1;
         }
@@ -125,18 +148,22 @@ fn paint_name(
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
     block: &FasBlock,
+    section_start: u32,
+    section_end: u32,
 ) -> anyhow::Result<()> {
     let name_format = format_of
         .get("name")
         .ok_or_else(|| anyhow!("missing 'name' format"))?;
 
-    for i in 1..=block.entries.len() {
-        let pos_row = opt.sec_height * (opt.sec_cursor - 1);
+    for sec in section_start..=section_end {
+        for i in 1..=block.entries.len() {
+            let pos_row = opt.sec_height * (sec - 1);
 
-        let rg = block.entries[i - 1].range().to_string();
-        worksheet.write_with_format(pos_row + i as u32, 0, rg.clone(), name_format)?;
+            let rg = block.entries[i - 1].range().to_string();
+            worksheet.write_with_format(pos_row + i as u32, 0, rg.clone(), name_format)?;
 
-        opt.max_name_len = max(rg.len(), opt.max_name_len);
+            opt.max_name_len = max(rg.len(), opt.max_name_len);
+        }
     }
     Ok(())
 }

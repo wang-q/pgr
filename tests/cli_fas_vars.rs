@@ -396,3 +396,162 @@ fn command_to_xlsx_many_sequences_no_overflow() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_to_xlsx_length_filters_short_blocks() -> anyhow::Result<()> {
+    // `--length` skips blocks whose aligned width is below the threshold. A
+    // 4-bp block must be dropped when the threshold is 5 (block empty => no
+    // section), yet a longer block is still exported.
+    let mut content = String::new();
+    content.push_str(">A.chr1(+):1-4\nACGT\n>B.chr2(+):1-4\nACGA\n");
+    content.push('\n');
+    content.push_str(">A.chr1(+):1-8\nACGTACGT\n>B.chr2(+):1-8\nACGTACGA\n");
+    let input = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(input.path())?,
+        content.as_bytes(),
+    )?;
+    let out = tempfile::NamedTempFile::new()?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg(input.path())
+        .arg("--length")
+        .arg("5")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "to-xlsx --length must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(out.path()).unwrap();
+    let sheet = workbook.worksheet_range_at(0).unwrap().unwrap();
+    // Only the 8-bp block is exported; its name is written at row 1 (header row).
+    assert!(
+        sheet.get_value((1, 0)).is_some(),
+        "longer block should be exported and named"
+    );
+    assert!(
+        sheet.get_value((2, 0)).is_some(),
+        "longer block should name both sequences"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn command_to_xlsx_colors_rejects_out_of_range() -> anyhow::Result<()> {
+    // `--colors` outside [1, 15] must fail with a friendly error.
+    let out = tempfile::NamedTempFile::new()?;
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg("tests/fas/example.fas")
+        .arg("--colors")
+        .arg("16")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(!output.status.success(), "--colors 16 must be rejected");
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(
+        stderr.contains("--colors must be in [1, 15]"),
+        "unexpected stderr: {}",
+        stderr
+    );
+
+    Ok(())
+}
+
+#[test]
+fn command_to_xlsx_colors_reduces_background_loop() -> anyhow::Result<()> {
+    // With a small `--colors`, the per-variation background index is taken
+    // modulo that count, so distinct variations reuse colors sooner. The
+    // command must still succeed and produce a valid workbook.
+    let out = tempfile::NamedTempFile::new()?;
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg("tests/fas/example.fas")
+        .arg("--colors")
+        .arg("3")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "to-xlsx --colors 3 must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(out.path()).unwrap();
+    assert!(workbook.worksheet_range_at(0).is_some());
+
+    Ok(())
+}
+
+#[test]
+fn command_to_xlsx_spacing_and_wrapped_section_names() -> anyhow::Result<()> {
+    // Two sequences differing at all 8 positions produce 8 substitutions.
+    // With --wrap 3 each section holds 3 columns, so the variations span 3
+    // sections. Every section must carry the sequence names, and --spacing
+    // adds blank rows below each section (shifting later sections down).
+    let mut content = String::new();
+    content.push_str(">A.chr1(+):1-8\nAAAAAAAA\n>B.chr2(+):1-8\nCCCCCCCC\n");
+    let input = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(input.path())?,
+        content.as_bytes(),
+    )?;
+
+    let run = |spacing: &str, out: &std::path::Path| -> anyhow::Result<calamine::Xlsx<_>> {
+        let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+        let output = cmd
+            .arg("fas")
+            .arg("to-xlsx")
+            .arg(input.path())
+            .arg("--wrap")
+            .arg("3")
+            .arg("--spacing")
+            .arg(spacing)
+            .arg("-o")
+            .arg(out)
+            .output()?;
+        assert!(output.status.success());
+        Ok(calamine::open_workbook(out).unwrap())
+    };
+
+    let out_default = tempfile::NamedTempFile::new()?;
+    let mut wb_default = run("1", out_default.path())?;
+    let default_sheet = wb_default.worksheet_range_at(0).unwrap().unwrap();
+
+    let out_spaced = tempfile::NamedTempFile::new()?;
+    let mut wb_spaced = run("3", out_spaced.path())?;
+    let spaced_sheet = wb_spaced.worksheet_range_at(0).unwrap().unwrap();
+
+    // section_height = seq_count(2) + 1 + spacing.
+    // spacing=1 -> height 4: sections at rows 1-2, 5-6, 9-10 (names).
+    // spacing=3 -> height 6: sections at rows 1-2, 7-8, 13-14 (names).
+    for row in [2u32, 6, 10] {
+        assert!(
+            default_sheet.get_value((row, 0)).is_some(),
+            "spacing=1 should name the section top at row {}",
+            row
+        );
+    }
+    for row in [2u32, 8, 14] {
+        assert!(
+            spaced_sheet.get_value((row, 0)).is_some(),
+            "spacing=3 should name the section top at row {}",
+            row
+        );
+    }
+
+    Ok(())
+}

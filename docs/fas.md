@@ -411,9 +411,12 @@ pgr fas to-xlsx [OPTIONS] <infiles>...
 - `--min-freq <float>`：最小频率，范围 `[0, 1]`。
 - `--max-freq <float>`：最大频率，范围 `[0, 1]`，且必须大于等于 `--min-freq`。
 - `--wrap <int>`：可视化换行长度（默认：50）。
+- `-l, --length <int>`：最小比对长度，短于该值的 block 被跳过（默认：1）。
+- `--spacing <int>`：换行段之间的空行数（默认：1）。
+- `--colors <int>`：背景色数量，范围 `[1, 15]`（默认：15）。
 - `-o, --outfile <file>`：输出文件名（默认：variations.xlsx）。
 
-输出格式：Excel 工作簿（.xlsx）。
+输出格式：Excel 工作簿（.xlsx）。换行产生的每个分段都会写入序列名称列。
 
 ### variation
 
