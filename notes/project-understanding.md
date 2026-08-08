@@ -573,7 +573,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | multiz / 多序列合并 | [[multiz.md]] | [[design/fas-multiz.md]] | — | `pgr fas multiz`（`libs/fas_multiz`） |
 | UCSC chain/net 管线 | [[ucsc.md]] | [[chain-algorithms.md]]（实现细节） | — | `pgr pl chainnet`、`pgr chain`、`pgr net`（`libs/chain`） |
 | Cactus / lastz 包装 | [[cactus.md]]、[[cactus_lastz.md]] | — | — | `pgr align lastz`、`sd search --engine lastz`（`libs/lastz`） |
-| POA / 一致性 | 外部 Spoa 源码（无参考笔记） | [[design/spoa_port.md]] | — | `pgr fas consensus`（`libs/poa`） |
+| POA / 一致性 | [[spoa.md]] | [[design/spoa_port.md]] | — | `pgr fas consensus`（`libs/poa`） |
 | PAF 隐式图 / 泛基因组 | [[impg.md]]、[[seqwish.md]]、[[smoothxg.md]]、[[minigraph.md]] | [[paf-pangenome.md]]（场景枢纽） | — | `pgr paf graph`（`libs/paf/graph`） |
 | syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
@@ -620,6 +620,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
 | [[mosdepth.md]] | mosdepth BAM/CRAM 深度计算器源码分析（差分数组 + CIGAR 事件，对照 rg coverage） |
 | [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
+| [[spoa.md]] | Spoa (SIMD POA) C++ 源码分析（偏序图 + SIMD DP，pgr `libs/poa` 参考） |
 
 ## 12. 笔记根文件索引（notes/）
 

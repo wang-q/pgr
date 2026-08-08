@@ -40,6 +40,14 @@ L	s1	+	s2	+	0M
 *   字段: `Type`, `From_Segment`, `From_Orient`, `To_Segment`, `To_Orient`, `Overlap`
 *   `0M` 表示无重叠连接（CIGAR 格式）。
 
+### Jump (J) - GFA 1.2
+类似 Link，但**不隐含两端节点的直接邻接**，而是给出两端之间的估计距离（gap）。
+```gfa
+J	s1	+	s2	+	500
+```
+*   字段: `Type`, `From_Segment`, `From_Orient`, `To_Segment`, `To_Orient`, `Dist`
+*   主要用途：跨 assembly gap（如 Hi-C / BioNano 支架）的 contig 连接关系。
+
 ### Path (P) - GFA 1.0
 定义一条路径（有序的节点列表）。
 ```gfa
