@@ -1512,3 +1512,64 @@ fixture ×method 的 `fixture_class`/`tier`/`method_family`/`method_parameters`/
   working on crush have been flailing without a clear spec"时，强制写权威 spec 并要求 "No code
   change should be proposed without referencing this document"。`pgr` 的 `notes/design/spoa_port.md`
   等移植笔记已有类似性质，可强化。
+
+## 11. 原创性调研（2026-08-08）
+
+> 结论：**产品定位原创，核心机制不新。** impg 首创的是"不物化全图、按需（即时）查询"这个
+> 产品定位；而"all-vs-all PAF 即隐式图 + 区间树索引 + 查询驱动传递闭包"这套机制，seqwish
+> （2022 bioRxiv / 2023 Bioinformatics）已有明确表述。
+
+### 11.1 结论分层
+
+- **机制层（不新）**：把两两比对当作隐式图、用区间树索引、通过查询归并传递匹配——seqwish
+  已完整实现并发表，impg 是其思想的对用户版本。
+- **产品层（impg 首创）**：不物化整张图，索引建好后按需投影目标区间、走传递闭包，输出
+  BED/PAF/FASTA，仅显式要求时才生成局部 GFA。公开文献中未查到更早的同款实现。
+- **注意作者重叠**：impg（Guarracino + Kille + Garrison）与 seqwish（Garrison + Guarracino）
+  是同一团队，这是对自有思想的延伸，不是第三方抢跑。
+
+### 11.2 先例与证据
+
+1. **seqwish**（Garrison & Guarracino, "Unbiased pangenome graphs", Bioinformatics 2023；
+   bioRxiv 2022-02）：
+   - "A set of pairwise alignments implies a variation graph, but there are no scalable methods
+     to generate such a graph from these alignments."
+   - "We first transform the alignment set into an **implicit interval tree**. To build up the
+     variation graph, we **query this tree-based representation of the alignments** to reduce
+     transitive matches into single DNA segments…"
+   - PGGB 官方文档同款描述："Build alignment graph with interval trees / Compute transitive
+     closure of bases"（https://pggb.readthedocs.io/）。
+2. **minigraph**（Li et al., Genome Biology 2020）：用 pairwise 比对增量构图，但参考锚定、
+   必须物化，与"隐式 + 按需"不同。
+3. **PGGB**（"Building pangenome graphs", Nature Methods 2024）：all-vs-all wfmash + seqwish
+   + smoothxg；其工作流已用 impg v0.2.0 提取 MHC 区域（scite 引用页：
+   https://scite.ai/reports/building-pangenome-graphs-J19VNnpY）。
+4. **nf-core/pangenome**（bioRxiv 2024.05.13.593871，Heumos/Guarracino/Garrison 等）：把 IMPG
+   描述为 "a tool that extracts homologous loci from all genomes mapped to a specific target
+   region"。
+5. **HPRCv2**（https://github.com/pangenome/HPRCv2，2025-06）：仓库定位 "pangenome alignment,
+   implicit/explicit graph, and variants for human pangenome project release 2"，隐式图即
+   impg 索引（`impg index -a hprc25272.aln.paf.gz`）——"implicit pangenome graph" 已成为
+   HPRC Release 2 的正式表示之一。
+6. **impg 论文状态**：未发表。Guarracino Lab 页面（2026-01）标注 "IMPG – Implicit pangenome
+   graphs for accessible pangenomics. – Guarracino et al., in preparation"
+   （https://guarracinolab.github.io/）。
+
+### 11.3 更早的思想根源
+
+- 组装领域 string graph / overlap graph（Myers 2005）：两两 overlap 即隐式图；miniasm（2016）
+  直接吃 minimap2 的 all-vs-all PAF 出图。
+- 局部图提取工具（odgi extract、vg chunk、Rukki、pancat isolate）：从**已物化**图取子图，
+  与 impg"不物化"恰好相反——反衬出 impg 的差异化点。
+
+### 11.4 对 pgr 的意义
+
+- `pgr paf`（query/index/graph）与 impg 同构（隐式图 + 区间树 + 传递闭包，见
+  [[paf-pangenome.md]]）。概念层面不构成"全新领域"；若论文宣称"首次提出"，seqwish 即可反驳。
+- 建议表述："把 seqwish 的隐式图思想扩展为按需局部图查询"，引用 seqwish + impg + HPRCv2，
+  强调 pgr 的增量（Chain/Net 数据源、多格式输出、局部 MSA）。
+
+### 11.5 检索说明
+
+- 基于公开网络资料（2026-08-08）；bioRxiv/PMC 有反爬，部分页面仅取到摘要/文档片段。
+- impg 论文未发表，无法排除更早未公开/未发表的同类工作。

@@ -26,23 +26,57 @@
 >    出现时用 `convert` 逃生舱。
 > 6. **决策 B（HV sketch 内嵌）**：暂缓，触发条件 = 出现"无源 FASTA、仅归档、
 >    需距离粗筛"的真实工作流（设计稿见 [[pbit-decisions.md]]）。
+>    **（2026-08-09 变更为明确不做**——HV 评测未达预期，后续换其他形式，
+>    见 `todo.md` §5）。
 
-## 当前状态（v1004，2026-08-02）
+## 核心设计：编码模型（2026-08-09 统一理解）
+
+pbit 是"2bit 参考 + delta 样本"的群体基因组压缩格式。编码模型如下：
+
+**参考层**：参考基因组按 `segment_size`（默认 4096 bp）分段，每段一条
+标准 2bit 记录（Reference Record），同时是 LZ-diff 的索引基础。
+
+**样本层（三级编码，逐段决策）**：
+
+1. **CIGAR / Identity**：样本段能对到参考（PAF 记录覆盖）→ 用 CIGAR
+   表示差异（纯 `=` 段用 Identity 零载荷指向参考区间）；
+2. **LZ-diff**：对不上但内容与某参考段相似 → 差异编码（k-mer 内容匹配）；
+3. **Raw（2bit）**：都匹配不上 → 原文 2bit 存储，保证严格无损。
+
+**段级混合（v1007+）**：同一段内 PAF 覆盖的部分用 CIGAR，未覆盖部分用
+LZ-diff / Raw 补齐——不要求整段对齐、不整段回退。
+
+**大链 / 碎链（2026-08-09 拍板）**：
+
+- 大链 = 能匹配上 Reference 的比对链（参与编码），判定不看长度；
+- 碎链 = 被其他大链覆盖的链（即使相似度更高也归碎链，原样存行以便
+  `to-paf` 还原），详见"大链与碎链：定义与判定"。
+
+**无损保证**：`to-fa` 逐碱基还原样本；`to-paf`（v1009 起）还原输入 PAF。
+
+## 当前状态（v1010，2026-08-09）
 
 pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别于 C++ AGC 的
 `.agc`）。已实现：
 
-- `pgr pbit create`（单/多参考，`-r` 可重复，TSV 第 4 列路由样本到参考）、
-  `append`（追加样本）、`append-ref`（追加参考）、`stat` / `to-fa` /
-  `some` / `range`（读取）；
+- 命令族：`create`（单/多参考，`-r` 可重复，TSV 第 4 列路由样本到参考）、
+  `append`、`append-ref`、`stat` / `to-fa` / `some` / `range`（读取）、
+  `to-paf`（v1009 起导出内嵌比对）；
 - 多参考（每参考一个 2bit 段组 + Reference Table），样本路由到指定参考；
   E. coli 双参考归档验证（样本路由正确、重建精确）；
 - **不内嵌索引**（决策 A）：`.pgi` 为独立临时工作对象，比对/距离时现建；
-- 版本 1004，仅当前版本可读写（不做旧版本兼容）。
+- 版本 1010，仅当前版本可读写（不做旧版本兼容）。
 
-> **已实现（2026-08-05，v1005）**：遮蔽（soft mask）方案 B 已落地——样本
-> 遮蔽随样本存储（`ContigSegs.mask_blocks`，继承 2bit mask_blocks 语义），
-> 存进存出一致；实现见下文"遮蔽处理：设计决策"章节。
+能力演进（v1004 → v1010）：
+- v1005：soft mask 随样本存储（`ContigSegs.mask_blocks`，继承 2bit
+  mask_blocks 语义），存进存出一致；
+- v1006：严格无损——无参考匹配段 Raw 存储；LZ 兜底内容匹配化
+  （canonical k-mer 倒排，无 PAF/同名也可 ~100% 无损）；
+- v1007：CIGAR 任意参考区间 + 段级混合编码（PAF 驱动生效，
+  54%→39%，见下文"PAF 驱动编码的演进"）；
+- v1008：Raw 段改标准 2bit 记录（语义与参考层统一）；
+- v1009：`to-paf` 无损还原输入 PAF（大链重建 + 碎链原样存行）；
+- v1010：Identity 零载荷指向参考区间（纯 `=` 段，见下文对应章节）。
 
 ## 快速参考
 
@@ -52,6 +86,7 @@ pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别�
 | `append` | build | 追加样本 | `in.pbit`, `-i sample.fa`, `-o out.pbit`（可选） |
 | `append-ref` | build | 追加参考 | `in.pbit`, `-r ref.fa`, `-o out.pbit`（可选） |
 | `to-fa` | transform | 提取所有样本为 FASTA | `in.pbit`, `-o out_dir/` |
+| `to-paf` | transform | 导出内嵌比对为 PAF（v1009） | `in.pbit`, `-s sample`（可选）, `-o out.paf` |
 | `some` | subset | 按样本名列表提取 | `in.pbit`, `sample_list.txt`, `-o out.fa` |
 | `range` | subset | 按 contig/区间提取 | `in.pbit`, `chr1:1-1000`, `-o out.fa` |
 | `stat` | info | 统计/列表 | `in.pbit`, `--samples` / `--refs` / `--contigs` |
@@ -59,10 +94,181 @@ pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别�
 样本名默认取输入 FASTA basename（`--name` TSV 可覆盖）。TSV 列：
 `sample_name<TAB>fasta_path[<TAB>paf_path][<TAB>ref_name]`。
 
-## 文件格式规范（v1004）
+## 编码模型详解
 
-> v1005（遮蔽方案 B，2026-08-05）将扩展 Sample Index 的 contig 记录加
-> `mask_blocks`；本规范描述 v1004 现状，变更见下文"遮蔽处理"章节。
+### LZ-diff（默认路径）
+
+样本段按 `segment_size` 分段，与参考段（整条 2bit 记录）做 LZ-diff
+（k-mer 哈希索引找最长匹配，`kmer_len`/`min_match_len` 控制），差异
+编码后 flate2 压缩。无 PAF 时所有样本段走此路径。
+
+### PAF 驱动的 CIGAR delta（`--paf` 路径）
+
+用 PAF（含 `cg:Z:` CIGAR，建议 `--eqx`）驱动压缩：样本段被 PAF 记录
+覆盖的部分按段切片存 CIGAR（`ref_start/ref_end` 定位参考区间，v1007 起
+为参考文件全局坐标、可跨参考段），同一段内未覆盖部分由 LZ-diff / Raw
+补齐（**段级混合编码**，不要求整段对齐）。`packed_data =
+flate2(u32 op_count + [CigarOp; op_count] + u32 base_count +
+[u8; base_count])`，CigarOp 为 `(op << 29) | len` 的 u32。
+
+**X/I 差异碱基存储（2026-08-05 核实）**：CIGAR 本身只存操作 + 长度，
+`X`（mismatch）/`I`（插入）的碱基内容收集进 **`xi_bases`**（差异碱基
+流），随 CIGAR 一起 flate2 压缩存储（`u32 base_count + [u8; base_count]`）；
+解码 `apply_cigar` 按 X/I 出现顺序从 xi_bases 取回，`=` 段从参考取、
+`D` 段跳过参考。**mismatch/插入碱基不丢失**：解码端校验
+`X/I 消费数 == xi_bases 长度` 且 `参考消费 == ref 长度`，不一致即报错
+（数据损坏时拒绝输出，而非静默丢碱基）。`=` 段依赖参考 2bit 记录完整。
+
+关键决策（详见旧版决策记录，已实现）：
+- **段级回退（v1006 及之前）**：最佳 alignment 未完整覆盖段、段跨多条
+  alignment 衔接、CIGAR target 投影跨参考段边界 → 整段回退 LZ-diff
+  （不拆段、不合并）。**v1007 起该路径退役**——改为段级混合编码
+  （覆盖部分 CIGAR + 未覆盖部分 LZ/Raw 补齐，见上）；
+- **`M` 处理**：`maf to-paf` 源头已产出 `=/X`；对 minimap2 未用 `--eqx`
+  的 `M` CIGAR 保留 `M → =/X` 拆分 fallback（压缩端读样本序列拆分）；
+- **query-side 索引**：pbit 自建 `BasicCOITree<PafMetadata>`（不复用
+  `PafIndex.reverse_trees`——其缺 `-` 链、元数据被交换、无公开查询接口）；
+- **无/坏 CIGAR**：记录级错误跳过 + 回退 LZ-diff（log 警告）；整个 PAF
+  不可用则报错终止（避免"以为生效实为全回退"）。
+
+### Identity 段存储：零开销指向参考区间（v1010，2026-08-09）
+
+**背景**：AGC 中样本段与参考完全相同（LZ-diff delta 为空）时，段描述符
+直接指向组内参考序列（`in_group_id = 0`），不产生任何 delta 载荷
+（`segment.cpp::add` 的 `IMPROVED_LZ_ENCODING` 分支）。pbit 此前即使
+纯 `=` 段也打包 CIGAR（`u32 op_count + op + u32 base_count`，再 flate2），
+同一参考区间被多个样本重复引用时各存一份。
+
+**实现（v1010）**：新增 `DeltaEncoding::Identity = 3`。CIGAR 切片经
+`split_m_to_eqx` 后若全为 `=`（无 X/I/D），不打包 CIGAR，改为零载荷
+delta：`packed_data` 为空，`ref_start/ref_end`（全局坐标）即样本段内容；
+解码端直接 `read_ref_interval` 取参考区间（`-` 链照常 `rev_comp`）。
+delta 按 `(encoding, is_rev_comp, raw_length)` 去重：同一参考组内所有
+同向等长 Identity 段共享一个空载荷条目，区间差异由段描述符携带——
+与 AGC "指向参考" 同构，而 pbit 因 delta 表按组存储，不需要特殊的
+"id 0 = 参考"约定。
+
+**一致性**：Identity 与 CIGAR 的 `=` 段语义相同（大小写不敏感比对、
+soft-mask 由 `mask_blocks` 恢复），`to-fa`/`get_sample` 长度校验不变；
+`pbit to-paf` 对 Identity 段合成单条 `=N` 参与链重建，`cg/cs/gi/bi`
+与打包 CIGAR 完全一致（`cs:Z` 输出 `:N`）。
+
+### Raw 段存储：为什么用 2bit 而不是 ASCII+flate2（2026-08-08，v1008）
+
+**背景**：v1007 的段级混合编码中，PAF 未覆盖且 LZ-diff 也匹配不上的段
+用 Raw 存储（无损兜底）。初版（v1006/v1007）Raw = `flate2(ASCII 碱基)`
+（DEFLATE = LZ77 + Huffman）。用户提出疑问：为什么不用 2bit？
+
+**实测（10 个真实 4 kb 段，0 N）**：
+
+| 存储方式 | 大小（相对 ASCII） |
+|---|---|
+| ASCII 原始 | 100% |
+| flate2(ASCII)（v1006/07 的 Raw） | 32.2% |
+| 2bit 原始 | **25.0%** |
+| 2bit + flate2 | 25.3% |
+
+**结论**：
+1. **2bit 比 flate2(ASCII) 小 7 pp**——flate2 压不到 DNA 的理论熵限
+   （4 符号 = 2 bit/碱基），Huffman 码长限制 + DEFLATE 开销让它停在
+   ~32%；2bit 精确 25%，且**再压几乎无空间**（25.3%，DEFLATE 头尾
+   开销反超收益）。
+2. **v1008 起 Raw 段 = 标准 2bit 记录**（与参考段同构：
+   `write_2bit_record` / `read_2bit_record`，N 用 2bit 的 N-block 结构
+   表示，样本 soft-mask 仍由 `mask_blocks` 单独存储）。不再 flate2。
+3. 差异小的原因是 Raw 段在 LZ 兜底后占比极小（实测 13/1947 段）；
+   但 2bit 实现几乎零成本（复用参考段的编解码路径），且语义上
+   "Raw = 参考同构的 2bit" 更自洽。
+
+## 大链与碎链：定义与判定（2026-08-09 澄清）
+
+> 状态：**定义已拍板，判定细节待讨论，代码未改**。本节先记录 v1009 的
+> 现状（含失误），再给出建议的判定细节，供下一步讨论后落地。
+
+### 定义（用户拍板，2026-08-09）
+
+- **大链（主链）**：**能匹配上 Reference 的比对链**——即参与编码的链。
+  判定**不看长度**（v1009 的 10 kb 阈值是失误，见下）。
+- **碎链**：**被其他大链覆盖的链**——即使其相似度更高，只要落在主链
+  覆盖范围内，就是碎链。相似度**不参与**大/碎判定。
+
+语义上等同于 primary/secondary：每个区域有一条主链负责编码（大链），
+其余重叠的链（碎链）不参与编码、原样存行以便 `to-paf` 还原。
+
+### 当前实现现状（v1009/v1010，代码事实）
+
+`compressor.rs` 目前**不是**按覆盖关系判定，而是：
+
+1. **候选主链按长度过滤**：`BIG_CHAIN_MIN_LEN = 10_000`（span ≥ 10 kb
+   才算候选，`try_encode_segment_cigar`）；span < 10 kb 的记录不参与
+   CIGAR 编码，段直接走 LZ/Raw 兜底。
+2. **best 主链按"覆盖度 → 相似度"选**：对每个 4 kb 段，在候选主链中选
+   覆盖度最大者，覆盖度相同再比 `gap_compressed_identity`——**相似度
+   参与了主链选择**，与"碎链即使相似度更高也算碎链"相反。
+3. **恢复区分类也按长度**：`append_sample_with_paf` 里
+   `is_complete_big = span ≥ 10 kb && 所有跨段都被编码` → 重建（ms 表）；
+   其余（span < 10 kb，或被更大重叠链抢走部分段的大链）→ 原样存行。
+4. **覆盖关系只在段级隐式存在**："嵌套小链不许抢大链"靠 10 kb 过滤
+   实现，并没有链级的主/碎消解步骤。
+
+实测影响（`bench-scale-and-pbit.md` #14k，00_3076 vs 00_3230）：809 条
+PAF 记录中按长度分类，碎链行原样存储约 ~100 KB/样本（大头 cg/cs 文本），
+PAF 恢复区使 delta/gzip 0.356 → 0.448（+9 pp）。
+
+### 与定义的差距（失误点）
+
+1. **10 kb 阈值是武断的**：能匹配参考但 span < 10 kb 的链被排除在编码
+   之外（回退 LZ/Raw），不能匹配参考的判定被长度替代。
+2. **相似度参与主链选择**：与"碎链即使相似度更高也算碎链"矛盾。
+3. **碎链定义被长度化**：v1009 的"碎链"实际是"小链 + 不完整大链"，
+   不是"被主链覆盖的链"。
+
+### 建议的判定细节（初稿，待重写）
+
+> **2026-08-09 用户澄清**：此前讨论的"覆盖轴"指 **以谁为坐标**
+> （reference vs query），**不是链与链之间的重叠**。编码以 reference
+> 为坐标（参考按 `segment_size` 分段，样本段逐段判定能否对到参考）。
+> 本初稿基于"链间 query 轴覆盖消解"的理解写出，**判定细节待按
+> reference 坐标系重写后再讨论**，以下仅作过程记录。
+
+1. **覆盖轴**：主/碎消解在 **query 轴（样本坐标）** 判定——链是样本
+   上的比对，target 轴可跨参考段，不宜作覆盖依据。
+2. **覆盖判定（链级消解，编码前一次性完成）**：
+   - 对每个样本，取全部能匹配参考的记录（PAF 解析成功即可，含无
+     `cg:Z` 者——后者不参与编码但保留行以便还原）；
+   - 记录 A 覆盖记录 B ⇔ A 的 query 区间**完全包含** B 的 query 区间；
+   - **被覆盖的链 = 碎链**（原样存行）；**不被任何链覆盖的链 = 主链**
+     （参与编码 + 可重建）；
+   - 相似度、mapq 不参与消解。
+3. **部分重叠（互不包含）**：两条链都不覆盖对方 → 都保留为主链；
+   段级编码时重叠段选覆盖度更大者，相似度仅作同等覆盖时的确定性
+   tiebreak（或不用）。
+4. **完全重叠**：需要确定性取舍——建议保留 span 更大者为主链、另者
+   为碎链；span 相同保留 PAF 输入序第一条（可复现）。
+5. **段级编码**：每段在覆盖它的主链中选一条编码（CIGAR/Identity）；
+   无主链覆盖的段 → LZ/Raw 兜底（语义不变）。
+6. **恢复区分类**：
+   - 主链所有跨段都被它自己编码 → 重建（ms 表）；
+   - 主链有跨段被其它主链抢走（部分重叠竞争）→ 归入碎链存行
+     （重建会失真，与 v1009 同理）；
+   - 碎链 → 原样存行。
+7. **`BIG_CHAIN_MIN_LEN` 退役**：主链判定不再依赖长度；常量删除或仅作
+   "重建行"的提示性字段保留（待定）。
+
+### 待定问题（下一步讨论）
+
+- 以 reference 为坐标的判定细节（按用户澄清重写，见上）；
+- 部分重叠时是否按重叠比例消解，还是"不覆盖即都保留"；
+- 完全重叠的 tiebreak（span / 输入序 / score）最终定哪个；
+- 无 `cg:Z` 的记录是否进碎链存行（现状是进 small 行，建议保留）；
+- 段级 best 的相似度 tiebreak 是否彻底移除（建议移除，保持"相似度
+  不参与主/碎"的一致性）。
+
+## 文件格式规范（v1010）
+
+> 本规范描述 v1010 现状；各版本格式变更见对应章节：遮蔽（v1005）、
+> CIGAR 任意参考区间（v1007）、Raw 段 2bit 化（v1008）、PAF 恢复区 +
+> `paf_data_offset`（v1009）、Identity（v1010）。
 
 所有整数固定大小小端序（u32/u64），字符串为 u32 长度前缀 + UTF-8，不用
 varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record` /
@@ -81,8 +287,10 @@ varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record
 │ Delta Data                          │  ← 每参考组的 delta 列表（flate2 压缩）
 ├─────────────────────────────────────┤  ← footer.sample_index_offset
 │ Sample Index (collection)           │  ← flate2(序列化 samples/contigs/segments)
+├─────────────────────────────────────┤  ← footer.paf_data_offset
+│ PAF Recovery (v1009)                │  ← flate2(PafRecovery：大链 ms 表 + 碎链行)
 ├─────────────────────────────────────┤
-│ Footer (固定 24 字节)               │
+│ Footer (固定 32 字节)               │
 └─────────────────────────────────────┘  ← EOF
 ```
 
@@ -90,7 +298,7 @@ varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record
 
 ```
 0  4  magic              0x54494250 ('PBIT')
-4  4  version            major*1000 + minor（当前 1004）
+4  4  version            major*1000 + minor（当前 1010）
 8  4  segment_size       分段大小（bp，如 4096）
 12 4  kmer_len           LZ-diff 哈希 k-mer 长度（如 15）
 16 4  min_match_len      LZ-diff 最小匹配长度（如 18）
@@ -134,7 +342,7 @@ for each ref_group:
     u8  is_rev_comp
     u32 raw_length      样本段长度（query 轴）
     u32 packed_size
-    u8  encoding        0 = LZ-diff, 1 = CIGAR
+    u8  encoding        0 = LZ-diff, 1 = CIGAR, 2 = Raw, 3 = Identity
     bytes packed_data   flate2(编码字节)
 ```
 
@@ -154,53 +362,52 @@ for each sample:
     for each segment（固定 16 字节）:
       u32 ref_group_id
       u32 delta_id
-      u32 ref_start     参考段内相对起始（CIGAR 用；LZ-diff 填 0）
-      u32 ref_end       参考段内相对结束（CIGAR 用；LZ-diff 填 0）
+      u32 ref_start     参考文件全局坐标（v1007 起，CIGAR/Identity 用；LZ-diff/Raw 填 0）
+      u32 ref_end       同上（参考文件全局坐标）
 str cmd_line
 ```
 
-### Footer（24 字节）
+### Footer（32 字节）
 
 ```
-u64 ref_index_offset / u64 delta_data_offset / u64 sample_index_offset
+u64 ref_index_offset / u64 delta_data_offset / u64 sample_index_offset /
+u64 paf_data_offset（v1009 起）
 ```
 
 > **设计要点**：无文件尾 magic（Header 已含）；全部固定大小字段（解析简单、
 > 破坏可校验）；`ref_group_count`/`sample_count` 在 Header/Index/Delta/
 > Sample 中重复——读取各 section 时就地校验一致性，避免损坏文件越界。
 
-## 编码算法
+## PAF 驱动编码的演进（#14 诊断 → v1010）
 
-### LZ-diff（默认路径）
+> 本节的路线与约束来自 `genome-nn-query.md` §8.5（原"pbit CIGAR 编码重构
+> 建议"），因属 pbit 实现/设计，已收拢至此统一维护。
 
-样本段按 `segment_size` 分段，与参考段（整条 2bit 记录）做 LZ-diff
-（k-mer 哈希索引找最长匹配，`kmer_len`/`min_match_len` 控制），差异
-编码后 flate2 压缩。无 PAF 时所有样本段走此路径。
+**起点（#14 诊断）**：初版 CIGAR 路径要求**段相位对齐**（单条 PAF 记录
+全覆盖 4096 bp 段），真实基因组的 indel 即破坏、段大小调参无效；
+LZ-diff 兜底又要求样本 contig 与参考**同名**，跨组装样本无法走通。
+三条可选路线（按"改动小 → 收益大"排序）：
 
-### PAF 驱动的 CIGAR delta（`--paf` 路径）
+1. **LZ 兜底内容匹配化**（→ **v1006，2026-08-08 已实现**）：把 LZ-diff
+   的"按 contig 名找参考段"改成"按内容找相似参考段"（canonical k-mer
+   倒排索引 + `best_ref_group`）。不改归档格式、不依赖长链对齐，任意
+   组装命名可用；压缩率低于 CIGAR 但**立即可用**（真实近缘样本 delta =
+   gzip-9 的 53%，~100% 无损，`bench-scale-and-pbit.md` #14f）。
+2. **跨相位 CIGAR 编码**（→ **v1007，2026-08-08 已实现**）：delta 引用
+   "任意参考区间"而非固定段（`SegmentDesc.ref_start/ref_end` 改参考文件
+   全局坐标 + 新增 `q_start`），按链/段混合编码（CIGAR 覆盖部分 +
+   Raw/LZ 补齐）。压缩率最高（真实 98.6% 对 delta/gzip 54%→39%）。
+   后续：v1009 `to-paf` 无损还原输入 PAF（大链重建 + 碎链原样存行，
+   delta/gzip 0.448）；v1010 Identity 零载荷（纯 `=` 段）。
+3. **pgi 长链链化**（**挂账**，依赖对齐器）：minimap2 式 chaining 产出
+   长链，满足"单记录全覆盖段"；对重排多的基因组仍会失败，收益有限。
+   （另有 `psl to-paf` 的 cg:Z 生产者缺口，链级，与本条相关。）
 
-用 PAF（含 `cg:Z:` CIGAR，建议 `--eqx`）驱动压缩：样本段被 PAF alignment
-完整覆盖时，把 CIGAR 按段切片存储（`ref_start/ref_end` 定位参考区间），
-`packed_data = flate2(u32 op_count + [CigarOp; op_count] + u32 base_count +
-[u8; base_count])`，CigarOp 为 `(op << 29) | len` 的 u32。
-
-**X/I 差异碱基存储（2026-08-05 核实）**：CIGAR 本身只存操作 + 长度，
-`X`（mismatch）/`I`（插入）的碱基内容收集进 **`xi_bases`**（差异碱基
-流），随 CIGAR 一起 flate2 压缩存储（`u32 base_count + [u8; base_count]`）；
-解码 `apply_cigar` 按 X/I 出现顺序从 xi_bases 取回，`=` 段从参考取、
-`D` 段跳过参考。**mismatch/插入碱基不丢失**：解码端校验
-`X/I 消费数 == xi_bases 长度` 且 `参考消费 == ref 长度`，不一致即报错
-（数据损坏时拒绝输出，而非静默丢碱基）。`=` 段依赖参考 2bit 记录完整。
-
-关键决策（详见旧版决策记录，已实现）：
-- **段级回退**：最佳 alignment 未完整覆盖段、段跨多条 alignment 衔接、
-  CIGAR target 投影跨参考段边界 → 整段回退 LZ-diff（不拆段、不合并）；
-- **`M` 处理**：`maf to-paf` 源头已产出 `=/X`；对 minimap2 未用 `--eqx`
-  的 `M` CIGAR 保留 `M → =/X` 拆分 fallback（压缩端读样本序列拆分）；
-- **query-side 索引**：pbit 自建 `BasicCOITree<PafMetadata>`（不复用
-  `PafIndex.reverse_trees`——其缺 `-` 链、元数据被交换、无公开查询接口）；
-- **无/坏 CIGAR**：记录级错误跳过 + 回退 LZ-diff（log 警告）；整个 PAF
-  不可用则报错终止（避免"以为生效实为全回退"）。
+**约束现状**（随版本解除）：
+- contig 同名约束 → v1006 内容匹配 + v1007 PAF 驱动，已解除；
+- 段相位对齐约束 → v1007 任意参考区间，已解除；
+- 长链全覆盖约束 → v1009 起大链（≥10 kb）重建、小链原样存行，
+  不再要求单记录全覆盖段。
 
 ## 遮蔽（soft mask）处理：设计决策（2026-08-05）
 
@@ -343,6 +550,7 @@ twoBit 风格接口"。
 pbit 失去"压缩格式"的意义。参考索引在需要比对/距离时现建（~0.3s）或由
 工作流在归档旁缓存为 `ref.pgi` 兄弟文件；与 FastGA"GIX 独立文件、用完即删"
 定位一致。HV sketch 内嵌（决策 B）暂缓，其算法设计待后续思考。
+（**2026-08-09 变更为明确不做**：HV 评测未达预期，后续换其他形式。）
 
 **追加语义**：
 - `append` 样本：尾部追加 delta → patch sample_count（v1001 起即有）；

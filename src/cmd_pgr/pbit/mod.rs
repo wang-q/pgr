@@ -5,6 +5,7 @@ pub mod range;
 pub mod some;
 pub mod stat;
 pub mod to_fa;
+pub mod to_paf;
 
 use anyhow::{Context, Result};
 use clap::{ArgMatches, Command};
@@ -249,6 +250,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(some::make_subcommand())
         .subcommand(stat::make_subcommand())
         .subcommand(to_fa::make_subcommand())
+        .subcommand(to_paf::make_subcommand())
 }
 
 /// Execute the pbit command.
@@ -261,6 +263,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
         Some(("to-fa", sub_matches)) => to_fa::execute(sub_matches),
+        Some(("to-paf", sub_matches)) => to_paf::execute(sub_matches),
         _ => Ok(()),
     }
 }

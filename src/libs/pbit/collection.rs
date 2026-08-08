@@ -28,14 +28,22 @@ const MAX_COLLECTION_UNCOMPRESSED: usize = 256 * 1024 * 1024;
 /// delta tables. `is_rev_comp` / `raw_length` / `encoding` live in
 /// `DeltaEntry` (shared by all segments pointing to the same delta).
 ///
-/// `ref_start` / `ref_end` are segment-relative offsets within the reference
-/// 2bit record (used by CIGAR-encoded deltas; 0 for LZ-diff deltas).
+/// `ref_start` / `ref_end` are reference-file-global coordinates since v1007
+/// (used by CIGAR- and Identity-encoded deltas, which may span multiple
+/// reference blocks); `q_start` is the sample-contig offset of this segment.
+/// For v1006 archives `q_start` is reconstructed as `seg_idx * segment_size`
+/// on read, and `ref_start`/`ref_end` are segment-relative (0 for
+/// LZ-diff/Raw deltas).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SegmentDesc {
     pub ref_group_id: u32,
     pub delta_id: u32,
     pub ref_start: u32,
     pub ref_end: u32,
+    pub q_start: u32,
+    /// Source PAF record id for CIGAR-encoded segments (v1009); `u32::MAX`
+    /// for LZ-diff/Raw segments (no PAF association).
+    pub paf_id: u32,
 }
 
 /// All segments of one contig within one sample.
@@ -89,6 +97,7 @@ impl Collection {
 
     /// Append a segment descriptor to `sample`'s `contig`.
     /// Panics-free: registers the sample/contig if missing.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_segment(
         &mut self,
         sample: &str,
@@ -97,6 +106,8 @@ impl Collection {
         delta_id: u32,
         ref_start: u32,
         ref_end: u32,
+        q_start: u32,
+        paf_id: u32,
     ) {
         self.register_sample_contig(sample, contig)
             .segments
@@ -105,6 +116,8 @@ impl Collection {
                 delta_id,
                 ref_start,
                 ref_end,
+                q_start,
+                paf_id,
             });
     }
 
@@ -148,6 +161,8 @@ impl Collection {
     ///     u32 segment_count
     ///     for each segment:
     ///       u32 ref_group_id + u32 delta_id + u32 ref_start + u32 ref_end
+    ///       u32 q_start
+    ///       u32 paf_id
     ///     u32 mask_count
     ///     for each mask: u32 start + u32 size
     /// u32 cmd_line_len + cmd_line_bytes
@@ -166,6 +181,8 @@ impl Collection {
                     write_u32_le(&mut raw, seg.delta_id)?;
                     write_u32_le(&mut raw, seg.ref_start)?;
                     write_u32_le(&mut raw, seg.ref_end)?;
+                    write_u32_le(&mut raw, seg.q_start)?;
+                    write_u32_le(&mut raw, seg.paf_id)?;
                 }
                 write_u32_le(&mut raw, cs.mask_blocks.len() as u32)?;
                 for &(start, size) in &cs.mask_blocks {
@@ -240,11 +257,15 @@ impl Collection {
                     let delta_id = read_u32_le(&mut cursor)?;
                     let ref_start = read_u32_le(&mut cursor)?;
                     let ref_end = read_u32_le(&mut cursor)?;
+                    let q_start = read_u32_le(&mut cursor)?;
+                    let paf_id = read_u32_le(&mut cursor)?;
                     segments.push(SegmentDesc {
                         ref_group_id,
                         delta_id,
                         ref_start,
                         ref_end,
+                        q_start,
+                        paf_id,
                     });
                 }
                 let mask_count = read_u32_le(&mut cursor)? as usize;
@@ -314,8 +335,8 @@ mod tests {
     #[test]
     fn test_single_sample_single_contig() -> Result<()> {
         let mut col = Collection::new();
-        col.add_segment("sample1", "chr1", 0, 0, 0, 0);
-        col.add_segment("sample1", "chr1", 1, 2, 0, 0);
+        col.add_segment("sample1", "chr1", 0, 0, 0, 0, 0, 0);
+        col.add_segment("sample1", "chr1", 1, 2, 0, 0, 0, 0);
 
         let data = col.serialize()?;
         let back = Collection::deserialize(&data)?;
@@ -329,7 +350,9 @@ mod tests {
                 ref_group_id: 0,
                 delta_id: 0,
                 ref_start: 0,
-                ref_end: 0
+                ref_end: 0,
+                q_start: 0,
+                paf_id: 0,
             }
         );
         assert_eq!(
@@ -338,7 +361,9 @@ mod tests {
                 ref_group_id: 1,
                 delta_id: 2,
                 ref_start: 0,
-                ref_end: 0
+                ref_end: 0,
+                q_start: 0,
+                paf_id: 0,
             }
         );
         Ok(())
@@ -349,11 +374,11 @@ mod tests {
         let mut col = Collection::new();
         col.cmd_line = "pgr pbit create -r ref.fa".to_string();
         // sample1: chr1 (2 segments) + chr2 (1 segment)
-        col.add_segment("sample1", "chr1", 0, 0, 0, 0);
-        col.add_segment("sample1", "chr1", 1, 1, 0, 0);
-        col.add_segment("sample1", "chr2", 2, 0, 0, 0);
+        col.add_segment("sample1", "chr1", 0, 0, 0, 0, 0, 0);
+        col.add_segment("sample1", "chr1", 1, 1, 0, 0, 0, 0);
+        col.add_segment("sample1", "chr2", 2, 0, 0, 0, 0, 0);
         // sample2: chr1 (1 segment)
-        col.add_segment("sample2", "chr1", 0, 3, 0, 0);
+        col.add_segment("sample2", "chr1", 0, 3, 0, 0, 0, 0);
 
         let data = col.serialize()?;
         let back = Collection::deserialize(&data)?;
@@ -374,7 +399,9 @@ mod tests {
                 ref_group_id: 2,
                 delta_id: 0,
                 ref_start: 0,
-                ref_end: 0
+                ref_end: 0,
+                q_start: 0,
+                paf_id: 0,
             }
         );
 
@@ -388,7 +415,9 @@ mod tests {
                 ref_group_id: 0,
                 delta_id: 3,
                 ref_start: 0,
-                ref_end: 0
+                ref_end: 0,
+                q_start: 0,
+                paf_id: 0
             }
         );
         Ok(())
@@ -409,7 +438,7 @@ mod tests {
         let col = Collection::new();
         assert!(col.get_contig_segments("nope", "chr1").is_none());
         let mut col2 = Collection::new();
-        col2.add_segment("s1", "chr1", 0, 0, 0, 0);
+        col2.add_segment("s1", "chr1", 0, 0, 0, 0, 0, 0);
         assert!(col2.get_contig_segments("s1", "chr2").is_none());
         assert!(col2.get_contig_segments("s2", "chr1").is_none());
     }
@@ -417,7 +446,7 @@ mod tests {
     #[test]
     fn test_unicode_sample_name() -> Result<()> {
         let mut col = Collection::new();
-        col.add_segment("样本_1", "chr1", 0, 0, 0, 0);
+        col.add_segment("样本_1", "chr1", 0, 0, 0, 0, 0, 0);
         let data = col.serialize()?;
         let back = Collection::deserialize(&data)?;
         assert_eq!(back.list_samples(), vec!["样本_1"]);

@@ -25,21 +25,6 @@ fn read_fasta_seq(path: &std::path::Path) -> String {
         .to_ascii_uppercase()
 }
 
-/// Read a single named record from a FASTA file.
-fn read_fasta_record(path: &std::path::Path, target: &str) -> String {
-    let content = fs::read_to_string(path).unwrap();
-    let mut in_target = false;
-    let mut seq = String::new();
-    for line in content.lines() {
-        if let Some(name) = line.strip_prefix('>') {
-            in_target = name == target;
-        } else if in_target {
-            seq.push_str(line);
-        }
-    }
-    seq.to_ascii_uppercase()
-}
-
 /// Run `pgr pbit create` with the given ref, then `pgr pbit to-fa` and return
 /// the extracted sequence for `sample_name`.
 fn create_and_extract(
@@ -119,6 +104,241 @@ fn test_pbit_paf_minus_strand_roundtrip() {
     );
     let expected = read_fasta_seq(&fixture("sample_2000_minus_strand.fa"));
     assert_eq!(got, expected);
+}
+
+// ── Test 2b: Identity encoding (segment == reference interval) ─────────
+
+#[test]
+fn test_pbit_paf_identity_encoding() {
+    // A sample identical to the reference (full-length '=' CIGAR) must be
+    // stored as zero-payload Identity segments (v1010) instead of packed
+    // CIGAR, and `to-paf` must still rebuild the original chain row.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let paf = temp.path().join("identical.paf");
+    fs::write(
+        &paf,
+        "chr1\t12289\t0\t12289\t+\tchr1\t12289\t0\t12289\t12289\t12289\t60\tcg:Z:12289=\n",
+    )
+    .unwrap();
+
+    let got = create_and_extract(
+        temp.path(),
+        &fixture("ref_12289.fa"),
+        &out_pbit,
+        &[
+            "-i",
+            fixture("ref_12289.fa").to_str().unwrap(),
+            "-p",
+            paf.to_str().unwrap(),
+        ],
+        "ref_12289",
+    );
+    let expected = read_fasta_seq(&fixture("ref_12289.fa"));
+    assert_eq!(got, expected);
+
+    // All four 4096 bp segments are Identity-encoded, none CIGAR.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
+        .run();
+    assert!(
+        stdout.contains("Identity 4"),
+        "expected 4 Identity segments, got: {}",
+        stdout
+    );
+    assert!(stdout.contains("Cigar 0"), "got: {}", stdout);
+
+    // to-paf rebuilds the single big-chain row from the Identity segments.
+    let out_paf = temp.path().join("out.paf");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-paf",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_paf.to_str().unwrap(),
+        ])
+        .run();
+    let content = fs::read_to_string(&out_paf).unwrap();
+    let fields: Vec<&str> = content.trim().split('\t').collect();
+    assert_eq!(fields.len(), 17, "12 + gi/bi/cg/cs + ms, got: {}", content);
+    assert_eq!(fields[4], "+");
+    assert_eq!(fields[9], "12289");
+    assert_eq!(fields[10], "12289");
+    assert!(fields.contains(&"cg:Z:12289="), "got: {}", content);
+    assert!(fields.contains(&"cs:Z::12289"), "got: {}", content);
+    assert!(fields.contains(&"gi:f:1.000000"), "got: {}", content);
+}
+
+// ── Test 2c: mixed Identity + CIGAR segments in one chain ──────────────
+
+#[test]
+fn test_pbit_paf_identity_mixed_chain() {
+    // A 12289 bp chain with a single SNP at position 5000 (inside segment 1):
+    // segments 0/2/3 slice to pure '=' and must be Identity-encoded, segment
+    // 1 stays CIGAR. `to-paf` must merge them back into the original chain
+    // row (cg and cs rebuilt from the concatenated ops).
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf = temp.path().join("mixed.paf");
+
+    let ref_seq = read_fasta_seq(&fixture("ref_12289.fa"));
+    let mut sample_seq = ref_seq.clone();
+    let r = ref_seq.as_bytes()[5000] as char;
+    let q = if r == 'A' { 'C' } else { 'A' };
+    sample_seq.replace_range(5000..5001, &q.to_string());
+    fs::write(&sample_fa, format!(">chr1\n{}\n", sample_seq)).unwrap();
+    fs::write(
+        &paf,
+        "chr1\t12289\t0\t12289\t+\tchr1\t12289\t0\t12289\t12288\t12289\t60\tcg:Z:5000=1X7288=\n",
+    )
+    .unwrap();
+
+    let got = create_and_extract(
+        temp.path(),
+        &fixture("ref_12289.fa"),
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    assert_eq!(got, sample_seq);
+
+    // Three pure-match segments are Identity, one carries the X.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
+        .run();
+    assert!(stdout.contains("Identity 3"), "got: {}", stdout);
+    assert!(stdout.contains("Cigar 1"), "got: {}", stdout);
+
+    // Chain rebuild keeps the single X at the right position.
+    let out_paf = temp.path().join("out.paf");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-paf",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_paf.to_str().unwrap(),
+        ])
+        .run();
+    let content = fs::read_to_string(&out_paf).unwrap();
+    let fields: Vec<&str> = content.trim().split('\t').collect();
+    assert_eq!(fields[9], "12288");
+    assert_eq!(fields[10], "12289");
+    assert!(fields.contains(&"cg:Z:5000=1X7288="), "got: {}", content);
+    let cs_expected = format!("cs:Z::5000*{}{}:7288", r.to_ascii_uppercase(), q);
+    assert!(fields.contains(&cs_expected.as_str()), "got: {}", content);
+}
+
+// ── Test 2d: to-paf full regression (big chain rebuilt, small verbatim) ─
+
+#[test]
+fn test_pbit_paf_to_paf_roundtrip() {
+    // v1009/v1010 regression: `to-paf` must rebuild big chains (CIGAR +
+    // Identity segments merged, cg/cs/gi/bi/ms recomputed) and pass small
+    // chains through verbatim, reproducing the input PAF field-for-field.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let sample_fa = temp.path().join("sample.fa");
+    let in_paf = temp.path().join("in.paf");
+    let out_paf = temp.path().join("out.paf");
+    let out_dir = temp.path().join("outdir");
+
+    let ref_seq = read_fasta_seq(&fixture("ref_12289.fa"));
+    let mut sample_seq = ref_seq.clone();
+    let q = if ref_seq.as_bytes()[6000] == b'C' {
+        'A'
+    } else {
+        'C'
+    };
+    sample_seq.replace_range(6000..6001, &q.to_string());
+    fs::write(&sample_fa, format!(">chr1\n{}\n", sample_seq)).unwrap();
+
+    // Row 1: big chain (>= 10 kb, spans all 4 segments) with one SNP.
+    // Row 2: small '-' chain, stored verbatim with its own tags.
+    let big = "chr1\t12289\t0\t12289\t+\tchr1\t12289\t0\t12289\t12288\t12289\t255\tcg:Z:6000=1X6288=\tms:i:142\n";
+    let small = "chr1\t12289\t500\t1800\t-\tchr1\t12289\t0\t1300\t1300\t1300\t60\tcg:Z:1300=\tcs:Z:1300\tms:i:77\n";
+    fs::write(&in_paf, format!("{}{}", big, small)).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_12289.fa").to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            in_paf.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // to-fa stays lossless.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(read_fasta_seq(&out_dir.join("sample.fa")), sample_seq);
+
+    // Segment mix: 3 pure-match segments Identity, the SNP segment CIGAR.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
+        .run();
+    assert!(stdout.contains("Identity 3"), "got: {}", stdout);
+    assert!(stdout.contains("Cigar 1"), "got: {}", stdout);
+
+    // to-paf: big-chain row rebuilt, small-chain row verbatim.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-paf",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_paf.to_str().unwrap(),
+        ])
+        .run();
+    let content = fs::read_to_string(&out_paf).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 2, "got: {}", content);
+
+    let big_fields: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(
+        &big_fields[0..12],
+        &[
+            "chr1", "12289", "0", "12289", "+", "chr1", "12289", "0", "12289", "12288", "12289",
+            "255"
+        ],
+        "got: {}",
+        content
+    );
+    assert!(big_fields.contains(&"gi:f:0.999919"), "got: {}", content);
+    assert!(big_fields.contains(&"bi:f:0.999919"), "got: {}", content);
+    assert!(
+        big_fields.contains(&"cg:Z:6000=1X6288="),
+        "got: {}",
+        content
+    );
+    let cs_expected = format!("cs:Z::6000*{}{}:6288", ref_seq.as_bytes()[6000] as char, q);
+    assert!(
+        big_fields.contains(&cs_expected.as_str()),
+        "got: {}",
+        content
+    );
+    assert!(big_fields.contains(&"ms:i:142"), "got: {}", content);
+    assert_eq!(lines[1], small.trim(), "got: {}", content);
 }
 
 // ── Test 3: M op split (minimap2 without --eqx) ────────────────────────
@@ -595,7 +815,9 @@ fn test_pbit_paf_minus_strand_with_xi() {
 // ref has chr_empty (0 bp) + chr1 (2000 bp). sample has chr_empty (500 bp)
 // + chr1 (ref with SNP at 100). Without the empty-ref guard,
 // ref_group_ids[0] panics for chr_empty. With the guard, chr_empty is
-// warned+skipped and chr1 roundtrips correctly via CIGAR encoding.
+// warned+skipped; since v1006 the unmatched contig is stored losslessly via
+// content-based LZ-diff / Raw fallback instead, so both contigs must
+// roundtrip exactly (no panic, no data loss).
 
 #[test]
 fn test_pbit_paf_empty_ref_contig() {
@@ -614,12 +836,10 @@ fn test_pbit_paf_empty_ref_contig() {
         ],
         "sample_empty_2000",
     );
-    // chr_empty is skipped (empty ref); output contains only chr1.
-    let expected = read_fasta_record(&fixture("sample_empty_2000.fa"), "chr1");
-    assert_eq!(
-        got, expected,
-        "chr1 roundtrip mismatch with empty ref contig"
-    );
+    // Both contigs roundtrip losslessly (chr_empty via Raw/LZ fallback,
+    // chr1 via CIGAR encoding).
+    let expected = read_fasta_seq(&fixture("sample_empty_2000.fa"));
+    assert_eq!(got, expected, "roundtrip mismatch with empty ref contig");
 }
 
 #[test]

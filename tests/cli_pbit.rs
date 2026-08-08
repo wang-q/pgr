@@ -777,17 +777,36 @@ fn test_pbit_no_match_contig() {
         ])
         .run();
 
-    // The sample should be registered (sample_count = 1) but with no contigs.
+    // The sample should be registered (sample_count = 1); since v1006 the
+    // unmatched contig is stored verbatim (Raw fallback), not skipped.
     let (stdout, _) = PgrCmd::new()
         .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
         .run();
     assert!(stdout.contains("Samples: 1"));
 
-    // stat --contigs should output nothing (no contigs for this sample).
+    // The contig is present in the archive.
     let (stdout, _) = PgrCmd::new()
         .args(&["pbit", "stat", out_pbit.to_str().unwrap(), "--contigs"])
         .run();
-    assert!(stdout.trim().is_empty());
+    assert!(
+        stdout.contains("unknown_1000_seed100\tunknown_contig"),
+        "expected stored contig, got: {}",
+        stdout
+    );
+
+    // And it roundtrips losslessly.
+    let out_dir = temp.path().join("out_fa");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+    let got = read_fasta_seq(&out_dir.join("unknown_1000_seed100.fa"));
+    assert_eq!(got, read_fasta_seq(&fixture("unknown_1000_seed100.fa")));
 }
 
 #[test]

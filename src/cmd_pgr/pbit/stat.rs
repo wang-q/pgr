@@ -101,6 +101,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .collect::<std::collections::HashSet<_>>()
                 .len();
             writeln!(writer, "Reference contigs: {}", ref_contigs)?;
+            let enc = dec.delta_encoding_counts();
+            writeln!(
+                writer,
+                "Delta encodings: LzDiff {} Cigar {} Raw {} Identity {}",
+                enc[0], enc[1], enc[2], enc[3]
+            )?;
         }
     }
 

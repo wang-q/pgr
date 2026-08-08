@@ -600,7 +600,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[agc-cpp.md]] | AGC (Assembled Genomes Compressor) C++ 源码分析（pbit 算法参考：LZ-diff、段级参考压缩） |
 | [[biser.md]] | BISER 分段重复 (SD) 检测源码与论文分析（pgr 实现见 [[design/sd.md]]） |
 | [[fastga.md]] | FastGA 快速全基因组比对器源码分析（adaptive seeds + wave aligner + trace points） |
-| [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影） |
+| [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影）+ 原创性调研（§11，2026-08-08） |
 | [[seqwish.md]] | seqwish 从 PAF 诱导 GFA 变异图（DSU 传递闭包） |
 | [[smoothxg.md]] | smoothxg GFA 图归一化（POA 块分解 + 平滑） |
 | [[minigraph.md]] | minigraph 参考锚定增量图构建（rGFA） |
@@ -620,7 +620,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 
 | 文档 | 定位 |
 |------|------|
-| [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽） |
+| [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽）+ PAF 爆炸调研（§8，2026-08-09） |
 | [[ecoli-cohort.md]] | E. coli 泛基因组端到端路线：4 万 cohort 去冗余/sparsify + 小 cohort（3 基因组）先行验证 |
 | [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |
 | [[ecoli-genome.md]] | 测试基因组数据（MG1655/Sakai/SE11）下载与使用说明 |

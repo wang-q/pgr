@@ -682,6 +682,27 @@ recall@10 已测，图检索部分待补。详见
 - 影响：Raw 段占比小，端到端压缩率结论（决策 14）不变；119 个
   pbit 测试 + 全量 621 测试通过，fmt/clippy 干净。
 
+**执行日志（2026-08-08 第十五轮）**：
+- 目标：用户确认 pbit 设计意图 = **省掉 PAF 文件依赖**（放入时基于
+  PAF 编码、比对信息内嵌、可从归档导出），推荐 PAF 生成链路 =
+  `align pgi → chainnet → maf to-paf`。
+- 验证：链路跑通，但发现两个真实障碍并修复：
+  ① chainnet 默认在序列名前加 basename 前缀（`GCF_xxx.NZ_...`），
+  与样本 FASTA contig 名不匹配 → PAF 驱动全部落空（此前"CIGAR 0
+  段"的主因其实是这个，不是相位约束）；修复 = 推荐链路加
+  `--t-name '' --q-name ''`（空前缀，纯 contig 名）。
+  ② 即使名字匹配，CIGAR 路径仍要求"单条记录全覆盖 4kb 段 + target
+  不跨段"（相位约束）→ **v1007 格式升级**：SegmentDesc 加 `q_start`、
+  `ref_start/ref_end` 改参考文件全局坐标；CIGAR 段级混合编码（PAF
+  覆盖部分 CIGAR + 剩余 Raw），不再要求整段对齐。
+- 结果 ✅：真实 98.6% 完整对（00_3076 vs 00_3230）CIGAR 1246 段 /
+  LZ 250 / Raw 451；to-fa 严格无损；delta/gzip 0.393（纯 LZ 0.539，
+  **CIGAR 混合 -14.6 pp**）。
+- 新增 `pgr pbit to-paf`：从归档导出内嵌比对（每个 CIGAR 段一条
+  PAF，12 列 + cg:Z）；闭环验证 pbit → to-paf → 重新 create 编码
+  分布一致 + 严格无损。
+- 注：fas_xlsx 有并行审计改动，未触碰（用户指示）。
+
 ## 8. 证据汇总与设计决策建议（2026-08-08）
 
 > 目的：把 §7.4 的 20+ 项实验收敛为对核心场景（物种内聚类选参考 +
@@ -703,7 +724,7 @@ recall@10 已测，图检索部分待补。详见
 | 9 | ANI 阈值 | 95% 物种边界实证成立（同种误伤 0.8%、异种漏判 11.4%）；90% 为保守提示 | 物种标签分布 | `bench-taxonomy-ci-tree.md` |
 | 10 | 树 | minhash 树近缘段与 bac120 树弱一致（ρ0.3–0.4）→ 物种级参考拓扑用 bac120 | 两树 cophenetic | `bench-taxonomy-ci-tree.md` |
 | 11 | pgi | pgi 距离近缘段弱（ρ−0.71）；`pgi to-hv` 保距（ρ0.97），可作 pgi→HV 嵌入 | pgi 标定 | `bench-pgi-calibration.md` |
-| 12 | PBit | **v1006 起 ACGTN 严格无损**：无参考匹配的段 Raw 存储（不再静默跳过，逐碱基核对 10/10）；唯一有损 = IUPAC 简并 → N（用户允许）；CIGAR 路径约束：cg:Z、段全覆盖、段内目标；真实链粒度 1.1 kb << 4 kb 段，需长链化 | pbit 深挖 + 无损核对 | `bench-scale-and-pbit.md` #14a–d/#14h |
+| 12 | PBit | **v1006 起 ACGTN 严格无损**（无匹配段 Raw 存储；唯一有损 = 简并 → N，用户允许）；**v1007 起 CIGAR 支持任意参考区间**（段级混合编码），PAF 驱动真正生效（98.6% 对 delta/gzip 54%→39%）；**v1009 起 `pbit to-paf` 无损还原输入 PAF**（809/809 行逐字段一致：大链按 `paf_id` 合并且 cg/cs/gi/bi 重算、ms 存表；碎链行原样存储；含 PAF 恢复区 delta/gzip 0.448）；**v1010 起 Identity 零载荷**（纯 `=` 段指向参考区间） | pbit 深挖 v1007–v1010，能力状态统一维护于 `design/pbit.md` | `bench-scale-and-pbit.md` #14a–d/#14h/#14k/#14l |
 | 13 | 规模 | 2,088 全量实测：精确 5.55 ms、HNSW ef10 0.45 ms（12×）；建库 15 min（8 并行流式）；15,574 外推 ≈ 37 ms | `bench-scale-and-pbit.md` #8b | `bench-scale-and-pbit.md` |
 | 14 | **参考选择** | 簇内选参考**不要选距离中心**（典型 draft、内容覆盖少，压缩率最差：longest vs center 差 3.4 pp，71/98 查询 longest 更优）；**"必须 Complete"的规则不来自压缩率**——配对实验 draft-longest 反而 -2 pp（56/75 对，contig 颗粒对齐 + 质粒/未装配内容共享）；Complete 优先的正当理由是比对质量/坐标可解释性/下游一致性；簇内无 Complete 时用最长 draft 或并入相邻簇；单参考随机性影响 3–4 pp，小簇可多参考摊平 | 100 样本 × 3 策略 + Complete/draft 配对 | `bench-e2e-cluster-ref-pbit.md` |
 
@@ -736,30 +757,12 @@ recall@10 已测，图检索部分待补。详见
 - pgr `psl to-paf` 的 cg:Z 生产者（链级，与上一条相关）；
 - 用户文档（docs/*.md）阈值与默认参数建议随语言处理一起落地。
 
-### 8.5 pbit CIGAR 编码重构建议（来自 #14 诊断）
+### 8.5 pbit 编码演进（已收拢至 design/pbit.md）
 
-问题：CIGAR 路径要求**段相位对齐**（#14e），真实基因组 indel 即破坏，
-段大小调参无效；LZ-diff 兜底又要求样本 contig 与参考**同名**，跨组装
-样本无法走通。三条可选路线（按"改动小 → 收益大"排序）：
-
-1. **LZ 兜底内容匹配化（推荐先做）**：把 LZ-diff 的"按 contig 名找
-   参考段"改成"按内容找相似参考段"（参考段建 sketch/索引，样本段
-   查询最近参考段）。不改归档格式、不依赖长链对齐，对任意组装
-   命名都可用；压缩率低于 CIGAR（只压相似段）但**立即可用**。与
-   现有 `min_match_len` 机制同构，改动集中。
-2. **跨相位 CIGAR 编码（长期）**：delta 引用"任意参考区间"而非固定
-   段（DeltaEntry 增加 ref_offset/长度），按链/相位区间编码。压缩率
-   最高，但改动归档格式（版本 + 旧 reader 兼容策略）。
-3. **pgi 长链链化（依赖对齐器）**：minimap2 式 chaining 产出长链，
-   满足"单记录全覆盖段"；对重排多的基因组仍会失败，收益有限。
-
-建议路径：先做 1（解锁真实压缩率、端到端闭环），把 2 作为格式升级
-候选，3 视对齐器投入决定。三条均已挂 todo（#14 后续）。
-
-**状态更新（2026-08-08）**：路线 1 **已实现并验证**（#14 ✅）——
-`Compressor::best_ref_group` canonical k-mer 倒排索引内容匹配；真实
-近缘样本 delta = gzip-9 的 53%（100% 无损）。路线 2/3 保持挂账（CIGAR
-相位编码长期优化 / 长链链化依赖对齐器）。
+pbit 的编码路线与约束现状已统一维护在
+[design/pbit.md](../design/pbit.md)（"PAF 驱动编码的演进"章节；三条路线
+现状：LZ 内容匹配化 v1006 ✅、跨相位 CIGAR v1007 ✅（+ v1009 to-paf、
+v1010 Identity）、pgi 长链链化挂账）。
 
 ### 8.6 用户文档改动清单（发现 → docs/*.md，语言处理时套用）
 

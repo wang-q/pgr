@@ -23,10 +23,48 @@ use super::collection::{Collection, SegmentDesc};
 
 /// (contig_name, segments, mask_blocks) gathered for one sample's contigs.
 type SampleContig = (String, Vec<SegmentDesc>, Vec<(u32, u32)>);
+
+/// Parse the flate2-compressed PAF recovery block written by
+/// `Compressor::write_paf_data` (v1009).
+fn read_paf_data(data: &[u8]) -> Result<Vec<PafRecovery>> {
+    use std::io::Read;
+    let mut decoder = flate2::read::GzDecoder::new(data);
+    let mut raw = Vec::new();
+    decoder
+        .by_ref()
+        .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
+        .read_to_end(&mut raw)?;
+    if raw.len() > MAX_DELTA_UNCOMPRESSED {
+        anyhow::bail!(
+            "PAF recovery data exceeds maximum uncompressed size {} bytes",
+            MAX_DELTA_UNCOMPRESSED
+        );
+    }
+    let mut cursor = std::io::Cursor::new(raw);
+    let sample_count = read_u32_le(&mut cursor)? as usize;
+    let mut out = Vec::with_capacity(sample_count.min(1024));
+    for _ in 0..sample_count {
+        let sample = read_string(&mut cursor)?;
+        let big_count = read_u32_le(&mut cursor)? as usize;
+        let mut big_ms = Vec::with_capacity(big_count.min(1 << 16));
+        for _ in 0..big_count {
+            let record_id = read_u32_le(&mut cursor)?;
+            let ms = read_u32_le(&mut cursor)? as i32;
+            big_ms.push((record_id, ms));
+        }
+        let small_count = read_u32_le(&mut cursor)? as usize;
+        let mut small = Vec::with_capacity(small_count.min(1 << 16));
+        for _ in 0..small_count {
+            small.push(read_string(&mut cursor)?);
+        }
+        out.push((sample, big_ms, small));
+    }
+    Ok(out)
+}
 use super::format::{
-    read_ref_index, read_ref_table, read_u32_le, DeltaEncoding, DeltaMeta, PbitFooter, PbitHeader,
-    RefGroupEntry, RefTableEntry, MAX_DELTAS_PER_GROUP, MAX_DELTA_UNCOMPRESSED, MAX_PACKED_SIZE,
-    MAX_REF_GROUPS,
+    read_ref_index, read_ref_table, read_string, read_u32_le, DeltaEncoding, DeltaMeta,
+    PafRecovery, PbitFooter, PbitHeader, RefGroupEntry, RefTableEntry, MAX_DELTAS_PER_GROUP,
+    MAX_DELTA_UNCOMPRESSED, MAX_PACKED_SIZE, MAX_REF_GROUPS,
 };
 use super::segment::Segment;
 
@@ -43,10 +81,18 @@ pub struct Decompressor<R: Read + Seek> {
     ref_meta: Vec<RefTableEntry>,
     /// contig name → Vec<ref_group_id> (reference segments, ordered).
     contig_groups: IndexMap<String, Vec<u32>>,
+    /// ref_group_id → global reference offset of the segment's first base
+    /// (v1007 CIGAR deltas reference reference-file-global coordinates).
+    seg_starts: Vec<u64>,
+    /// Total reference length across all reference files.
+    ref_total_len: u64,
     /// All contig names appearing in any sample's collection (for
     /// `contains_contig`).
     contig_set: HashSet<String>,
     collection: Collection,
+    /// PAF recovery data per sample (v1009): (sample, big-chain ms table,
+    /// verbatim small-chain PAF rows).
+    paf_data: Vec<PafRecovery>,
     /// delta_meta[ref_group_id][delta_id] → header info (no packed data).
     /// Used by `get_contig` to compute segment coordinates for smart slice
     /// selection (skip non-overlapping segments).
@@ -171,6 +217,17 @@ impl<R: Read + Seek> Decompressor<R> {
                 .push(i as u32);
         }
 
+        // Build the reference coordinate index (global offset per segment).
+        let mut seg_starts = Vec::with_capacity(ref_groups.len());
+        let mut ref_pos = 0u64;
+        for entry in &ref_groups {
+            seg_starts.push(ref_pos);
+            reader.seek(SeekFrom::Start(entry.segment_offset))?;
+            let dna_size = read_u32_le(&mut reader)? as u64;
+            ref_pos += dna_size;
+        }
+        let ref_total_len = ref_pos;
+
         // Scan delta data: read each delta's 10-byte header, build delta_meta
         // and delta_offsets (without decompressing data).
         reader.seek(SeekFrom::Start(footer.delta_data_offset))?;
@@ -217,12 +274,13 @@ impl<R: Read + Seek> Decompressor<R> {
             delta_offsets.push(offsets);
         }
 
-        // Read sample index (collection, flate2-compressed). The collection
-        // spans [sample_index_offset, footer_start) where footer_start =
-        // file_size - 24.
+        // Read sample index (collection, flate2-compressed) and the PAF
+        // recovery data. The collection spans [sample_index_offset,
+        // paf_data_offset) and PAF data spans [paf_data_offset, footer_start)
+        // where footer_start = file_size - 32 (v1009 footer).
         let file_size = reader.seek(SeekFrom::End(0))?;
         let footer_start = file_size
-            .checked_sub(24)
+            .checked_sub(32)
             .ok_or_else(|| anyhow!("pbit file too small: {} bytes", file_size))?;
         if footer.sample_index_offset > footer_start {
             return Err(anyhow!(
@@ -236,6 +294,17 @@ impl<R: Read + Seek> Decompressor<R> {
         let mut compressed = vec![0u8; collection_len as usize];
         reader.read_exact(&mut compressed)?;
         let collection = Collection::deserialize(&compressed)?;
+
+        // PAF recovery data (v1009; empty for archives without it).
+        let paf_data = if footer.paf_data_offset < footer_start {
+            let paf_len = footer_start - footer.paf_data_offset;
+            reader.seek(SeekFrom::Start(footer.paf_data_offset))?;
+            let mut paf_compressed = vec![0u8; paf_len as usize];
+            reader.read_exact(&mut paf_compressed)?;
+            read_paf_data(&paf_compressed)?
+        } else {
+            Vec::new()
+        };
 
         // Validate sample_count consistency.
         if header.sample_count != collection.samples.len() as u32 {
@@ -263,8 +332,11 @@ impl<R: Read + Seek> Decompressor<R> {
             ref_groups,
             ref_meta,
             contig_groups,
+            seg_starts,
+            ref_total_len,
             contig_set,
             collection,
+            paf_data,
             delta_meta,
             delta_offsets,
             ref_cache: LruCache::new(NonZeroUsize::new(64).unwrap()),
@@ -308,6 +380,57 @@ impl<R: Read + Seek> Decompressor<R> {
         &self.ref_groups
     }
 
+    /// Global reference offset of each reference segment's first base.
+    pub fn ref_seg_starts(&self) -> &[u64] {
+        &self.seg_starts
+    }
+
+    /// Return the reference contig name, the contig-relative start of the
+    /// given reference segment, and the contig's total length. Used by
+    /// `pbit to-paf` to project global reference coordinates back to contig
+    /// coordinates.
+    pub fn ref_group_location(&self, ref_group_id: u32) -> Option<(String, u32, u32)> {
+        let entry = self.ref_groups.get(ref_group_id as usize)?;
+        let segs = self.contig_groups.get(&entry.contig_name)?;
+        let idx = segs.iter().position(|&g| g == ref_group_id)?;
+        let seg_size = self.header.segment_size;
+        let start = idx as u32 * seg_size;
+        // Contig total length = all full segments plus the actual length of
+        // the last (possibly shorter) segment.
+        let last_gid = segs[segs.len() - 1];
+        let g_start = self.seg_starts[last_gid as usize];
+        let g_end = if last_gid as usize + 1 < self.seg_starts.len() {
+            self.seg_starts[last_gid as usize + 1]
+        } else {
+            self.ref_total_len
+        };
+        let total = (segs.len() - 1) as u32 * seg_size + (g_end - g_start) as u32;
+        Some((entry.contig_name.clone(), start, total))
+    }
+
+    /// Read one segment's delta metadata and packed payload (without
+    /// decoding). Used by `pbit to-paf` to recover embedded CIGAR alignments.
+    pub fn segment_payload(&mut self, seg: &SegmentDesc) -> Result<(DeltaMeta, Vec<u8>)> {
+        let gid = seg.ref_group_id as usize;
+        let did = seg.delta_id as usize;
+        let meta = self
+            .delta_meta
+            .get(gid)
+            .and_then(|row| row.get(did))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "segment_payload: ref_group {} / delta {} out of range",
+                    seg.ref_group_id,
+                    seg.delta_id
+                )
+            })?;
+        let offset = self.delta_offsets[gid][did];
+        self.reader.seek(SeekFrom::Start(offset + 10))?;
+        let mut packed = vec![0u8; meta.packed_size as usize];
+        self.reader.read_exact(&mut packed)?;
+        Ok((*meta, packed))
+    }
+
     /// Per-reference metadata (name, group range, embedded-index offsets).
     pub fn ref_table(&self) -> &[RefTableEntry] {
         &self.ref_meta
@@ -321,6 +444,29 @@ impl<R: Read + Seek> Decompressor<R> {
     /// Return the collection (for `stat --contigs`).
     pub fn collection(&self) -> &Collection {
         &self.collection
+    }
+
+    /// PAF recovery data per sample (v1009): big-chain (record_id, ms) tables
+    /// and verbatim small-chain PAF rows.
+    pub fn paf_data(&self) -> &[PafRecovery] {
+        &self.paf_data
+    }
+
+    /// Count referenced deltas by encoding type (LzDiff/Cigar/Raw/Identity).
+    pub fn delta_encoding_counts(&self) -> [usize; 4] {
+        let mut counts = [0usize; 4];
+        for contigs in self.collection.samples.values() {
+            for contig in contigs {
+                for seg in &contig.segments {
+                    if let Some(row) = self.delta_meta.get(seg.ref_group_id as usize) {
+                        if let Some(meta) = row.get(seg.delta_id as usize) {
+                            counts[meta.encoding as usize] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        counts
     }
 
     /// Return the footer (for `Compressor::open_for_append`).
@@ -346,6 +492,53 @@ impl<R: Read + Seek> Decompressor<R> {
         let seq_bytes = seq.into_bytes();
         self.ref_cache.put(ref_group_id, seq_bytes.clone());
         Ok(seq_bytes)
+    }
+
+    /// Read an arbitrary reference interval `[start, end)` in
+    /// reference-file-global coordinates (v1007 CIGAR deltas). May span
+    /// multiple reference segments; the interval is stitched from segment
+    /// slices.
+    pub fn read_ref_interval(&mut self, start: u64, end: u64) -> Result<Vec<u8>> {
+        if start >= end {
+            return Ok(Vec::new());
+        }
+        if end > self.ref_total_len {
+            anyhow::bail!(
+                "read_ref_interval: end {} exceeds total reference length {}",
+                end,
+                self.ref_total_len
+            );
+        }
+        let mut idx = match self.seg_starts.binary_search(&start) {
+            Ok(i) => i,
+            Err(0) => {
+                anyhow::bail!("read_ref_interval: start {} before first segment", start)
+            }
+            Err(i) => i - 1,
+        };
+        let mut out = Vec::with_capacity((end - start) as usize);
+        let mut cur = start;
+        while cur < end {
+            let seg_start = self.seg_starts[idx];
+            let seg_end = if idx + 1 < self.seg_starts.len() {
+                self.seg_starts[idx + 1]
+            } else {
+                self.ref_total_len
+            };
+            let seg = self.read_ref_segment(idx as u32)?;
+            let lo = (cur - seg_start) as usize;
+            let hi = ((end - seg_start) as usize).min((seg_end - seg_start) as usize);
+            if lo > seg.len() || hi > seg.len() {
+                anyhow::bail!(
+                    "read_ref_interval: segment {idx} slice [{lo}, {hi}) out of range (len {})",
+                    seg.len()
+                );
+            }
+            out.extend_from_slice(&seg[lo..hi]);
+            cur = seg_start + hi as u64;
+            idx += 1;
+        }
+        Ok(out)
     }
 
     /// Read a delta's packed data and decode it (LZ-diff or CIGAR depending
@@ -382,9 +575,6 @@ impl<R: Read + Seek> Decompressor<R> {
             );
         }
 
-        // Read reference segment.
-        let ref_dna = self.read_ref_segment(seg.ref_group_id)?;
-
         // Read packed delta data. The 10-byte header was already scanned at
         // construction and cached in self.delta_meta, so seek past it.
         let offset = self.delta_offsets[gid][did];
@@ -396,6 +586,8 @@ impl<R: Read + Seek> Decompressor<R> {
         // Decode by encoding type.
         let decoded = match meta.encoding {
             DeltaEncoding::LzDiff => {
+                // Read the owning reference segment (LZ-diff is segment-relative).
+                let ref_dna = self.read_ref_segment(seg.ref_group_id)?;
                 // LZ-diff: packed_data is flate2-compressed raw delta. Bound the
                 // decompressed size to reject gzip bombs (an attacker could
                 // otherwise expand a tiny payload into a multi-GB allocation).
@@ -424,33 +616,36 @@ impl<R: Read + Seek> Decompressor<R> {
                         seg.ref_end
                     );
                 }
-                if (seg.ref_end as usize) > ref_dna.len() {
-                    anyhow::bail!(
-                        "decode_delta: ref_end {} > ref segment length {}",
-                        seg.ref_end,
-                        ref_dna.len()
-                    );
-                }
                 let (ops, xi_bases) = unpack_cigar(&packed)?;
-                let ref_slice = &ref_dna[seg.ref_start as usize..seg.ref_end as usize];
-                apply_cigar(ref_slice, &ops, &xi_bases)?
+                // ref_start/ref_end are reference-file-global coordinates.
+                let ref_dna = self.read_ref_interval(seg.ref_start as u64, seg.ref_end as u64)?;
+                apply_cigar(&ref_dna, &ops, &xi_bases)?
             }
             DeltaEncoding::Raw => {
-                // Verbatim segment: packed_data is flate2-compressed original
-                // sequence; the reference segment is not used.
-                let mut decoder = flate2::read::GzDecoder::new(&packed[..]);
-                let mut raw = Vec::new();
-                decoder
-                    .by_ref()
-                    .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
-                    .read_to_end(&mut raw)?;
-                if raw.len() > MAX_DELTA_UNCOMPRESSED {
+                // Verbatim segment as a standard 2bit record; the reference
+                // segment is not used.
+                let mut cursor = std::io::Cursor::new(&packed[..]);
+                let seq = read_2bit_record(&mut cursor, false, None, None, true)?;
+                seq.into_bytes()
+            }
+            DeltaEncoding::Identity => {
+                // Zero-payload pointer: the sample segment is exactly the
+                // reference interval (rev-comp applied below).
+                if seg.ref_start >= seg.ref_end {
                     anyhow::bail!(
-                        "Raw delta decompressed size exceeds maximum {} bytes",
-                        MAX_DELTA_UNCOMPRESSED
+                        "decode_delta: invalid Identity reference interval [{}; {})",
+                        seg.ref_start,
+                        seg.ref_end
                     );
                 }
-                raw
+                if seg.ref_end - seg.ref_start != meta.raw_length {
+                    anyhow::bail!(
+                        "decode_delta: Identity interval length {} does not match raw_length {}",
+                        seg.ref_end - seg.ref_start,
+                        meta.raw_length
+                    );
+                }
+                self.read_ref_interval(seg.ref_start as u64, seg.ref_end as u64)?
             }
         };
 
@@ -504,6 +699,8 @@ impl<R: Read + Seek> Decompressor<R> {
         for (sample, segments, mask_blocks) in sample_segs {
             // Extract raw_lengths first to release the immutable borrow on
             // self.delta_meta before calling self.decode_delta (mutable).
+            // v1007 segments carry explicit contig offsets; order by q_start
+            // and compute each segment's contig interval [q_start, q_start+len).
             let seg_lens: Vec<usize> = segments
                 .iter()
                 .map(|seg| {
@@ -527,7 +724,16 @@ impl<R: Read + Seek> Decompressor<R> {
                     Ok::<usize, anyhow::Error>(meta.raw_length as usize)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let total_len: usize = seg_lens.iter().sum();
+            let mut order: Vec<usize> = (0..segments.len()).collect();
+            order.sort_by_key(|&i| segments[i].q_start);
+            let total_len: usize = order
+                .iter()
+                .map(|&i| {
+                    let seg = &segments[i];
+                    (seg.q_start as usize).saturating_add(seg_lens[i])
+                })
+                .max()
+                .unwrap_or(0);
 
             // Clamp [s, e) to [0, total_len].
             let s = start.unwrap_or(0).min(total_len);
@@ -539,28 +745,28 @@ impl<R: Read + Seek> Decompressor<R> {
             // Decode only segments overlapping [s, e) (smart selection, like
             // the reference layer's read_sequence).
             let mut result = Vec::new();
-            let mut offset: usize = 0;
-            for (seg, &seg_len) in segments.iter().zip(seg_lens.iter()) {
-                let seg_end = offset + seg_len;
-                if seg_end > s && offset < e {
+            for &i in &order {
+                let seg = &segments[i];
+                let seg_start = seg.q_start as usize;
+                let seg_end = seg_start + seg_lens[i];
+                if seg_end > s && seg_start < e {
                     let decoded = self.decode_delta(seg)?;
                     anyhow::ensure!(
-                        decoded.len() == seg_len,
+                        decoded.len() == seg_lens[i],
                         "decoded segment length {} does not match metadata raw_length {} \
                          for sample '{}' contig '{}' (archive may be corrupt)",
                         decoded.len(),
-                        seg_len,
+                        seg_lens[i],
                         sample,
                         contig
                     );
-                    let local_start = s.saturating_sub(offset).min(decoded.len());
-                    let local_end = (e - offset).min(seg_len).min(decoded.len());
+                    let local_start = s.saturating_sub(seg_start).min(decoded.len());
+                    let local_end = (e - seg_start).min(seg_lens[i]).min(decoded.len());
                     if local_start < local_end {
                         result.extend_from_slice(&decoded[local_start..local_end]);
                     }
                 }
-                offset = seg_end;
-                if offset >= e {
+                if seg_start >= e {
                     break;
                 }
             }
@@ -618,7 +824,13 @@ impl<R: Read + Seek> Decompressor<R> {
 
         for (contig_name, segments, mask_blocks) in contig_segs {
             let mut full_seq = Vec::new();
-            for seg in &segments {
+            // Segments may be non-contiguous in insertion order (v1007 mixed
+            // CIGAR/Raw encoding); order by sample-contig offset and require a
+            // gapless tiling so reconstruction is exact.
+            let mut ordered = segments.clone();
+            ordered.sort_by_key(|s| s.q_start);
+            let mut cur = 0u32;
+            for seg in &ordered {
                 let decoded = self.decode_delta(seg)?;
 
                 // Validate decoded length against cached metadata (indices come
@@ -647,6 +859,16 @@ impl<R: Read + Seek> Decompressor<R> {
                     contig_name
                 );
 
+                if seg.q_start != cur {
+                    anyhow::bail!(
+                        "gap in sample '{}' contig '{}': segment at {} expected {} (archive may be corrupt)",
+                        sample,
+                        contig_name,
+                        seg.q_start,
+                        cur
+                    );
+                }
+                cur = seg.q_start + decoded.len() as u32;
                 full_seq.extend_from_slice(&decoded);
             }
             // Restore soft-mask (lowercase) intervals so reconstruction is
@@ -779,6 +1001,7 @@ mod tests {
             ref_index_offset: 36,
             delta_data_offset: 36,
             sample_index_offset: 36,
+            paf_data_offset: 36,
         };
         let mut buf = Vec::new();
         header.write_to(&mut buf)?;
@@ -806,6 +1029,7 @@ mod tests {
             ref_index_offset: 36,
             delta_data_offset: 36,
             sample_index_offset: 36,
+            paf_data_offset: 36,
         };
         let mut buf = Vec::new();
         header.write_to(&mut buf)?;
@@ -831,6 +1055,7 @@ mod tests {
             ref_index_offset: 36,
             delta_data_offset: 36,
             sample_index_offset: 36,
+            paf_data_offset: 36,
         };
         let mut buf = Vec::new();
         header.write_to(&mut buf)?;
@@ -864,6 +1089,7 @@ mod tests {
             ref_index_offset: 36,
             delta_data_offset: 36,
             sample_index_offset: 36,
+            paf_data_offset: 36,
         };
         let mut buf = Vec::new();
         header.write_to(&mut buf)?;
@@ -922,6 +1148,7 @@ mod tests {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset: buf.len() as u64,
+            paf_data_offset: buf.len() as u64,
         };
         footer.write_to(&mut buf)?;
         std::fs::write(&path, &buf)?;
@@ -1292,8 +1519,8 @@ mod tests {
         // Delta data layout: delta_data_offset + 4 (ref_group_count) + 4 (delta_count)
         // + 1 (is_rev_comp) -> raw_length u32.
         let mut file = std::fs::File::open(&out_path)?;
-        file.seek(SeekFrom::End(-24))?;
-        let mut footer_buf = [0u8; 24];
+        file.seek(SeekFrom::End(-32))?;
+        let mut footer_buf = [0u8; 32];
         file.read_exact(&mut footer_buf)?;
         let delta_data_offset = u64::from_le_bytes([
             footer_buf[8],
@@ -1346,8 +1573,8 @@ mod tests {
 
         // Patch the first delta's raw_length to be larger than the decoded segment.
         let mut file = std::fs::File::open(&out_path)?;
-        file.seek(SeekFrom::End(-24))?;
-        let mut footer_buf = [0u8; 24];
+        file.seek(SeekFrom::End(-32))?;
+        let mut footer_buf = [0u8; 32];
         file.read_exact(&mut footer_buf)?;
         let delta_data_offset = u64::from_le_bytes([
             footer_buf[8],

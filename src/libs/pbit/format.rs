@@ -19,7 +19,28 @@ pub const PBIT_VERSION_MAJOR: u32 = 1;
 ///
 /// v6 (2026-08-08): `DeltaEncoding::Raw` added; segments with no matching
 /// reference content are stored verbatim so the archive is strictly lossless.
-pub const PBIT_VERSION_MINOR: u32 = 6;
+///
+/// v7 (2026-08-08): `SegmentDesc` gains `q_start` and its `ref_start/ref_end`
+/// become reference-file-global coordinates, so CIGAR deltas may reference any
+/// reference interval (not just a single 4096 bp block). PAF-driven encoding
+/// no longer requires segment-phase alignment.
+///
+/// v8 (2026-08-08): `DeltaEncoding::Raw` payload switches from
+/// flate2(ASCII bases) to a standard 2bit record (same encoding as reference
+/// segments; N via the 2bit N-block structure). 2bit is ~7 pp smaller than
+/// flate2(ASCII) for DNA and needs no secondary compression.
+///
+/// v9 (2026-08-08): archives store per-sample PAF recovery data: verbatim
+/// rows for records not CIGAR-encoded (small chains) plus the MAF score
+/// (`ms:i`) of CIGAR-encoded records, so `pbit to-paf` can reproduce the
+/// original PAF (big chains merged back to chain level, ms restored).
+/// `SegmentDesc` gains `paf_id` (source PAF record id); footer gains
+/// `paf_data_offset`.
+///
+/// v10 (2026-08-09): `DeltaEncoding::Identity` added; a segment exactly
+/// identical to a reference interval (CIGAR ops all '=') is stored as a
+/// zero-payload pointer to that interval instead of a packed CIGAR.
+pub const PBIT_VERSION_MINOR: u32 = 10;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 
@@ -32,6 +53,9 @@ pub enum DeltaEncoding {
     /// Verbatim (flate2-compressed) sample sequence; used for segments with
     /// no matching reference content so the archive stays lossless.
     Raw = 2,
+    /// Zero-payload pointer to a reference interval; used when the sample
+    /// segment is exactly identical to it (CIGAR ops all '=').
+    Identity = 3,
 }
 
 impl DeltaEncoding {
@@ -40,10 +64,15 @@ impl DeltaEncoding {
             0 => Ok(Self::LzDiff),
             1 => Ok(Self::Cigar),
             2 => Ok(Self::Raw),
+            3 => Ok(Self::Identity),
             _ => Err(anyhow!("invalid DeltaEncoding: {}", v)),
         }
     }
 }
+
+/// PAF recovery data for one sample (v1009): (sample name, big-chain ms
+/// table as (record_id, ms), verbatim small-chain PAF rows).
+pub type PafRecovery = (String, Vec<(u32, i32)>, Vec<String>);
 
 /// File header (fixed 36 bytes, at file start).
 #[derive(Debug, Clone)]
@@ -138,6 +167,7 @@ pub struct PbitFooter {
     pub ref_index_offset: u64,
     pub delta_data_offset: u64,
     pub sample_index_offset: u64,
+    pub paf_data_offset: u64,
 }
 
 impl PbitFooter {
@@ -146,32 +176,35 @@ impl PbitFooter {
         let ref_index_offset = read_u64_le(reader)?;
         let delta_data_offset = read_u64_le(reader)?;
         let sample_index_offset = read_u64_le(reader)?;
+        let paf_data_offset = read_u64_le(reader)?;
         let footer = Self {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
+            paf_data_offset,
         };
         Ok(footer)
     }
 
-    /// Write the footer (24 bytes) to the writer.
+    /// Write the footer (32 bytes) to the writer.
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.ref_index_offset.to_le_bytes())?;
         writer.write_all(&self.delta_data_offset.to_le_bytes())?;
         writer.write_all(&self.sample_index_offset.to_le_bytes())?;
+        writer.write_all(&self.paf_data_offset.to_le_bytes())?;
         Ok(())
     }
 
     /// Read the footer from the end of a seekable reader.
     pub fn read_at_end<R: Read + Seek>(reader: &mut R) -> Result<Self> {
         let file_size = reader.seek(SeekFrom::End(0))?;
-        if file_size < 24 {
+        if file_size < 32 {
             return Err(anyhow!(
                 "pbit file too small for footer: {} bytes",
                 file_size
             ));
         }
-        reader.seek(SeekFrom::Start(file_size - 24))?;
+        reader.seek(SeekFrom::Start(file_size - 32))?;
         Self::read_from(reader)
     }
 }
@@ -504,16 +537,18 @@ mod tests {
             ref_index_offset: 1024,
             delta_data_offset: 2048,
             sample_index_offset: 4096,
+            paf_data_offset: 0,
         };
         let mut buf = Vec::new();
         footer.write_to(&mut buf)?;
-        assert_eq!(buf.len(), 24);
+        assert_eq!(buf.len(), 32);
 
         let mut cursor = Cursor::new(buf);
         let read = PbitFooter::read_from(&mut cursor)?;
         assert_eq!(read.ref_index_offset, 1024);
         assert_eq!(read.delta_data_offset, 2048);
         assert_eq!(read.sample_index_offset, 4096);
+        assert_eq!(read.paf_data_offset, 0);
         Ok(())
     }
 
@@ -523,6 +558,7 @@ mod tests {
             ref_index_offset: 100,
             delta_data_offset: 200,
             sample_index_offset: 300,
+            paf_data_offset: 0,
         };
         // Prepend some padding before the footer
         let mut buf = vec![0xABu8; 50];
@@ -624,6 +660,29 @@ mod tests {
     }
 
     #[test]
+    fn test_delta_entry_identity_roundtrip() -> Result<()> {
+        // Identity entries carry no payload; the 10-byte header alone must
+        // roundtrip with encoding preserved.
+        let entry = DeltaEntry {
+            is_rev_comp: true,
+            raw_length: 4096,
+            packed_data: Vec::new(),
+            encoding: DeltaEncoding::Identity,
+        };
+        let mut buf = Vec::new();
+        entry.write_to(&mut buf)?;
+        assert_eq!(buf.len(), 10);
+
+        let mut cursor = Cursor::new(buf);
+        let read = DeltaEntry::read_from(&mut cursor)?;
+        assert!(read.is_rev_comp);
+        assert_eq!(read.raw_length, 4096);
+        assert!(read.packed_data.is_empty());
+        assert_eq!(read.encoding, DeltaEncoding::Identity);
+        Ok(())
+    }
+
+    #[test]
     fn test_string_roundtrip() -> Result<()> {
         let s = "hello pbit 世界";
         let mut buf = Vec::new();
@@ -644,6 +703,7 @@ mod tests {
             ref_index_offset: 0,
             delta_data_offset: 0,
             sample_index_offset: 0,
+            paf_data_offset: 0,
         };
 
         let mut buf = Vec::new();
@@ -652,7 +712,7 @@ mod tests {
         // No ref index / delta data / sample index sections
         footer.write_to(&mut buf)?;
 
-        assert_eq!(buf.len(), 60); // 36 + 24
+        assert_eq!(buf.len(), 68); // 36 + 32
 
         let mut cursor = Cursor::new(buf);
         let read_header = PbitHeader::read_from(&mut cursor)?;
@@ -706,6 +766,7 @@ mod tests {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
+            paf_data_offset: 0,
         };
         footer.write_to(&mut buf)?;
 

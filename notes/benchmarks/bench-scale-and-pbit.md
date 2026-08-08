@@ -250,6 +250,118 @@ gzip 的核心价值。
 - 压缩率影响：Raw 段只出现在无匹配内容，占比小；端到端 279 对
   delta/gzip 结论（决策 14）不变。
 
+### #14i v1007：任意参考区间 + PAF 驱动真正生效（2026-08-08）
+
+背景：用户确认 pbit 设计意图 = 省掉 PAF 文件依赖（比对信息内嵌、
+可从归档导出）；推荐 PAF 生成链路 `align pgi → chainnet → maf to-paf`。
+
+发现的两个真实障碍：
+1. **名字前缀**：chainnet 默认序列名 = `{basename}.{contig}`
+   （如 `GCF_048571645.NZ_CP074967.1`），与样本 FASTA 的 contig 名
+   （`NZ_CP074967.1`）不匹配 → PAF 索引查不到 → CIGAR 0 段。**这
+   才是此前"CIGAR 0"的主因**（相位约束是次要/未触发的）。修复 =
+   推荐链路 `chainnet --t-name '' --q-name ''`（空前缀）。
+2. **段相位约束**：CIGAR 路径要求单条记录全覆盖 4kb 段 + target 不
+   跨段。v1007 格式升级：`SegmentDesc` 加 `q_start`、
+   `ref_start/ref_end` 改为参考文件全局坐标，CIGAR 段级混合编码
+   （PAF 覆盖部分 CIGAR + 剩余 Raw/LZ），不再要求整段对齐。
+
+实测（00_3076 vs 00_3230，mash 0.0142 / ANI≈98.6%）：
+
+| 指标 | v1006 纯 LZ | v1007 CIGAR 混合 |
+|---|---|---|
+| 编码分布 | LzDiff 1496 | Cigar 1246 / LzDiff 250 / Raw 451 |
+| delta/gzip-9 | 0.539 | **0.393**（-14.6 pp） |
+| to-fa 严格无损 | ✓ | ✓（逐碱基 + 顺序一致） |
+
+闭环验证：`pbit to-paf`（新命令，导出内嵌比对，12 列 + cg:Z）→
+重新 `pbit create --paf` → 编码分布一致（Cigar 1246）+ 严格无损。
+
+### #14j 段内未覆盖部分的兜底：LZ-diff vs Raw（2026-08-08）
+
+背景：v1007 的 CIGAR 混合编码里，段内 PAF 未覆盖的部分最初用 Raw
+（flate2 原文）兜底，实测占了 451/1947 段（~1.8 Mb）。对比改用
+LZ-diff 内容匹配（`best_ref_group` 找参考段编码差异，AGC 路线）
+兜底、失败才 Raw：
+
+| 兜底方式 | 编码分布 | delta/gzip-9 |
+|---|---|---|
+| Raw | Cigar 1246 / LzDiff 250 / Raw 451 | 0.393 |
+| **LZ-diff（失败才 Raw）** | Cigar 1246 / LzDiff 688 / Raw **13** | **0.356**（-3.7 pp） |
+
+to-fa 严格无损（两者）。结论：**未覆盖部分大多仍与参考高度相似
+（只是 PAF 没对齐到），LZ-diff 能利用参考相似性（匹配指令远小于
+原文），flate2 只能压 2bit 冗余**——差异明显（3.7 pp），Raw 只留给
+LZ 都匹配不上的极端段（13/1947）。A 路径的兜底层 = AGC 式内容匹配，
+与"无 PAF 独立路径"是两个概念：前者是段内补充，后者是整段入口。
+
+**v1008（2026-08-08）**：Raw 段从 `flate2(ASCII)` 改为**标准 2bit 记录**
+（与参考段同构，N 用 2bit N-block）。实测 flate2(ASCII) 32.2% vs 2bit
+25.0%（DNA 4 符号熵限 = 2 bit/碱基，flate2 压不到；2bit 再压无空间，
+25.3%）。设计决策与数据见 `design/pbit.md`"Raw 段存储"。因 Raw 段
+占比极小（13/1947），总压缩率不变（0.356），但语义与参考层统一、
+实现零成本（复用 `write/read_2bit_record`）。
+
+### #14k v1009：PAF 可无损还原（2026-08-09）
+
+目标：`pbit to-paf` 导出的 PAF 与输入 PAF **逐字段一致**（用户原则：
+"存进去什么，出来什么"，顺序可调）。
+
+设计：
+- **大链**（span ≥ 10 kb）不存 PAF 行：所有跨段强制用它编码（嵌套小链
+  不许抢），`to-paf` 按 `paf_id` 合并段回链级记录，从归档 CIGAR 重建
+  cg:Z、从 CIGAR + xi_bases + 参考序列重算 cs:Z、gi/bi 重算、ms 单独
+  存表（~2 KB/样本）。不完整的大链（被更大重叠链抢走部分段）归入碎链
+  存行。
+- **碎链**（< 10 kb，及不完整大链）：PAF 行原样存进归档（v1009 PAF
+  恢复区，flate2 压缩；~100 KB/样本，大头是 cg/cs 文本）。
+- qlen/tlen/qname/tname 不存（归档 contig 表恢复）。
+
+验证（00_3076 vs 00_3230，809 条 PAF 记录）：
+
+| 指标 | 结果 |
+|---|---|
+| 行数 | 809 = 809 |
+| 坐标/matches/block/gi/bi/ms | 100% 一致 |
+| cg:Z / cs:Z | 100% 一致（含 `-` 链方向修复、相邻 op 合并） |
+| to-fa 无损 | ✓ |
+| delta/gzip（含 PAF 恢复区） | 0.448（纯压缩 0.356，+9 pp = 可还原 PAF 的代价） |
+
+踩坑记录：① `-` 链 CIGAR 是 RC(query) vs 正向 target，段拼接顺序要
+反向、target 端点映射要交换；② 段拼接后相邻同 op 要合并；③ PAF 的
+block_length = matches+X+I+D（含 D），不是 query 跨度；④ cs:Z 可从
+CIGAR + xi_bases + 参考序列重算（不必存大链的）。
+
+结论：**PAF 驱动现在是主路径**（chainnet 大链 + 段级混合 CIGAR），
+LZ 内容匹配降级为无 PAF 时的兜底；推荐链路开箱即用（无需改 PAF）。
+
+### #14l v1010：Identity 零开销指向参考（2026-08-09）
+
+背景：AGC 对"样本段与参考完全相同"的段不存 delta（`IMPROVED_LZ_ENCODING`
+下 delta 为空即指向组内参考，见 `segment.cpp::add`）。pbit 此前纯 `=` 段
+仍打包 CIGAR（`u32 op_count + op + u32 base_count` + flate2），同一参考
+区间被多个样本重复引用时各存一份。
+
+实现：`DeltaEncoding::Identity`——CIGAR 切片后全为 `=`（无 X/I/D）时
+`packed_data` 置空，段描述符的 `ref_start/ref_end` 即内容；解码端直接读
+参考区间（`-` 链 rev_comp）。delta 按 `(encoding, is_rev_comp,
+raw_length)` 去重，同组同向等长 Identity 段共享一个空载荷条目。
+`to-paf` 对 Identity 段合成 `=N` 参与链重建。
+
+验证（ref_12289.fa，12289 bp = 4 段，PAF `cg:Z:12289=`）：
+
+| 指标 | 结果 |
+|---|---|
+| stat | `Delta encodings: LzDiff 0 Cigar 0 Raw 0 Identity 4` |
+| to-fa | 严格无损（逐碱基） |
+| to-paf | 重建 1 条链：`cg:Z:12289=`、`cs:Z::12289`、gi/bi 1.0 |
+| 混合链 | 段 0/2/3 Identity + 段 1 CIGAR（1 个 X）时链重建正确 |
+  （`cg:Z:5000=1X7288=` 逐字段一致） |
+
+收益：纯 `=` 段 delta 从"flate2(4 字节头 + 1 op)"降到 0 载荷；对
+近缘/相同样本集群（Identity 段占比高）节省所有重复 CIGAR 打包与
+flate2 开销。格式版本 v1009 → v1010（不兼容，沿用版本策略）。
+
 ## #10 SQLite 向量存储路径实测（2026-08-08）
 
 方法：2,088 个真实 HV（i32 4096，16 KB/个）写入 SQLite BLOB

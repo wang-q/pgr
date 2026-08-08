@@ -56,7 +56,8 @@ pgr 走向泛基因组时，面对的问题与 impg **完全不同**。impg 的�
 ### 1.3 与 `--sparsify` 的关系：分场景
 
 impg 的 `--sparsify auto` 用 Mash KNN 从 N 个基因组中选 K 个近邻做比对，把 N² 降到 N×K。
-**这是隐式图架构避免 N² 爆炸的核心机制**——稀疏比对 + 查询时 BFS 传递闭包推断未比对的对。
+**这是隐式图架构避免 N² 爆炸的核心机制**——稀疏比对 + 查询时 BFS 传递闭包推断未比对的对
+（PAF 爆炸的文献与真实案例见 §8）。
 
 pgr 是否需要 sparsify **取决于 cohort 规模和已有资产**：
 
@@ -696,3 +697,66 @@ Minigraph 骨架构建 → 图映射定位 → rgfa-split 切分 → 批量 Cact
 | minigraph `gfa_t` 对应实现              | pgr 走 seqwish DSU 路线                    | 永不                                                                  |
 | 1ALN/TPA 格式支持                       | pgr 用 PAF/MAF                             | 永不                                                                  |
 | `--end-trim` 比对边缘修剪               | 需要 per-interval 修剪 CIGAR 两端，与当前"区间整体投影"模型不兼容 | 引入序列级输出时一并处理（见 §6.4）                                   |
+
+---
+## 8. PAF 爆炸调研（文献与讨论，2026-08-09）
+
+"PAF 爆炸"实际指两种不同的问题，处理方式完全不同：
+
+1. **O(N²) all-vs-all 爆炸**：N 个基因组的全两两比对，比对对数 ~N²/2，PAF 总量随 N² 增长。
+   这是算法层面的"pair 数量"问题，靠 sparsify（§1.3 / [[ecoli-cohort.md]]）或免 all-vs-all
+   路线解决。
+2. **重复序列引发的二次爆炸**：高拷贝重复区（着丝粒/卫星 DNA、paralog）让同一区间出现海量
+   PAF hits，BFS/图构建时节点度暴涨。这是单区间"拷贝数"问题，靠 `--repeat-max` 类限流解决。
+
+### 8.1 O(N²) all-vs-all 爆炸（学术文献）
+
+1. **PGGB**（Garrison et al., "Building pangenome graphs", *Nature Methods* 2024，
+   DOI 10.1038/s41592-024-02430-3）：明确 "uses all-to-all alignments"；补充材料专门讨论随机
+   稀疏化（Erdős–Rényi 模型定阈值）降低 all-vs-all 计算复杂度
+   （bioRxiv https://www.biorxiv.org/content/10.1101/2023.04.05.535718v2、
+   PubMed https://pubmed.ncbi.nlm.nih.gov/39433878/）。
+2. **Mumemto**（Shivakumar & Langmead, *Genome Research* 2025）：明确指出 N 个基因组 pairwise
+   需 O(N²) 次、impractical（bioRxiv
+   https://www.biorxiv.org/content/10.1101/2025.01.05.631388v1.full）。
+3. **FastGA**（Myers, Durbin, Zhou & Wheeler, *Bioinformatics Advances* 2025，
+   https://pmc.ncbi.nlm.nih.gov/articles/PMC12624442/）：2 Gbp 蝙蝠基因组实测——tracepoint ALN
+   66 MB，带 CIGAR 的标准 PAF 1.03 GB（约 16 倍），证明 PAF 虽比嵌序列格式小，仍可很大。
+4. **免 all-vs-all 路线**（侧面印证问题存在）：
+   - syng（https://github.com/richarddurbin/syng）：syncmer 图，无 pairwise
+   - AlfaPang（PubMed https://pubmed.ncbi.nlm.nih.gov/40375333/）
+   - ntSynt（*BMC Biology* 2025，https://link.springer.com/article/10.1186/s12915-025-02455-w）
+   - MumemtoM（WABI 2025）：474 个人类单倍型测试
+
+### 8.2 O(N²) 爆炸（真实案例与讨论）
+
+1. **Biostars 364209**：minimap2 all-vs-all 跑约 70 小时，产出 **689 GB PAF**
+   （https://www.biostars.org/p/364209/）。
+2. **CONSENT issue #8**：60× 的 600 Mb 纳米孔数据，all-vs-all PAF 到 **2.1 TB** 后被迫终止
+   （https://github.com/morispi/CONSENT/issues/8）。
+3. **seqwish issue #67**：4 个大麦基因组仅 chr5H 就 19 GB PAF → bad_alloc；全基因组跑 17 天
+   未完成（https://github.com/pangenome/seqwish/issues/67）。
+4. **seqwish issue #123**（ekg 回复）：用 wfmash 的 sparsification factor 随机子采样要比对的
+   mapping，缓解 quadratic all-to-all，即 `pggb -x auto`
+   （https://github.com/ekg/seqwish/issues/123）。
+5. **CGT discussion #1386**（Super-pangenomes）：加大 divergence 参数后 all-vs-all 从几分钟
+   变成几天，pggb 的 all-vs-all 操作 unfeasible
+   （https://github.com/orgs/ComparativeGenomicsToolkit/discussions/1386）。
+6. **impg issue #11**：几百 GB PAF 重建索引无变更检测、成本高
+   （https://github.com/pangenome/impg/issues/11）。
+
+### 8.3 重复序列引发的二次爆炸
+
+- **PGGB 论文 Extended Data Fig. 2**：原始 seqwish 图在着丝粒/卫星 DNA 处节点度暴涨，靠
+  smoothxg 归一化；seqwish 自带 `--repeat-max` 限流。
+- **本地佐证**：[[ecoli-cohort.md]] 记录传递 BFS 对 10 kb 区域返回 73 条结果导致 POA 爆炸。
+
+### 8.4 对 pgr 的印证与启示
+
+- 印证 §1.3 / [[ecoli-cohort.md]] 的 N² → N×K sparsify 路线：这是 PGGB/Mumemto/seqwish 共同
+  面对并解决的问题，不是 pgr 特有的工程焦虑。
+- **补充 nuance**：PAF 比嵌序列格式（ALN/2bit）小，但带 CIGAR 的 PAF 仍可很大（FastGA 实测
+  16 倍）。§2.3"索引全量装入"在几百 GB PAF 场景下不可行，需 disk-backed interval tree
+  （§5.2 路径 A 已有此项）。
+- 重复序列二次爆炸对应 pgr 已有/规划能力：查询层 `--max-depth`、图构建层
+  `--repeat-max / --min-repeat-dist`（§5.2 路径 A），与 PGGB/seqwish 的应对一致。

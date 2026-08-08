@@ -41,6 +41,9 @@ fn coord_to_i32(val: u32, field: &str, line: &str) -> Option<i32> {
 /// during indexing.
 #[derive(Debug, Clone)]
 pub struct PafAlign {
+    /// 0-based id of the PAF record in the input file (v1009; links CIGAR
+    /// segments back to their source record for chain-level reconstruction).
+    pub record_id: u32,
     pub query_id: u32,
     pub query_start: i32,
     pub query_end: i32,
@@ -55,6 +58,9 @@ pub struct PafAlign {
 pub struct PafQueryIndex {
     pub names: IndexMap<String, u32>,
     pub trees: HashMap<u32, BasicCOITree<PafAlign, u32>>,
+    /// Original PAF lines, indexed by `record_id` (v1009). Records skipped
+    /// during indexing (malformed / no CIGAR) are not stored.
+    pub records: Vec<String>,
 }
 
 impl PafQueryIndex {
@@ -66,6 +72,7 @@ impl PafQueryIndex {
     pub fn build<R: BufRead>(reader: R) -> Result<Self> {
         let mut names: IndexMap<String, u32> = IndexMap::new();
         let mut by_query: HashMap<u32, Vec<Interval<PafAlign>>> = HashMap::new();
+        let mut records: Vec<String> = Vec::new();
         let mut total_lines = 0usize;
         let mut failed_count = 0usize;
 
@@ -132,6 +139,7 @@ impl PafQueryIndex {
             let target_name = rec.target_name.clone();
 
             let meta = PafAlign {
+                record_id: records.len() as u32,
                 query_id,
                 query_start,
                 query_end,
@@ -145,6 +153,7 @@ impl PafQueryIndex {
                 .entry(query_id)
                 .or_default()
                 .push(Interval::new(query_start, query_end, meta));
+            records.push(line);
         }
 
         // All non-empty lines failed to parse → treat as non-PAF format (decision 8).
@@ -162,7 +171,22 @@ impl PafQueryIndex {
             trees.insert(qid, BasicCOITree::new(&intervals));
         }
 
-        Ok(Self { names, trees })
+        Ok(Self {
+            names,
+            trees,
+            records,
+        })
+    }
+
+    /// Extract the MAF score (`ms:i:`) from a stored PAF line, if present.
+    pub fn record_ms(&self, record_id: u32) -> Option<i32> {
+        let line = self.records.get(record_id as usize)?;
+        for tag in line.split('\t').skip(12) {
+            if let Some(v) = tag.strip_prefix("ms:i:") {
+                return v.parse().ok();
+            }
+        }
+        None
     }
 
     /// Build from a PAF file path (supports `stdin` and `.gz`).
@@ -316,6 +340,7 @@ mod tests {
         let idx = PafQueryIndex {
             names: IndexMap::new(),
             trees: HashMap::new(),
+            records: Vec::new(),
         };
         let hits = idx.query(999, 0, 100);
         assert!(hits.is_empty());

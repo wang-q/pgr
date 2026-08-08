@@ -85,6 +85,50 @@ create 流程:
 > `contig_name` 分组记录各段偏移（供 `SequenceReader` 按 contig 名拼接多段），C++ 无此需求（按
 > k-mer splitter 对索引 group）。
 
+### 段级复用：Identity（delta 为空）与 delta 去重（segment.cpp）
+
+`CSegment::add`（`segment.cpp`）是段级压缩的核心，也是 pbit v1010 Identity 优化的来源：
+
+```
+if (no_seqs == 0):
+    lz_diff->Prepare(s);  store_in_archive(s);   # 首条 = 该 group 的参考（id 0）
+else:
+    delta = lz_diff->Encode(s)                    # 对参考做 LZ-diff
+    # IMPROVED_LZ_ENCODING（V1 条件启用；V2 无条件启用）
+    if delta.empty():      return 0               # ★ 与参考完全相同 → in_group_id=0 = 参考段
+    if delta 已在 v_lzp 中: return 已有序号        # 相同 delta 复用
+    else: v_lzp.push(delta); return 新序号        # 新增 delta（id 从 1 起）
+```
+
+语义要点：
+- **Identity 不是单独的类型，而是 `in_group_id = 0`**：`get(id_seq)` 对 `id_seq == 0`
+  直接返回参考序列（`segment.cpp:get` 的 `if (id_seq == 0) ctg = ref_seq`），不经过
+  LZ-diff 解码。样本段与参考**整段相同**时（delta 为空）零载荷指向参考。
+- **delta 去重与 Identity 独立**：相同 delta 复用返回的是 `v_lzp` 中的已有序号（≥1），
+  只有空 delta 才指向 0。pbit v1010 用 `DeltaEncoding::Identity` 显式表达空载荷，
+  并按 `(encoding, is_rev_comp, raw_length)` 去重共享条目（pbit 的 delta 表按参考组
+  存储，无需"id 0 = 参考"的隐式约定）。
+- **局限性**：Identity 仅覆盖"段 == 整条参考"（AGC 段通常 ~2 kb）；段与参考**部分相同**
+  仍走 LZ-diff match 指令。pbit v1007 的 CIGAR 混合编码把"参考任意子区间"纳入
+  CIGAR，因此 pbit v1010 的 Identity 比 AGC 更强：**任意参考区间**全等即零载荷
+  （`ref_start/ref_end` 由段描述符携带）。
+
+### delta part 打包（contigs_in_pack，`-b` 参数）
+
+delta 不逐条独立压缩，而是攒 `contigs_in_pack`（`-b pack_cardinality`，默认 128）条，
+用 `0xff` 分隔符拼接成一个 part，整块 ZSTD（level 17）写入 delta stream
+（`store_in_archive` / `get` 按 `part_id = id_seq / contigs_in_pack` 随机访问，解压后
+再按 `0xff` 切出 `seq_in_part_id`）。raw 特殊段（`add_raw`，如空段占位）同机制。
+
+设计动机：单条 delta 通常几十~几百字节，独立压缩要摊薄压缩器头/窗口开销；part 打包
+把多条小 delta 合并压缩，压缩率更高，随机访问粒度退化为 part（一次解压 128 条）。
+
+**pbit 借鉴建议（记录，未实现）**：pbit 目前每条 delta 独立 flate2（10 字节头 +
+gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate2；若未来 delta 单条
+过小且数量大，可借鉴 part 打包（多条 delta 拼接后统一压缩），代价是随机访问粒度变大
+（当前按 delta 独立 seek 简单直接）。与"碎链 cg 位打包"同属细粒度压缩优化，用户已裁定
+暂缓，先记录不实现。
+
 ## LZ-diff 算法详解
 
 **核心思想**：LZ77 变体，在参考序列上建哈希表，用 (位置差, 长度) 编码匹配，未匹配部分为 literal。

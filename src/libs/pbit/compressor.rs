@@ -19,12 +19,18 @@ use super::cigar_delta::pack_cigar;
 use super::collection::Collection;
 use super::decompressor::Decompressor;
 use super::format::{
-    read_u32_le, write_ref_index, write_ref_table, write_u32_le, DeltaEncoding, DeltaEntry,
-    PbitFooter, PbitHeader, RefGroupEntry, RefTableEntry,
+    read_u32_le, write_ref_index, write_ref_table, write_string, write_u32_le, DeltaEncoding,
+    DeltaEntry, PafRecovery, PbitFooter, PbitHeader, RefGroupEntry, RefTableEntry,
 };
 use super::paf_index::PafQueryIndex;
 use super::segment::Segment;
 use crate::libs::paf::cigar::{gap_compressed_identity, CigarOp};
+
+/// PAF records spanning at least this many query bases are "big chains":
+/// they are CIGAR-encoded across all their segments (nested smaller chains
+/// never displace them) and rebuilt at chain level by `pbit to-paf`. Smaller
+/// records are stored verbatim as PAF recovery data (v1009).
+const BIG_CHAIN_MIN_LEN: i32 = 10_000;
 
 /// Read a FASTA file into a vector of (contig_name, sequence_bytes) pairs.
 fn read_fasta(path: &str) -> Result<Vec<(String, Vec<u8>)>> {
@@ -280,6 +286,9 @@ pub struct Compressor<W: Write + Seek> {
     ref_groups: Vec<RefGroupEntry>,
     /// deltas[ref_group_id][delta_id] — unique deltas per ref group.
     deltas: Vec<Vec<DeltaEntry>>,
+    /// ref_group_id → global reference offset of the segment's first base
+    /// (v1007 CIGAR deltas reference reference-file-global coordinates).
+    ref_seg_starts: Vec<u64>,
     collection: Collection,
     /// One Segment per ref_group, prepared with the (forward) reference DNA.
     segments: Vec<Segment>,
@@ -292,6 +301,9 @@ pub struct Compressor<W: Write + Seek> {
     ref_meta: Vec<RefTableEntry>,
     /// Reference a sample routes to during `append_sample` (set per sample).
     cur_ref_id: u32,
+    /// PAF recovery data per sample (v1009): (sample name, big-chain ms
+    /// table (record_id, ms), verbatim small-chain PAF rows).
+    paf_data: Vec<PafRecovery>,
     segment_size: usize,
     kmer_len: usize,
 }
@@ -368,12 +380,14 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             header,
             ref_groups: Vec::new(),
             deltas: vec![Vec::new(); ref_group_count],
+            ref_seg_starts: Vec::with_capacity(ref_group_count),
             collection: Collection::new(),
             segments: Vec::new(),
             contig_ref_groups: IndexMap::new(),
             ref_kmer_index: None,
             ref_meta: Vec::new(),
             cur_ref_id: 0,
+            paf_data: Vec::new(),
             segment_size,
             kmer_len,
         };
@@ -383,6 +397,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
 
         // Write reference records and build the ref_groups index.
         let mut ref_group_id: u32 = 0;
+        let mut ref_pos = 0u64;
         for (ref_id, ref_contigs) in all_ref_contigs.iter().enumerate() {
             let group_start = ref_group_id;
             let mut group_count = 0u32;
@@ -398,6 +413,8 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
                     let seg_str = std::str::from_utf8(seg)
                         .with_context(|| "reference segment is not valid UTF-8")?;
                     write_2bit_record(&mut comp.writer, seg_str, true)?;
+                    comp.ref_seg_starts.push(ref_pos);
+                    ref_pos += seg.len() as u64;
 
                     let group_id = ref_group_id;
                     comp.ref_groups.push(RefGroupEntry {
@@ -449,6 +466,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             header.segment_size
         );
         let ref_groups = dec.ref_groups().to_vec();
+        let ref_seg_starts = dec.ref_seg_starts().to_vec();
         let collection = dec.collection_clone();
         let footer = dec.footer().clone();
         let dec_ref_table = dec.ref_table().to_vec();
@@ -506,12 +524,14 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             header,
             ref_groups,
             deltas,
+            ref_seg_starts,
             collection,
             segments,
             contig_ref_groups,
             ref_kmer_index: None,
             ref_meta: dec_ref_table.clone(),
             cur_ref_id: 0,
+            paf_data: Vec::new(),
             segment_size,
             kmer_len,
         })
@@ -651,6 +671,7 @@ impl<W: Write + Seek> Compressor<W> {
                             sample_name,
                             contig_name,
                             seg_idx,
+                            (seg_idx as u32) * (self.segment_size as u32),
                             seg,
                             &[gid],
                             false,
@@ -658,7 +679,12 @@ impl<W: Write + Seek> Compressor<W> {
                     } else {
                         // No content match in the reference: store the segment
                         // verbatim so the archive stays lossless.
-                        self.encode_segment_raw(sample_name, contig_name, seg)?;
+                        self.encode_segment_raw(
+                            sample_name,
+                            contig_name,
+                            (seg_idx as u32) * (self.segment_size as u32),
+                            seg,
+                        )?;
                     }
                     any = true;
                 }
@@ -688,6 +714,7 @@ impl<W: Write + Seek> Compressor<W> {
                     sample_name,
                     contig_name,
                     seg_idx,
+                    (seg_idx as u32) * (self.segment_size as u32),
                     seg,
                     &ref_group_ids,
                     contig_is_rev_comp,
@@ -701,11 +728,13 @@ impl<W: Write + Seek> Compressor<W> {
     /// LZ-diff encode one segment and append to the collection. Used by both
     /// `append_sample` and `append_sample_with_paf` (fallback path). LZ-diff
     /// segments always get `ref_start=0, ref_end=0`.
+    #[allow(clippy::too_many_arguments)]
     fn encode_segment_lzdiff(
         &mut self,
         sample_name: &str,
         contig_name: &str,
         seg_idx: usize,
+        q_start: u32,
         seg: &[u8],
         ref_group_ids: &[u32],
         contig_is_rev_comp: bool,
@@ -780,22 +809,38 @@ impl<W: Write + Seek> Compressor<W> {
             }
         };
 
-        self.collection
-            .add_segment(sample_name, contig_name, ref_group_id, delta_id, 0, 0);
+        self.collection.add_segment(
+            sample_name,
+            contig_name,
+            ref_group_id,
+            delta_id,
+            0,
+            0,
+            q_start,
+            u32::MAX,
+        );
         Ok(())
     }
 
-    /// Store a segment verbatim (flate2-compressed) so sequences with no
-    /// matching reference content are preserved losslessly. Raw deltas are
-    /// attached to ref_group 0 and their reference segment is never read
-    /// during decode.
+    /// Store a segment verbatim as a standard 2bit record (v1008+) so
+    /// sequences with no matching reference content are preserved
+    /// losslessly. 2bit is ~7 pp smaller than flate2(ASCII) for DNA and
+    /// needs no secondary compression. Raw deltas are attached to ref_group
+    /// 0 and their reference segment is never read during decode.
     fn encode_segment_raw(
         &mut self,
         sample_name: &str,
         contig_name: &str,
+        q_start: u32,
         seg: &[u8],
     ) -> Result<()> {
-        let packed_data = flate2_compress(seg)?;
+        let seg_str = std::str::from_utf8(seg).with_context(|| "raw segment is not valid UTF-8")?;
+        let mut buf = Vec::with_capacity(seg.len() / 2);
+        {
+            let mut cursor = std::io::Cursor::new(&mut buf);
+            write_2bit_record(&mut cursor, seg_str, false)?;
+        }
+        let packed_data = buf;
         let gid = 0u32;
         let existing = self.deltas[gid as usize]
             .iter()
@@ -813,15 +858,57 @@ impl<W: Write + Seek> Compressor<W> {
                 (self.deltas[gid as usize].len() - 1) as u32
             }
         };
-        self.collection
-            .add_segment(sample_name, contig_name, gid, delta_id, 0, 0);
+        self.collection.add_segment(
+            sample_name,
+            contig_name,
+            gid,
+            delta_id,
+            0,
+            0,
+            q_start,
+            u32::MAX,
+        );
         Ok(())
     }
 
-    /// Try to CIGAR-encode one segment using PAF alignments. Falls back to
-    /// LZ-diff (returns Ok(false)) if: no alignment covers the segment, the
-    /// best alignment doesn't fully cover it, or the target projection crosses
-    /// a reference segment boundary. Returns Ok(true) if CIGAR-encoded.
+    /// Read an arbitrary reference interval in reference-file-global
+    /// coordinates from the in-memory reference segments (mirror of
+    /// `Decompressor::read_ref_interval`).
+    fn read_ref_interval_local(&self, start: u64, end: u64) -> Result<Vec<u8>> {
+        if start >= end {
+            return Ok(Vec::new());
+        }
+        let mut idx = match self.ref_seg_starts.binary_search(&start) {
+            Ok(i) => i,
+            Err(0) => anyhow::bail!("read_ref_interval_local: start {start} before first segment"),
+            Err(i) => i - 1,
+        };
+        let mut out = Vec::with_capacity((end - start) as usize);
+        let mut cur = start;
+        while cur < end {
+            let seg_start = self.ref_seg_starts[idx];
+            let seg_end = if idx + 1 < self.ref_seg_starts.len() {
+                self.ref_seg_starts[idx + 1]
+            } else {
+                seg_start + self.segments[idx].reference_dna().len() as u64
+            };
+            let seg = self.segments[idx].reference_dna();
+            let lo = (cur - seg_start) as usize;
+            let hi = ((end - seg_start) as usize).min((seg_end - seg_start) as usize);
+            out.extend_from_slice(&seg[lo..hi]);
+            cur = seg_start + hi as u64;
+            idx += 1;
+        }
+        Ok(out)
+    }
+
+    /// Try to CIGAR-encode the PAF-covered sub-interval of one segment.
+    /// Returns `Ok(Some((q0, q1)))` with the covered sample-contig interval
+    /// when a CIGAR delta was stored, or `Ok(None)` when the segment has no
+    /// PAF coverage. Since v1007 the delta may reference any reference
+    /// interval (global coordinates), so partial coverage and target spans
+    /// across reference blocks are both supported; the caller encodes the
+    /// uncovered parts with LZ-diff/Raw.
     fn try_encode_segment_cigar(
         &mut self,
         sample_name: &str,
@@ -829,25 +916,37 @@ impl<W: Write + Seek> Compressor<W> {
         seg_idx: usize,
         seg: &[u8],
         paf_index: &PafQueryIndex,
-    ) -> Result<bool> {
+    ) -> Result<Option<(u32, u32, u32)>> {
         let seg_start = (seg_idx * self.segment_size) as i32;
         let seg_end = seg_start + seg.len() as i32;
 
         // 1. Look up query_id for this contig.
         let query_id = match paf_index.query_id(contig_name) {
             Some(id) => id,
-            None => return Ok(false),
+            None => return Ok(None),
         };
 
         // 2. Query alignments overlapping [seg_start, seg_end).
         let hits = paf_index.query(query_id, seg_start, seg_end);
         if hits.is_empty() {
-            return Ok(false);
+            return Ok(None);
         }
 
-        // 3. Select best alignment: max coverage of [seg_start, seg_end), then max identity.
-        let best = hits
+        // 3. Select the best BIG chain (span >= BIG_CHAIN_MIN_LEN) overlapping
+        // this segment. Nested smaller chains never displace a big chain, so
+        // big chains stay complete across all their segments and can be
+        // rebuilt at chain level; smaller chains are stored verbatim as PAF
+        // recovery data instead (v1009). If no big chain covers the segment,
+        // fall back to LZ-diff/Raw.
+        let big_hits: Vec<_> = hits
             .iter()
+            .filter(|a| a.query_end - a.query_start >= BIG_CHAIN_MIN_LEN)
+            .collect();
+        if big_hits.is_empty() {
+            return Ok(None);
+        }
+        let best = big_hits
+            .into_iter()
             .max_by(|a, b| {
                 let cov_a = (a.query_end.min(seg_end) - a.query_start.max(seg_start)).max(0);
                 let cov_b = (b.query_end.min(seg_end) - b.query_start.max(seg_start)).max(0);
@@ -860,8 +959,10 @@ impl<W: Write + Seek> Compressor<W> {
             .unwrap();
 
         // 4. Check full coverage (decision 3a).
-        if best.query_start > seg_start || best.query_end < seg_end {
-            return Ok(false);
+        let q0 = best.query_start.max(seg_start);
+        let q1 = best.query_end.min(seg_end);
+        if q0 >= q1 {
+            return Ok(None);
         }
 
         // 5. Slice CIGAR to the segment interval and project to the target
@@ -874,37 +975,20 @@ impl<W: Write + Seek> Compressor<W> {
         // the CIGAR traverses forward query coords low→high, so forward
         // coords are used directly with rec_qs = query_start.
         let (sliced_ops, target_start, target_end) = if best.strand == '+' {
-            slice_cigar_by_query(
-                &best.cigar,
-                best.query_start,
-                best.target_start,
-                seg_start,
-                seg_end,
-            )
+            slice_cigar_by_query(&best.cigar, best.query_start, best.target_start, q0, q1)
         } else {
-            let (rc_start, rc_end) = forward_to_rc_coords(seg_start, seg_end, best.query_end);
+            let (rc_start, rc_end) = forward_to_rc_coords(q0, q1, best.query_end);
             slice_cigar_by_query(&best.cigar, 0, best.target_start, rc_start, rc_end)
         };
         if sliced_ops.is_empty() {
-            return Ok(false);
+            return Ok(None);
         }
 
-        // 6. Check target doesn't cross ref segment boundary (decision 3c).
-        // Guard against pure insertion CIGAR where target_start == target_end,
-        // which would make (target_end - 1) underflow on i32.
-        if target_start >= target_end {
-            return Ok(false);
-        }
-        let seg_size = self.segment_size as i32;
-        let t_seg_idx_start = target_start / seg_size;
-        let t_seg_idx_end = (target_end - 1) / seg_size;
-        if t_seg_idx_start != t_seg_idx_end {
-            return Ok(false);
-        }
-
-        // 7. Map target contig → ref_group_id.
+        // 6. Map target contig → ref_group_id (the block containing the
+        // target start; the delta may still span further blocks, which is
+        // fine since ref coordinates are global since v1007).
         let Some(meta) = self.ref_meta.get(self.cur_ref_id as usize) else {
-            return Ok(false);
+            return Ok(None);
         };
         let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(&best.target_name) {
             Some(ids) => ids
@@ -912,44 +996,67 @@ impl<W: Write + Seek> Compressor<W> {
                 .copied()
                 .filter(|id| *id >= meta.group_start && *id < meta.group_start + meta.group_count)
                 .collect(),
-            None => return Ok(false),
+            None => return Ok(None),
         };
+        let seg_size = self.segment_size as i32;
+        let t_seg_idx_start = (target_start / seg_size).max(0);
         let t_seg_idx = t_seg_idx_start as usize;
         if t_seg_idx >= ref_group_ids.len() {
-            return Ok(false);
+            return Ok(None);
         }
         let ref_group_id = ref_group_ids[t_seg_idx];
 
-        // 8. Compute ref_start/ref_end (relative to ref segment start).
-        let ref_start = (target_start - t_seg_idx_start * seg_size) as u32;
-        let ref_end = (target_end - t_seg_idx_start * seg_size) as u32;
+        // 7. Compute ref_start/ref_end in reference-file-global coordinates.
+        let ref_start = self.ref_seg_starts[ref_group_id as usize]
+            + (target_start - t_seg_idx_start * seg_size) as u64;
+        let ref_end = self.ref_seg_starts[ref_group_id as usize]
+            + (target_end - t_seg_idx_start * seg_size) as u64;
 
-        // 9. Get reference slice.
-        let ref_dna = self.segments[ref_group_id as usize].reference_dna();
-        if (ref_end as usize) > ref_dna.len() {
-            return Ok(false);
-        }
-        let ref_slice = &ref_dna[ref_start as usize..ref_end as usize];
+        // 8. Get reference slice (global coordinates → segment slices).
+        let ref_slice = self.read_ref_interval_local(ref_start, ref_end)?;
 
-        // 10. Get sample slice (RC if minus strand — CIGAR describes RC(query) vs forward(target)).
+        // 9. Get sample slice for the covered interval (RC if minus strand —
+        // CIGAR describes RC(query) vs forward(target)).
+        let seg_lo = (q0 - seg_start) as usize;
+        let seg_hi = (q1 - seg_start) as usize;
         let sample_slice: Vec<u8> = if best.strand == '-' {
-            rev_comp_vec(seg)
+            let rc: Vec<u8> = rev_comp_vec(&seg[seg_lo..seg_hi]);
+            rc
         } else {
-            seg.to_vec()
+            seg[seg_lo..seg_hi].to_vec()
         };
 
         // 11. Split M ops into =/X, collect X/I bases.
-        let (cigar_eqx, xi_bases) = split_m_to_eqx(ref_slice, &sample_slice, &sliced_ops)?;
+        let (cigar_eqx, xi_bases) = split_m_to_eqx(&ref_slice, &sample_slice, &sliced_ops)?;
 
         // 12. Pack and store.
-        let packed_data = pack_cigar(&cigar_eqx, &xi_bases)?;
-        let raw_length = seg.len() as u32;
+        let raw_length = (q1 - q0) as u32;
         let is_rev_comp = best.strand == '-';
+        // A segment identical to its reference interval (all '=' ops, no
+        // X/I/D) is stored as a zero-payload pointer to the interval
+        // (AGC-style Identity, v1010): the segment carries ref_start/ref_end,
+        // and all identity segments sharing orientation + length reuse one
+        // delta entry. Otherwise pack the CIGAR delta as before.
+        let is_identity = cigar_eqx.iter().all(|op| op.op() == '=');
+        let (packed_data, encoding) = if is_identity {
+            (Vec::new(), DeltaEncoding::Identity)
+        } else {
+            (pack_cigar(&cigar_eqx, &xi_bases)?, DeltaEncoding::Cigar)
+        };
 
-        // 13. Delta dedup by packed_data + orientation.
-        let existing = self.deltas[ref_group_id as usize]
-            .iter()
-            .position(|d| d.packed_data == packed_data && d.is_rev_comp == is_rev_comp);
+        // 13. Delta dedup: identity by encoding + orientation + length (the
+        // interval lives in the segment), CIGAR by payload + orientation.
+        let existing = if is_identity {
+            self.deltas[ref_group_id as usize].iter().position(|d| {
+                d.encoding == DeltaEncoding::Identity
+                    && d.is_rev_comp == is_rev_comp
+                    && d.raw_length == raw_length
+            })
+        } else {
+            self.deltas[ref_group_id as usize]
+                .iter()
+                .position(|d| d.packed_data == packed_data && d.is_rev_comp == is_rev_comp)
+        };
         let delta_id = match existing {
             Some(id) => id as u32,
             None => {
@@ -957,7 +1064,7 @@ impl<W: Write + Seek> Compressor<W> {
                     is_rev_comp,
                     raw_length,
                     packed_data,
-                    encoding: DeltaEncoding::Cigar,
+                    encoding,
                 };
                 self.deltas[ref_group_id as usize].push(entry);
                 (self.deltas[ref_group_id as usize].len() - 1) as u32
@@ -969,10 +1076,12 @@ impl<W: Write + Seek> Compressor<W> {
             contig_name,
             ref_group_id,
             delta_id,
-            ref_start,
-            ref_end,
+            ref_start as u32,
+            ref_end as u32,
+            q0 as u32,
+            best.record_id,
         );
-        Ok(true)
+        Ok(Some((q0 as u32, q1 as u32, best.record_id)))
     }
 
     /// Append a sample using PAF-driven CIGAR encoding. Segments covered by PAF
@@ -1009,6 +1118,12 @@ impl<W: Write + Seek> Compressor<W> {
                 );
             }
         };
+
+        // PAF record ids used by CIGAR encoding across this sample's contigs
+        // (v1009 recovery data: big chains get their ms stored, the rest are
+        // stored verbatim so `to-paf` can reproduce the original PAF).
+        let mut used_records: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut used_count: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
 
         for (contig_name, seq) in &contigs {
             // Soft-mask intervals come from the original case-preserving
@@ -1050,22 +1165,65 @@ impl<W: Write + Seek> Compressor<W> {
 
             let mut any_encoded = false;
             for (seg_idx, seg) in segs.iter().enumerate() {
-                // Try CIGAR encoding first; fall back to LZ-diff.
-                if self.try_encode_segment_cigar(
+                let seg_start = (seg_idx as u32) * (self.segment_size as u32);
+                let seg_end = seg_start + seg.len() as u32;
+                // Try CIGAR encoding of the PAF-covered sub-interval first.
+                let covered = self.try_encode_segment_cigar(
                     sample_name,
                     contig_name,
                     seg_idx,
                     seg,
                     &paf_index,
-                )? {
+                )?;
+                if let Some((q0, q1, record_id)) = covered {
                     any_encoded = true;
+                    used_records.insert(record_id);
+                    *used_count.entry(record_id).or_default() += 1;
+                    // Encode the uncovered parts: prefer LZ-diff content
+                    // matching (AGC-style, much smaller than raw), fall back
+                    // to verbatim storage so the contig stays gapless and
+                    // lossless.
+                    if seg_start < q0 {
+                        let sub = &seg[0..(q0 - seg_start) as usize];
+                        if let Some(gid) = self.best_ref_group(sub) {
+                            self.encode_segment_lzdiff(
+                                sample_name,
+                                contig_name,
+                                0,
+                                seg_start,
+                                sub,
+                                &[gid],
+                                false,
+                            )?;
+                        } else {
+                            self.encode_segment_raw(sample_name, contig_name, seg_start, sub)?;
+                        }
+                    }
+                    if q1 < seg_end {
+                        let sub = &seg[(q1 - seg_start) as usize..];
+                        if let Some(gid) = self.best_ref_group(sub) {
+                            self.encode_segment_lzdiff(
+                                sample_name,
+                                contig_name,
+                                0,
+                                q1,
+                                sub,
+                                &[gid],
+                                false,
+                            )?;
+                        } else {
+                            self.encode_segment_raw(sample_name, contig_name, q1, sub)?;
+                        }
+                    }
                     continue;
                 }
+                // No PAF coverage for this segment: LZ-diff / Raw fallback.
                 if !ref_group_ids.is_empty() {
                     self.encode_segment_lzdiff(
                         sample_name,
                         contig_name,
                         seg_idx,
+                        (seg_idx as u32) * (self.segment_size as u32),
                         seg,
                         &ref_group_ids,
                         contig_is_rev_comp,
@@ -1079,6 +1237,7 @@ impl<W: Write + Seek> Compressor<W> {
                         sample_name,
                         contig_name,
                         seg_idx,
+                        (seg_idx as u32) * (self.segment_size as u32),
                         seg,
                         &[gid],
                         false,
@@ -1087,7 +1246,7 @@ impl<W: Write + Seek> Compressor<W> {
                 } else {
                     // No PAF coverage and no content match: store the segment
                     // verbatim so the archive stays lossless.
-                    self.encode_segment_raw(sample_name, contig_name, seg)?;
+                    self.encode_segment_raw(sample_name, contig_name, seg_start, seg)?;
                     any_encoded = true;
                 }
             }
@@ -1100,6 +1259,42 @@ impl<W: Write + Seek> Compressor<W> {
                     .mask_blocks = mask_blocks;
             }
         }
+
+        // v1009: PAF recovery data for this sample — a "big chain" (span >=
+        // threshold) that was CIGAR-encoded across ALL its segments is
+        // rebuilt at chain level (only its ms is stored); every other record
+        // (small chains, and big chains that lost some segment to an even
+        // larger overlapping chain) is stored verbatim so `to-paf` can
+        // reproduce the original PAF exactly.
+        let seg_size = self.segment_size as i32;
+        let mut big_ms: Vec<(u32, i32)> = Vec::new();
+        let mut small: Vec<String> = Vec::new();
+        for (i, line) in paf_index.records.iter().enumerate() {
+            let id = i as u32;
+            let f: Vec<&str> = line.split('\t').collect();
+            let coords = f
+                .get(2)
+                .and_then(|s| s.parse::<i32>().ok())
+                .zip(f.get(3).and_then(|s| s.parse::<i32>().ok()));
+            let Some((qs, qe)) = coords else {
+                continue;
+            };
+            let span_segs = if qs < qe {
+                (qe - 1) / seg_size - qs / seg_size + 1
+            } else {
+                0
+            };
+            let encoded = used_count.get(&id).copied().unwrap_or(0);
+            let is_complete_big =
+                qe - qs >= BIG_CHAIN_MIN_LEN && encoded >= span_segs.max(1) as u32;
+            if is_complete_big {
+                big_ms.push((id, paf_index.record_ms(id).unwrap_or(0)));
+            } else {
+                small.push(line.clone());
+            }
+        }
+        big_ms.sort_unstable();
+        self.paf_data.push((sample_name.to_string(), big_ms, small));
         Ok(())
     }
 
@@ -1131,11 +1326,18 @@ impl<W: Write + Seek> Compressor<W> {
         let collection_bytes = self.collection.serialize()?;
         self.writer.write_all(&collection_bytes)?;
 
+        // Write PAF recovery data (v1009): verbatim small-chain PAF rows plus
+        // the ms table of CIGAR-encoded records, so `pbit to-paf` can
+        // reproduce the original PAF.
+        let paf_data_offset = self.writer.stream_position()?;
+        self.write_paf_data()?;
+
         // Write Footer.
         let footer = PbitFooter {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
+            paf_data_offset,
         };
         footer.write_to(&mut self.writer)?;
 
@@ -1156,6 +1358,16 @@ impl<W: Write + Seek> Compressor<W> {
             .with_context(|| format!("failed to read reference FASTA: {}", ref_fasta))?;
         let group_start = self.ref_groups.len() as u32;
         let mut group_count = 0u32;
+        let mut ref_pos = self
+            .ref_seg_starts
+            .last()
+            .copied()
+            .map(|s| {
+                s + self.segments[self.ref_seg_starts.len() - 1]
+                    .reference_dna()
+                    .len() as u64
+            })
+            .unwrap_or(0);
         for (contig_name, seq) in &ref_contigs {
             let segs = segment_sequence(seq, self.segment_size);
             let groups = self
@@ -1167,6 +1379,8 @@ impl<W: Write + Seek> Compressor<W> {
                 let seg_str = std::str::from_utf8(seg)
                     .with_context(|| "reference segment is not valid UTF-8")?;
                 write_2bit_record(&mut self.writer, seg_str, true)?;
+                self.ref_seg_starts.push(ref_pos);
+                ref_pos += seg.len() as u64;
                 let group_id = self.ref_groups.len() as u32;
                 self.ref_groups.push(RefGroupEntry {
                     contig_name: contig_name.clone(),
@@ -1196,6 +1410,29 @@ impl<W: Write + Seek> Compressor<W> {
     /// Set the command line string stored in the collection.
     pub fn set_cmd_line(&mut self, cmd: &str) {
         self.collection.cmd_line = cmd.to_string();
+    }
+
+    /// Serialize the PAF recovery data (v1009) and append it to the writer:
+    /// per sample, the (record_id, ms) table of CIGAR-encoded chains and the
+    /// verbatim PAF rows of all other chains, flate2-compressed.
+    fn write_paf_data(&mut self) -> Result<()> {
+        let mut raw = Vec::new();
+        write_u32_le(&mut raw, self.paf_data.len() as u32)?;
+        for (sample, big_ms, small) in &self.paf_data {
+            write_string(&mut raw, sample)?;
+            write_u32_le(&mut raw, big_ms.len() as u32)?;
+            for (record_id, ms) in big_ms {
+                write_u32_le(&mut raw, *record_id)?;
+                write_u32_le(&mut raw, *ms as u32)?;
+            }
+            write_u32_le(&mut raw, small.len() as u32)?;
+            for line in small {
+                write_string(&mut raw, line)?;
+            }
+        }
+        let compressed = flate2_compress(&raw)?;
+        self.writer.write_all(&compressed)?;
+        Ok(())
     }
 }
 
@@ -2106,7 +2343,8 @@ mod tests {
         let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
         let seg = b"ACGT";
         let empty_ref_groups: &[u32] = &[];
-        let result = comp.encode_segment_lzdiff("sample1", "chr1", 0, seg, empty_ref_groups, false);
+        let result =
+            comp.encode_segment_lzdiff("sample1", "chr1", 0, 0, seg, empty_ref_groups, false);
 
         assert!(result.is_err(), "expected error for empty ref_group_ids");
         let err = result.unwrap_err().to_string();
