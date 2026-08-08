@@ -176,6 +176,20 @@ pub(crate) fn collect_samples_from_args(args: &ArgMatches) -> Result<Vec<SampleS
         anyhow::bail!("no sample FASTA files provided");
     }
 
+    // 2026-08-09 (2026-08-09): PAF is mandatory — every sample must come with a
+    // PAF (via `--paf` or the TSV 3rd column); the no-PAF compression path
+    // is retired. An empty PAF file is allowed (all segments fall back to
+    // LZ-diff/Raw).
+    for (name, _, paf, _) in &samples {
+        if paf.is_none() {
+            anyhow::bail!(
+                "sample '{}' has no PAF: --paf is required (or the 3rd column \
+                 of --name TSV); pass an empty PAF file to skip CIGAR encoding",
+                name
+            );
+        }
+    }
+
     // Reject duplicate sample names within this command. Sample names derived
     // from `-i` basenames collapse distinct files (e.g. `sample.1.fa` and
     // `sample.2.fa` both become `sample`), and `append_sample` would silently

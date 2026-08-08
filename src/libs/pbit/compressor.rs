@@ -24,13 +24,7 @@ use super::format::{
 };
 use super::paf_index::PafQueryIndex;
 use super::segment::Segment;
-use crate::libs::paf::cigar::{gap_compressed_identity, CigarOp};
-
-/// PAF records spanning at least this many query bases are "big chains":
-/// they are CIGAR-encoded across all their segments (nested smaller chains
-/// never displace them) and rebuilt at chain level by `pbit to-paf`. Smaller
-/// records are stored verbatim as PAF recovery data (v1009).
-const BIG_CHAIN_MIN_LEN: i32 = 10_000;
+use crate::libs::paf::cigar::{extract_cigar, gap_compressed_identity, CigarOp};
 
 /// Read a FASTA file into a vector of (contig_name, sequence_bytes) pairs.
 fn read_fasta(path: &str) -> Result<Vec<(String, Vec<u8>)>> {
@@ -902,13 +896,66 @@ impl<W: Write + Seek> Compressor<W> {
         Ok(out)
     }
 
+    /// Select main (primary) chains for one sample: chain-level greedy by
+    /// query-covered segment count (desc) → identity (desc) → input order.
+    /// A chain whose query interval overlaps any already-chosen main chain
+    /// is a small (secondary) chain; its PAF row is stored verbatim so
+    /// `to-paf` can reproduce it (2026-08-09, replaces the v1009 length
+    /// threshold). Records without `cg:Z` are never main chains.
+    fn select_main_chains(paf_index: &PafQueryIndex, segment_size: usize) -> Vec<bool> {
+        let seg_size = segment_size.max(1) as i64;
+        let mut candidates: Vec<(u32, u32, f64, u32)> = Vec::new(); // (qs, qe, gi, record_id)
+        for (id, line) in paf_index.records.iter().enumerate() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 12 {
+                continue;
+            }
+            let tag_strs: Vec<String> = f[12..].iter().map(|s| s.to_string()).collect();
+            if !tag_strs.iter().any(|t| t.starts_with("cg:Z:")) {
+                continue;
+            }
+            let (Ok(qs), Ok(qe)) = (f[2].parse::<u32>(), f[3].parse::<u32>()) else {
+                continue;
+            };
+            let Ok(cigar) = extract_cigar(&tag_strs) else {
+                continue;
+            };
+            if cigar.is_empty() {
+                continue;
+            }
+            let gi = gap_compressed_identity(&cigar);
+            candidates.push((qs, qe, gi, id as u32));
+        }
+        // Sort: covered segment count desc → identity desc → input order.
+        candidates.sort_by(|a, b| {
+            let segs_a = ((a.1 - a.0) as i64 + seg_size - 1) / seg_size;
+            let segs_b = ((b.1 - b.0) as i64 + seg_size - 1) / seg_size;
+            segs_b
+                .cmp(&segs_a)
+                .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.3.cmp(&b.3))
+        });
+        let mut main = vec![false; paf_index.records.len()];
+        let mut chosen: Vec<(u32, u32)> = Vec::new();
+        for (qs, qe, _, id) in candidates {
+            if chosen.iter().any(|&(s, e)| s < qe && qs < e) {
+                continue; // overlaps a chosen main chain → small chain
+            }
+            main[id as usize] = true;
+            chosen.push((qs, qe));
+        }
+        main
+    }
+
     /// Try to CIGAR-encode the PAF-covered sub-interval of one segment.
     /// Returns `Ok(Some((q0, q1)))` with the covered sample-contig interval
     /// when a CIGAR delta was stored, or `Ok(None)` when the segment has no
     /// PAF coverage. Since v1007 the delta may reference any reference
     /// interval (global coordinates), so partial coverage and target spans
     /// across reference blocks are both supported; the caller encodes the
-    /// uncovered parts with LZ-diff/Raw.
+    /// uncovered parts with LZ-diff/Raw. Any chain with a cg:Z tag may
+    /// encode a segment (2026-08-09); main/small selection only decides whether
+    /// the chain is rebuilt or stored verbatim in the PAF recovery data.
     fn try_encode_segment_cigar(
         &mut self,
         sample_name: &str,
@@ -932,20 +979,14 @@ impl<W: Write + Seek> Compressor<W> {
             return Ok(None);
         }
 
-        // 3. Select the best BIG chain (span >= BIG_CHAIN_MIN_LEN) overlapping
-        // this segment. Nested smaller chains never displace a big chain, so
-        // big chains stay complete across all their segments and can be
-        // rebuilt at chain level; smaller chains are stored verbatim as PAF
-        // recovery data instead (v1009). If no big chain covers the segment,
-        // fall back to LZ-diff/Raw.
-        let big_hits: Vec<_> = hits
-            .iter()
-            .filter(|a| a.query_end - a.query_start >= BIG_CHAIN_MIN_LEN)
-            .collect();
-        if big_hits.is_empty() {
+        // 3. Select the chain covering this segment most (2026-08-09: any chain
+        // with cg:Z may encode; main/small only affects PAF recovery).
+        // If no chain covers the segment, fall back to LZ-diff/Raw.
+        let cover_hits: Vec<_> = hits.iter().collect();
+        if cover_hits.is_empty() {
             return Ok(None);
         }
-        let best = big_hits
+        let best = cover_hits
             .into_iter()
             .max_by(|a, b| {
                 let cov_a = (a.query_end.min(seg_end) - a.query_start.max(seg_start)).max(0);
@@ -1097,6 +1138,10 @@ impl<W: Write + Seek> Compressor<W> {
         // Build PAF query-side index.
         let paf_index = PafQueryIndex::build_from_path(paf_path)
             .with_context(|| format!("failed to build PAF index: {}", paf_path))?;
+        // Chain-level main/small selection (2026-08-09): main chains are encoded
+        // and rebuilt; small chains (overlapping a chosen main chain, or
+        // without cg:Z) are stored verbatim for PAF recovery.
+        let main_chains = Self::select_main_chains(&paf_index, self.segment_size);
 
         let contigs = read_fasta(fasta_path)
             .with_context(|| format!("failed to read sample FASTA: {}", fasta_path))?;
@@ -1263,9 +1308,9 @@ impl<W: Write + Seek> Compressor<W> {
         // v1009: PAF recovery data for this sample — a "big chain" (span >=
         // threshold) that was CIGAR-encoded across ALL its segments is
         // rebuilt at chain level (only its ms is stored); every other record
-        // (small chains, and big chains that lost some segment to an even
-        // larger overlapping chain) is stored verbatim so `to-paf` can
-        // reproduce the original PAF exactly.
+        // (small chains — overlapping a chosen main chain or without cg:Z —
+        // and main chains that lost some segment to encoding failure) is
+        // stored verbatim so `to-paf` can reproduce the original PAF exactly.
         let seg_size = self.segment_size as i32;
         let mut big_ms: Vec<(u32, i32)> = Vec::new();
         let mut small: Vec<String> = Vec::new();
@@ -1285,8 +1330,8 @@ impl<W: Write + Seek> Compressor<W> {
                 0
             };
             let encoded = used_count.get(&id).copied().unwrap_or(0);
-            let is_complete_big =
-                qe - qs >= BIG_CHAIN_MIN_LEN && encoded >= span_segs.max(1) as u32;
+            let is_main = main_chains.get(id as usize).copied().unwrap_or(false);
+            let is_complete_big = is_main && encoded >= span_segs.max(1) as u32;
             if is_complete_big {
                 big_ms.push((id, paf_index.record_ms(id).unwrap_or(0)));
             } else {

@@ -341,6 +341,134 @@ fn test_pbit_paf_to_paf_roundtrip() {
     assert_eq!(lines[1], small.trim(), "got: {}", content);
 }
 
+// ── Test 2e: partial-overlap main/small selection (2026-08-09) ─────────────
+
+#[test]
+fn test_pbit_paf_partial_overlap_main_chain() {
+    // Two chains overlap on the sample; the one covering more segments wins
+    // as main chain and is rebuilt, the other is stored verbatim. Both rows
+    // must roundtrip through `to-paf`.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let paf = temp.path().join("overlap.paf");
+    let out_paf = temp.path().join("out.paf");
+    let out_dir = temp.path().join("outdir");
+
+    // Main chain: full 12289 bp (4 segments). Small chain: [500, 6000)
+    // (2 segments), nested inside the main chain's query interval.
+    let main = "chr1\t12289\t0\t12289\t+\tchr1\t12289\t0\t12289\t12289\t12289\t255\tcg:Z:12289=\n";
+    let small = "chr1\t12289\t500\t6000\t+\tchr1\t12289\t500\t6000\t5500\t5500\t255\tcg:Z:5500=\n";
+    fs::write(&paf, format!("{}{}", main, small)).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_12289.fa").to_str().unwrap(),
+            "-i",
+            fixture("ref_12289.fa").to_str().unwrap(),
+            "-p",
+            paf.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // to-fa stays lossless.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(
+        read_fasta_seq(&out_dir.join("ref_12289.fa")),
+        read_fasta_seq(&fixture("ref_12289.fa"))
+    );
+
+    // to-paf: main chain rebuilt, small chain verbatim.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-paf",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_paf.to_str().unwrap(),
+        ])
+        .run();
+    let content = fs::read_to_string(&out_paf).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 2, "got: {}", content);
+    assert!(lines[0].contains("cg:Z:12289="), "got: {}", content);
+    assert_eq!(lines[1], small.trim(), "got: {}", content);
+}
+
+// ── Test 2f: record without cg:Z is kept for PAF recovery (2026-08-09) ─────
+
+#[test]
+fn test_pbit_paf_no_cigar_row_kept_for_recovery() {
+    // A PAF row without cg:Z does not participate in CIGAR encoding, but its
+    // row must be preserved so `to-paf` reproduces the input exactly.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let paf = temp.path().join("no_cigar.paf");
+    let out_paf = temp.path().join("out.paf");
+    let out_dir = temp.path().join("outdir");
+
+    let main = "chr1\t12289\t0\t12289\t+\tchr1\t12289\t0\t12289\t12289\t12289\t255\tcg:Z:12289=\n";
+    let nocigar = "chr1\t12289\t100\t1500\t+\tchr1\t12289\t100\t1500\t1400\t1400\t255\tms:i:33\n";
+    fs::write(&paf, format!("{}{}", main, nocigar)).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_12289.fa").to_str().unwrap(),
+            "-i",
+            fixture("ref_12289.fa").to_str().unwrap(),
+            "-p",
+            paf.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // to-fa stays lossless.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(
+        read_fasta_seq(&out_dir.join("ref_12289.fa")),
+        read_fasta_seq(&fixture("ref_12289.fa"))
+    );
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-paf",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_paf.to_str().unwrap(),
+        ])
+        .run();
+    let content = fs::read_to_string(&out_paf).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 2, "got: {}", content);
+    assert!(lines[0].contains("cg:Z:12289="), "got: {}", content);
+    assert_eq!(lines[1], nocigar.trim(), "got: {}", content);
+}
+
 // ── Test 3: M op split (minimap2 without --eqx) ────────────────────────
 
 #[test]
@@ -396,6 +524,8 @@ fn test_pbit_paf_mixed_mode() {
             out_pbit.to_str().unwrap(),
             "-i",
             fixture("sample_2000_snp200.fa").to_str().unwrap(),
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
         ])
         .run();
 
@@ -475,12 +605,14 @@ fn test_pbit_paf_name_tsv_three_columns() {
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
 
-    // TSV: name<TAB>fasta<TAB>paf (s1 has paf, s2 doesn't).
+    // TSV: name<TAB>fasta<TAB>paf (s1 has a real PAF, s2 uses an empty one
+    // so all its segments fall back to LZ-diff/Raw).
     let tsv_content = format!(
-        "s1\t{}\t{}\ns2\t{}\n",
+        "s1\t{}\t{}\ns2\t{}\t{}\n",
         fixture("sample_2000_snp100.fa").display(),
         fixture("sample_2000_snp100.paf").display(),
         fixture("sample_2000_snp200.fa").display(),
+        fixture("empty.paf").display(),
     );
     fs::write(&tsv_path, tsv_content).unwrap();
 
@@ -585,10 +717,10 @@ fn test_pbit_paf_name_paf_mutex_error() {
     );
 }
 
-// ── Test 10: CIGAR target crosses ref segment boundary → fallback ──────
+// ── Test 10: CIGAR target crosses ref segment boundary (v1007+) ───────
 
 #[test]
-fn test_pbit_paf_target_crosses_seg_boundary_fallback() {
+fn test_pbit_paf_target_crosses_seg_boundary() {
     let temp = TempDir::new().unwrap();
     let out_pbit = temp.path().join("out.pbit");
 

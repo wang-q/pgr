@@ -37,8 +37,9 @@ fn coord_to_i32(val: u32, field: &str, line: &str) -> Option<i32> {
 
 /// One PAF alignment stored in the query-side index. Holds the ORIGINAL
 /// (non-swapped) fields needed by pbit's CIGAR encoding path. `cigar` is
-/// already `extract_cigar`-parsed; empty Vec means the record was skipped
-/// during indexing.
+/// already `extract_cigar`-parsed; only records with a CIGAR tag are indexed
+/// (records without `cg:Z` keep their raw row in `records` for PAF recovery
+/// but are absent from the interval trees).
 #[derive(Debug, Clone)]
 pub struct PafAlign {
     /// 0-based id of the PAF record in the input file (v1009; links CIGAR
@@ -59,7 +60,8 @@ pub struct PafQueryIndex {
     pub names: IndexMap<String, u32>,
     pub trees: HashMap<u32, BasicCOITree<PafAlign, u32>>,
     /// Original PAF lines, indexed by `record_id` (v1009). Records skipped
-    /// during indexing (malformed / no CIGAR) are not stored.
+    /// during indexing (malformed) are not stored; records without CIGAR are
+    /// kept verbatim (2026-08-09) so `to-paf` can reproduce them.
     pub records: Vec<String>,
 }
 
@@ -103,7 +105,11 @@ impl PafQueryIndex {
                 }
             };
             if cigar.is_empty() {
-                // No CIGAR tag: skip this record (design §11 decision 7). Not a failure.
+                // No CIGAR tag: keep the raw row for PAF recovery (stored
+                // verbatim as a small-chain row so `to-paf` can reproduce
+                // it), but do not index it for CIGAR encoding (design §11
+                // decision 7; 2026-08-09: skip encoding, keep row).
+                records.push(line);
                 continue;
             }
 

@@ -14,8 +14,10 @@ pub fn make_subcommand() -> Command {
 This command appends new sample FASTA files to an existing pbit archive.
 The reference is already embedded in the archive, so no -r is needed.
 
-When `--paf` is provided, segments covered by PAF alignments are CIGAR-encoded
-(replacing LZ-diff); uncovered segments fall back to LZ-diff.
+PAF is mandatory (`--paf`, or the TSV 3rd column): segments covered by PAF
+alignments are CIGAR-encoded (pure-match segments become zero-cost Identity
+references); uncovered segments fall back to LZ-diff/Raw. An empty PAF file
+disables CIGAR encoding (all segments use LZ-diff/Raw).
 
 Notes:
 * Sample names are derived from input FASTA basenames (use --name to override)
@@ -25,14 +27,14 @@ Notes:
 * Contigs in sample FASTA that do not match any reference contig are skipped
 * Only ACGTN characters are supported; IUPAC degenerate codes are mapped to N
 * `--paf` files are paired with `-i` files by order; `--name` and `--paf`
-  are mutually exclusive (use the TSV's optional 3rd column for PAF)
+  are mutually exclusive (use the TSV's 3rd column for PAF, which is required)
 
 Examples:
 1. Append a sample in place:
-   pgr pbit append archive.pbit -i new_sample.fa
+   pgr pbit append archive.pbit -i new_sample.fa -p new_sample.paf
 
 2. Append multiple samples to a new archive:
-   pgr pbit append archive.pbit -i s1.fa -i s2.fa -o new_archive.pbit
+   pgr pbit append archive.pbit -i s1.fa -p s1.paf -i s2.fa -p s2.paf -o new_archive.pbit
 
 3. Provide sample names via TSV:
    pgr pbit append archive.pbit --name samples.tsv -o new_archive.pbit

@@ -55,6 +55,8 @@ fn test_pbit_create_basic() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -80,9 +82,11 @@ fn test_pbit_multi_reference_routing() {
     fs::write(
         &tsv,
         format!(
-            "s1\t{}\t\tref_2000\ns2\t{}\t\t1\n",
+            "s1\t{}\t{}\tref_2000\ns2\t{}\t{}\t1\n",
             s1.to_str().unwrap(),
-            s2.to_str().unwrap()
+            fixture("empty.paf").to_str().unwrap(),
+            s2.to_str().unwrap(),
+            fixture("empty.paf").to_str().unwrap()
         ),
     )
     .unwrap();
@@ -148,9 +152,11 @@ fn test_pbit_multi_ref_soft_mask_routing() {
     fs::write(
         &tsv,
         format!(
-            "s1\t{}\t\tref1\ns2\t{}\t\tref2\n",
+            "s1\t{}\t{}\tref1\ns2\t{}\t{}\tref2\n",
             s1.display(),
-            s2.display()
+            fixture("empty.paf").display(),
+            s2.display(),
+            fixture("empty.paf").display()
         ),
     )
     .unwrap();
@@ -197,6 +203,8 @@ fn test_pbit_append_ref_preserves_samples() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -249,6 +257,8 @@ fn test_pbit_stat_overview() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -277,7 +287,13 @@ fn test_pbit_stat_samples() {
     let sample = fixture("sample_2000_identical.fa");
     fs::write(
         &name_tsv,
-        format!("s1\t{}\ns2\t{}\n", sample.display(), sample.display()),
+        format!(
+            "s1\t{}\t{}\ns2\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display(),
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
     )
     .unwrap();
 
@@ -313,6 +329,8 @@ fn test_pbit_stat_refs() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_5000.fa").to_str().unwrap(),
             "-i",
@@ -339,6 +357,8 @@ fn test_pbit_stat_contigs() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
@@ -368,6 +388,8 @@ fn test_pbit_to_fa_roundtrip() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -405,6 +427,8 @@ fn test_pbit_range_full_contig() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -433,6 +457,8 @@ fn test_pbit_range_slice() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -472,6 +498,8 @@ fn test_pbit_range_soft_mask_preserved() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             ref_fa.to_str().unwrap(),
             "-i",
@@ -502,6 +530,8 @@ fn test_pbit_range_neg_strand() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -537,6 +567,8 @@ fn test_pbit_range_multi_ranges() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -572,6 +604,8 @@ fn test_pbit_range_out_of_bounds_warns() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_5000.fa").to_str().unwrap(),
             "-i",
@@ -614,6 +648,8 @@ fn test_pbit_some_basic() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000_2contig_identical.fa").to_str().unwrap(),
             "-i",
@@ -653,6 +689,8 @@ fn test_pbit_some_invert() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000_2contig_identical.fa").to_str().unwrap(),
             "-i",
@@ -689,6 +727,8 @@ fn test_pbit_create_custom_params() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -729,6 +769,8 @@ fn test_pbit_custom_min_match_len_roundtrip() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -768,6 +810,8 @@ fn test_pbit_no_match_contig() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
@@ -818,6 +862,8 @@ fn test_pbit_multi_contig_reference() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("multi_500.fa").to_str().unwrap(),
             "-i",
@@ -849,6 +895,8 @@ fn test_pbit_multi_segment_contig() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_5000.fa").to_str().unwrap(),
             "-i",
@@ -888,7 +936,13 @@ fn test_pbit_identical_samples_dedup() {
     // Use --name TSV to give two different sample names to the same file.
     fs::write(
         &name_tsv,
-        format!("s1\t{}\ns2\t{}\n", sample.display(), sample.display()),
+        format!(
+            "s1\t{}\t{}\ns2\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display(),
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
     )
     .unwrap();
 
@@ -948,6 +1002,8 @@ fn test_pbit_with_snp_sample() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -981,7 +1037,15 @@ fn test_pbit_create_with_name_tsv() {
     let out_pbit = temp.path().join("out.pbit");
     let sample = fixture("sample_1000_identical.fa");
 
-    fs::write(&name_tsv, format!("custom_name\t{}\n", sample.display())).unwrap();
+    fs::write(
+        &name_tsv,
+        format!(
+            "custom_name\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
+    )
+    .unwrap();
 
     PgrCmd::new()
         .args(&[
@@ -1012,7 +1076,13 @@ fn test_pbit_to_fa_single_sample() {
 
     fs::write(
         &name_tsv,
-        format!("s1\t{}\ns2\t{}\n", sample.display(), sample.display()),
+        format!(
+            "s1\t{}\t{}\ns2\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display(),
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
     )
     .unwrap();
 
@@ -1058,6 +1128,8 @@ fn test_pbit_pseudocat_roundtrip() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             ref_fa.to_str().unwrap(),
             "-i",
@@ -1105,7 +1177,15 @@ fn test_pbit_append() {
     let s2_fa = temp.path().join("s2.fa");
     let sample = fixture("sample_2000_identical.fa");
 
-    fs::write(&name_tsv, format!("s1\t{}\n", sample.display())).unwrap();
+    fs::write(
+        &name_tsv,
+        format!(
+            "s1\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
+    )
+    .unwrap();
     fs::copy(&sample, &s2_fa).unwrap();
 
     // Create with 1 sample named s1.
@@ -1127,6 +1207,8 @@ fn test_pbit_append() {
         .args(&[
             "pbit",
             "append",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             out_pbit.to_str().unwrap(),
             "-i",
             s2_fa.to_str().unwrap(),
@@ -1152,7 +1234,15 @@ fn test_pbit_append_overwrite() {
     let s2_fa = temp.path().join("s2.fa");
     let sample = fixture("sample_2000_identical.fa");
 
-    fs::write(&name_tsv, format!("s1\t{}\n", sample.display())).unwrap();
+    fs::write(
+        &name_tsv,
+        format!(
+            "s1\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
+    )
+    .unwrap();
     fs::copy(&sample, &s2_fa).unwrap();
 
     // Create with 1 sample named s1.
@@ -1174,6 +1264,8 @@ fn test_pbit_append_overwrite() {
         .args(&[
             "pbit",
             "append",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             out_pbit.to_str().unwrap(),
             "-i",
             s2_fa.to_str().unwrap(),
@@ -1204,7 +1296,11 @@ fn test_pbit_append_in_place() {
 
     fs::write(
         &name_tsv,
-        format!("s1\t{}\n", fixture("sample_2000_snps100.fa").display()),
+        format!(
+            "s1\t{}\t{}\n",
+            fixture("sample_2000_snps100.fa").display(),
+            fixture("empty.paf").display()
+        ),
     )
     .unwrap();
     fs::copy(fixture("sample_2000_snps200.fa"), &s2_fa).unwrap();
@@ -1228,6 +1324,8 @@ fn test_pbit_append_in_place() {
         .args(&[
             "pbit",
             "append",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             out_pbit.to_str().unwrap(),
             "-i",
             s2_fa.to_str().unwrap(),
@@ -1268,6 +1366,8 @@ fn test_pbit_range_multicontig() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("multi_500.fa").to_str().unwrap(),
             "-i",
@@ -1306,6 +1406,8 @@ fn test_pbit_empty_contig() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_empty_1000.fa").to_str().unwrap(),
             "-i",
@@ -1339,6 +1441,8 @@ fn test_pbit_mask_roundtrip() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("mask_ref.fa").to_str().unwrap(),
             "-i",
@@ -1378,6 +1482,8 @@ fn test_pbit_n_roundtrip() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("n_ref.fa").to_str().unwrap(),
             "-i",
@@ -1420,6 +1526,8 @@ fn test_pbit_random_roundtrip() {
             .args(&[
                 "pbit",
                 "create",
+                "-p",
+                fixture("empty.paf").to_str().unwrap(),
                 "-r",
                 ref_fa.to_str().unwrap(),
                 "-i",
@@ -1469,6 +1577,8 @@ fn test_pbit_large_contig_segment_boundary() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_12289.fa").to_str().unwrap(),
             "-i",
@@ -1529,6 +1639,8 @@ fn test_pbit_range_invalid_range_warns() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -1559,6 +1671,8 @@ fn test_pbit_range_reversed_coordinates_rejected() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -1617,6 +1731,8 @@ fn test_pbit_range_nonexistent_contig_warns() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -1656,6 +1772,8 @@ fn test_pbit_empty_sample_fasta() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
@@ -1717,6 +1835,8 @@ fn test_pbit_to_fa_output_not_overwrite_input() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
@@ -1771,12 +1891,16 @@ fn test_pbit_create_duplicate_sample_name_rejected() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
             f1.to_str().unwrap(),
             "-i",
             f2.to_str().unwrap(),
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1801,7 +1925,11 @@ fn test_pbit_append_existing_sample_name_rejected() {
     let name_tsv = temp.path().join("names.tsv");
     fs::write(
         &name_tsv,
-        format!("s1\t{}\n", fixture("sample_1000_identical.fa").display()),
+        format!(
+            "s1\t{}\t{}\n",
+            fixture("sample_1000_identical.fa").display(),
+            fixture("empty.paf").display()
+        ),
     )
     .unwrap();
 
@@ -1826,6 +1954,8 @@ fn test_pbit_append_existing_sample_name_rejected() {
         .args(&[
             "pbit",
             "append",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             out_pbit.to_str().unwrap(),
             "-i",
             s1_fa.to_str().unwrap(),
@@ -1859,10 +1989,11 @@ fn test_pbit_create_cmd_line_includes_samples() {
     fs::write(
         &name_tsv,
         format!(
-            "s1\t{}\t{}\tref_2000\ns2\t{}\t\tref_2000\n",
+            "s1\t{}\t{}\tref_2000\ns2\t{}\t{}\tref_2000\n",
             sample1.display(),
             paf.display(),
-            sample2.display()
+            sample2.display(),
+            fixture("empty.paf").display()
         ),
     )
     .unwrap();
@@ -1912,7 +2043,15 @@ fn test_pbit_append_cmd_line_includes_samples() {
     let s2_fa = temp.path().join("s2.fa");
     let sample = fixture("sample_2000_identical.fa");
 
-    fs::write(&name_tsv, format!("s1\t{}\n", sample.display())).unwrap();
+    fs::write(
+        &name_tsv,
+        format!(
+            "s1\t{}\t{}\n",
+            sample.display(),
+            fixture("empty.paf").display()
+        ),
+    )
+    .unwrap();
     fs::copy(&sample, &s2_fa).unwrap();
 
     PgrCmd::new()
@@ -1932,6 +2071,8 @@ fn test_pbit_append_cmd_line_includes_samples() {
         .args(&[
             "pbit",
             "append",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             out_pbit.to_str().unwrap(),
             "-i",
             s2_fa.to_str().unwrap(),
@@ -1958,6 +2099,8 @@ fn test_pbit_append_ref_cmd_line_includes_refs() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -2001,6 +2144,8 @@ fn test_pbit_create_invalid_params_rejected() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -2026,6 +2171,8 @@ fn test_pbit_create_invalid_params_rejected() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
@@ -2054,6 +2201,8 @@ fn test_pbit_create_invalid_params_rejected() {
         .args(&[
             "pbit",
             "create",
+            "-p",
+            fixture("empty.paf").to_str().unwrap(),
             "-r",
             fixture("ref_2000.fa").to_str().unwrap(),
             "-i",

@@ -12,11 +12,13 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 This command creates a new pbit archive. The reference FASTA is stored as
-standard 2bit records; each sample FASTA is LZ-diff encoded against the
-matching reference segment, flate2-compressed, and stored as delta entries.
+standard 2bit records; each sample FASTA is encoded against the matching
+reference segment and stored as delta entries.
 
-When `--paf` is provided, segments covered by PAF alignments are CIGAR-encoded
-(replacing LZ-diff); uncovered segments fall back to LZ-diff.
+PAF is mandatory (`--paf`, or the TSV 3rd column): segments covered by PAF
+alignments are CIGAR-encoded (pure-match segments become zero-cost Identity
+references); uncovered segments fall back to LZ-diff/Raw. An empty PAF file
+disables CIGAR encoding (all segments use LZ-diff/Raw).
 
 Notes:
 * Sample names are derived from the input FASTA basenames (use `--name` to
@@ -28,11 +30,11 @@ Notes:
 * Only ACGTN characters are supported; IUPAC degenerate codes (R, Y, S, W,
   K, M, B, D, H, V) are lossily mapped to N
 * `--paf` files are paired with `-i` files by order; `--name` and `--paf`
-  are mutually exclusive (use the TSV's optional 3rd column for PAF)
+  are mutually exclusive (use the TSV's 3rd column for PAF, which is required)
 
 Examples:
 1. Create a pbit archive with one sample:
-   pgr pbit create -r ref.fa -i sample1.fa -o out.pbit
+   pgr pbit create -r ref.fa -i sample1.fa -p sample1.paf -o out.pbit
 
 2. Create with multiple samples:
    pgr pbit create -r ref.fa -i s1.fa -i s2.fa -i s3.fa -o out.pbit
