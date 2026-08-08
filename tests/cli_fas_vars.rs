@@ -398,53 +398,6 @@ fn command_to_xlsx_many_sequences_no_overflow() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_to_xlsx_length_filters_short_blocks() -> anyhow::Result<()> {
-    // `--length` skips blocks whose aligned width is below the threshold. A
-    // 4-bp block must be dropped when the threshold is 5 (block empty => no
-    // section), yet a longer block is still exported.
-    let mut content = String::new();
-    content.push_str(">A.chr1(+):1-4\nACGT\n>B.chr2(+):1-4\nACGA\n");
-    content.push('\n');
-    content.push_str(">A.chr1(+):1-8\nACGTACGT\n>B.chr2(+):1-8\nACGTACGA\n");
-    let input = tempfile::NamedTempFile::new()?;
-    std::io::Write::write_all(
-        &mut std::fs::File::create(input.path())?,
-        content.as_bytes(),
-    )?;
-    let out = tempfile::NamedTempFile::new()?;
-
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("to-xlsx")
-        .arg(input.path())
-        .arg("--length")
-        .arg("5")
-        .arg("-o")
-        .arg(out.path())
-        .output()?;
-    assert!(
-        output.status.success(),
-        "to-xlsx --length must succeed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(out.path()).unwrap();
-    let sheet = workbook.worksheet_range_at(0).unwrap().unwrap();
-    // Only the 8-bp block is exported; its name is written at row 1 (header row).
-    assert!(
-        sheet.get_value((1, 0)).is_some(),
-        "longer block should be exported and named"
-    );
-    assert!(
-        sheet.get_value((2, 0)).is_some(),
-        "longer block should name both sequences"
-    );
-
-    Ok(())
-}
-
-#[test]
 fn command_to_xlsx_colors_rejects_out_of_range() -> anyhow::Result<()> {
     // `--colors` outside [1, 15] must fail with a friendly error.
     let out = tempfile::NamedTempFile::new()?;

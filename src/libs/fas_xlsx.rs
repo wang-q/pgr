@@ -14,7 +14,6 @@ pub fn export_to_xlsx(
     infiles: &[String],
     outfile: &str,
     wrap: u16,
-    length: usize,
     spacing: u16,
     colors: u16,
     is_indel: bool,
@@ -48,14 +47,6 @@ pub fn export_to_xlsx(
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
                 seqs.push(entry.seq());
-            }
-
-            // Skip blocks whose aligned length is below the threshold. The
-            // aligned length is the sequence width (including gaps), which is
-            // identical across all entries of a block, so the first entry
-            // suffices.
-            if seqs.first().map_or(0, |s| s.len()) < length {
-                continue;
             }
 
             let vars = get_vars(
