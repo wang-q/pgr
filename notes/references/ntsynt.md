@@ -1,0 +1,257 @@
+# ntSynt：多基因组宏观共线性检测（minimizer 图）
+
+> 整理于 2026-08-09，源自对 `ntSynt-main/` 目录源码的分析（ntSynt v1.0.8，Birol Lab / BC Cancer）。
+> 目的：理解其"动态 minimizer 图 + 路径 → 多基因组共线性块"算法，评估用 pgr 的 `.pgi`
+> （syncmer 有序排列）实现同类的多基因组 macro-synteny 检测。本文聚焦算法与数据流；
+> ntJoin 依赖（`ntjoin_utils.py` / `ntjoin.py` 在 `subprojects/ntJoin` 子模块，未随仓库检出）
+> 仅作背景，必要时以其调用语义推断。
+>
+> **与 pgr 的关联**：`pgi build` 已产出**按 k-mer 排序的 syncmer 位置表**（`PgiQuery`），
+> 而 ntSynt 的第一步（indexlr）正是"按基因组产出一张有序 k-mer 位置表"。因此 pgr 具备了
+> 实现 ntSynt 式共享 minimizer 图的"原料"，缺的是跨基因组图构建与路径/共线性块逻辑。
+> 详见 `design/pgi-ntsynt.md`。
+
+## 1. 简介
+
+`ntSynt`（**n**? **T**eam **Synt**eny）是多基因组 macro-synteny（宏观共线性）检测工具：
+输入任意数量（≥2）的基因组 FASTA，输出这些基因组之间**共同存在**的共线性块（synteny block）。
+它建立在 [ntJoin](https://github.com/BirolLab/ntJoin)（scaffolding 工具）的代码库之上，
+核心是把"跨基因组共享的 minimizer 邻接关系"建成一张**无向图**，然后从图中找路径，
+每条路径就是一个候选共线性块。
+
+- **为什么用 minimizer**：minimizer 采样把每个基因组的 k-mer 稀疏化到 ~1/w 密度，
+  使"跨基因组共享 k-mer"的比较可在内存/时间内完成；对近缘（低分歧）基因组尤其高效。
+- **为什么是图而非 pairwise 比对**：天然支持 ≥2 基因组，把"多对一"的复杂关系折叠成
+  一张共享邻接图，路径上的每个 minimizer 同时在所有基因组里出现。
+- **性能参考**（README）：人类基因组（0.1% 模拟分歧，2 基因组，3 Gbp）26 min / 34 GB；
+  大猿基因组（4 基因组，3 Gbp）48 min / 32 GB；蜜蜂（11 基因组，0.44 Gbp）15 min / 4 GB。
+- **发表**：Coombe et al. 2025, BMC Biology（DOI 10.1186/s12915-025-02455-w）。
+- **依赖**：btllib（Bloom filter / NtHash）、python intervaltree/pybedtools/ncls/igraph、
+  snakemake、seqtk、samtools。
+
+## 2. 核心概念 (Key Concepts)
+
+### 2.1 参数与默认值
+
+| 参数 | 默认 | 含义 |
+| :--- | :--- | :--- |
+| `-k` | 24 | minimizer k-mer 长度 |
+| `-w` | 1000 | minimizer 窗口大小 |
+| `-t` | 12 | 线程 |
+| `--fpr` | 0.025 | common Bloom filter 假阳性率 |
+| `--hashes` | 3 | Bloom filter 哈希函数数 |
+| `-d/--divergence` | 必填 | 基因组间近似最大分歧（%），用于推默认块参数 |
+| `-b/--block_size` | 依分歧 | 最小共线性块长度 (bp) |
+| `--indel` | 依分歧 | indel 检测阈值 (bp) |
+| `--merge` | 依分歧 | 共线块合并最大间距 (bp，或 `Nw` 表示 N 倍 w) |
+| `--w_rounds` | 依分歧 | 递减的细化窗口序列 |
+
+**分歧 → 默认参数**（`ntSynt:101-111`）：
+
+| 分歧范围 | block_size | indel | merge | w_rounds |
+|---|---|---|---|---|
+| < 1% | 500 | 10000 | 10000 | 100 10 |
+| 1%–10% | 1000 | 50000 | 100000 | 250 100 |
+| > 10% | 10000 | 100000 | 1000000 | 500 250 |
+
+### 2.2 数据流（snakemake 管线，`ntsynt_run_pipeline.smk`）
+
+```
+每个基因组.fa
+  ├─ rule faidx            → .fai（samtools faidx，供后续 2bit/坐标）
+  ├─ rule make_common_bf   → <prefix>.common.bf（C++ 级联 Bloom filter）
+  ├─ rule indexlr          → <genome>.k<k>.w<w>.tsv（每基因组有序 minimizer 位置表）
+  └─ rule ntsynt_synteny   → <prefix>.synteny_blocks.tsv（最终共线性块）
+```
+
+四步中只有最后一步（`ntsynt_run.py`）是"算法"，前三步是索引/过滤预处理：
+1. **faidx**：建 .fai，供坐标回移与 pybedtools 掩膜用。
+2. **make_common_bf**（C++，见 §4.1）：找**所有基因组共有**的 k-mer，建成一个 Bloom filter，
+   供 indexlr 只保留共有 minimizer。
+3. **indexlr**（btllib）：对每个基因组做 minimizer 采样，用 common BF `-s` 过滤，
+   输出 `(k-mer 哈希, contig, 位置)` 的 TSV（按位置有序）。
+4. **ntsynt_run.py**：读所有基因组的 minimizer TSV → 建共享 minimizer 图 → 图简化/过滤 →
+   找路径 → 找共线性块 → 细化（`w_rounds` 递减）→ 合并共线块 → 输出 TSV。
+
+> **`--no-common`**：可跳过 common BF（`common=False`），此时图包含所有 minimizer，
+> 靠 `-n`（最小边权重）过滤。common BF 默认开，是省内存/加速的手段。
+
+### 2.3 共享 minimizer 图模型（核心思想）
+
+把"多基因组共线性"编码成一张**无向图**，来自 ntJoin：
+
+- **顶点 (vertex)** = 一个 minimizer **k-mer 哈希**（`ntjoin_utils.vertex_index(graph, mx)`）。
+- **边 (edge)** = 两个 minimizer 哈希在**同一基因组的有序 minimizer 列表里相邻**
+  （consecutive），`ntjoin_utils.edge_index(graph, mx_i, mx_i_next)`。
+- **边权重 (weight)** = 该"相邻关系"在多少个基因组里同时出现
+  （`weights = [1]*len(FILES)`，每基因组贡献 1）。
+- **过滤**：删掉 `weight < n` 的边（`filter_graph_global`，`-n` 默认 = 基因组数）。
+  剩下的边只在**所有基因组**里都相邻出现——构成"共线主干"。
+
+直觉：如果两个共享 minimizer 在所有基因组的同一条 contig 上都是紧邻的，那么这段
+"双 minimizer 邻接"跨基因组保守，可视为共线锚点；把这些邻接首尾相连成路径，
+路径覆盖的区间就是跨基因组的共线性块。
+
+### 2.4 输出格式（`<prefix>.synteny_blocks.tsv`）
+
+8 列 TSV，`block_id` 相同的行属于同一共线性块：
+
+```
+block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
+```
+
+- `start/end`：该基因组上的块坐标（start 为 0-based 第一个 minimizer 位置，
+  end = 最后一个 minimizer 位置 + k，见 §4.3 `get_block_start/end`）。
+- `strand`：该基因组内块的方向（`+`/`-`，§4.3 `determine_orientations`）。
+- `broken_reason`：与**上一个**块的断点原因（`None` / `id_change` / `ori_change` /
+  `inconsistent_order` / `indel` / `merge`，§4.6）。
+
+## 3. 算法详解
+
+### 3.1 级联 Bloom filter（common BF，C++）
+
+`src/ntsynt_make_common_bf.cpp`：找"所有基因组共有 k-mer"的内存友好方法（§4.1）。
+
+### 3.2 初始图构建与简化/过滤（`ntsynt_synteny.py`）
+
+1. **load_minimizers**：读各基因组 minimizer TSV，建 `list_mx_info[assembly][hash] = (contig, pos)`。
+2. **make_minimizer_graph**（ntJoin）：按 §2.3 建图。
+3. **run_graph_simplification**（`ntsynt_synteny.py:587`）：简化气泡。
+   - `node_partially_anchored`：顶点只有**一条** max-weight（= 基因组数）的关联边。
+   - 对两端都是"度 3 + 部分锚定"的边：若 source→target 恰好有**两条**简单路径
+     （一条直边 + 一条 3 节点路径），删掉中间节点（`path[1]`），把直边权重提到 max。
+   - 效果：消除单点噪声（重复/错误 minimizer 造成的分叉），把"真实共线"的直连边权重拉满。
+4. **filter_graph_global**：删 `weight < n` 的边（`ntsynt_synteny.py:312`）。
+
+### 3.3 路径发现与共线性块提取
+
+- **ntjoin_find_paths()**（ntJoin）：在图上找路径（连通分量内的一次遍历）。
+- **find_paths_synteny_blocks**（`ntsynt_synteny.py:564`）：把每条路径交给
+  `find_synteny_blocks`。
+- **find_synteny_blocks**（`ntsynt_synteny.py:70`）：沿路径逐个 minimizer 走：
+  - `continue_block(mx)`：若该 minimizer 在**每个**基因组都映射到**当前块的 contig**
+    → `extend_block` 延展；否则结束当前块、开新块。
+  - 块结束时 `determine_orientations()`：若 `all_oriented`（每基因组都能定 ±）→ 保留；
+    否则把该块的 minimizer 从图里删除（`to_remove_nodes`），即未定向的块丢弃。
+  - 关键：**路径上的相邻 minimizer 是跨基因组共线的**，块只在"跨 contig 跳变"处断开。
+- **check_for_indels**（`ntsynt_synteny.py:411`）：对每个块，相邻 minimizer 对的
+  `max_difference`（各基因组相邻 minimizer 位置差的 max − min）> `--bp`（indel 阈值）
+  就在该处断块，并把对应的图边删掉（`remove_flagged_edges`）。
+- **filter_synteny_blocks**（`ntsynt_synteny.py:431`）：删除 minimizer 数 < 阈值（4）的块。
+
+### 3.4 坐标细化（`w_rounds` 递减窗口）
+
+初始块用的是大窗口（`-w`，如 1000）minimizer，块端点粗糙。`refine_block_coordinates`
+（`ntsynt_synteny.py:497`）用**递减窗口**（如 250、100）把块端点磨细：
+
+1. **mask_assemblies_with_synteny_extents**：把每个基因组中"已被共线性块覆盖"的区间
+   （长度 > `max(2*w, w+k+1)` 的块）掩膜掉（slop `-(w+k)` 后 mask_fasta）。
+2. **generate_new_minimizers**：对掩膜后的序列用更小的 `w` 重新跑 indexlr（仍过滤 common），
+   得到更密集的 minimizer。
+3. **find_mx_in_blocks**：收集各块两端 minimizer（terminal）与内部 minimizer（internal）。
+4. **filter_minimizers_synteny_blocks**：新 minimizer 里，凡是落在块区间重叠处
+   （intervaltree/NCLS）或属于 internal black_list 的去掉，只留**块与块之间**的新 minimizer。
+5. **build_graph**：把这些新 minimizer 以权重 1 加进现有图（`black_list=terminal_mxs`）。
+6. 重新找路径 → 断 indel → 过滤 → 输出 `<prefix>.pre-collinear-merge.synteny_blocks.tsv`。
+7. 最后一轮（`new_w == w_rounds[-1]`）：额外做 `filter_graph_global_flag_overlaps` +
+   `refine_graph`（§3.5），然后 `merge_collinear_blocks`（§3.6）。
+
+### 3.5 末端/重叠精修（最后一轮，`refine_graph`）
+
+`filter_graph_global_flag_overlaps`（`ntsynt_synteny.py:312`）先删 `< n` 边并记录被删边的
+两端 `flagged_node_pairs`；`refine_graph`（`ntsynt_synteny.py:363`）只处理两端都是**度 1**
+（终端）的 flagged 对：`erode_edges` 沿末端向里"侵蚀"，直到两端 minimizer 位置在任一
+基因组里不再相距 < k（`has_overlap`），把侵蚀过程中经过的关联边删掉。作用是修剪
+"末端 minimizer 重叠"造成的错误延伸（重复/拷贝边界）。
+
+### 3.6 共线合并（`merge_collinear_blocks`）
+
+把同 contig、同向、间距合适且非 indel 的相邻块合并成一个：
+
+| broken_reason | 条件 |
+|---|---|
+| `id_change` | 任一基因组 contig id 变了 |
+| `ori_change` | 任一基因组方向变了 |
+| `inconsistent_order` | 任一 gap 为负（顺序不一致） |
+| `indel` | `max(gap) − min(gap) > --bp − k` |
+| `merge` | `max(gap) >= --merge`（collinear_merge） |
+
+否则合并（把后块 minimizer 接到前块尾）。执行两次（`ntsynt_synteny.py:526-531`），
+每次合并后按 `-z`（block_size）过滤短块。独立脚本 `bin/ntsynt_merge_collinear.py`
+把同一逻辑做成可单独对已有 TSV 调用的工具。
+
+## 4. 实现细节
+
+### 4.1 级联 Bloom filter（`ntsynt_make_common_bf.cpp`）
+
+- **BF 尺寸**（`approximate_bf_size`）：按 Broder & Mitzenmacher 公式
+  `m_bits = −hashes·n / ln(1 − fpr^(1/hashes))`，n = 第一个基因组的碱基数。
+- **级联插入**：BF1 = 基因组 1 的全部 k-mer；对基因组 i>1，只有当 k-mer 在 BF_{i-1} 里
+  才插入 BF_i；把 BF_{i-1} 删掉、BF_i 变新 BF。最终 BF = "所有基因组共有"的近似集合。
+- 输入基因组先 `std::sort`，保证输出与文件顺序无关（可复现）。
+- `--hashes > 1` 需 btllib ≥ 1.7.8（`ntSynt:126` 有版本守卫）。
+
+### 4.2 repeat BF（实验性，`ntsynt_make_repeat_bfs.py`）
+
+默认**不启用**（`repeat=False`）。若开：找"在任一基因组里 ≥2 次"的重复 k-mer，建 BF；
+配合 `--filter Filter` 把重复 minimizer 滤掉（用于去重复序列）。README 标注 experimental。
+
+### 4.3 块坐标与方向（`assembly_block.py` / `synteny_block.py`）
+
+- `get_block_start() = min(pos0, pos_last)`；`get_block_end() = max(pos0, pos_last) + k`
+  （0-based 半开，end 含 k 个碱基）。
+- `get_block_length() = end − start`。
+- `determine_orientations()`：对每个基因组，看块内 minimizer 位置序列：
+  - 全递增 → `+`；全递减 → `-`；
+  - 否则按 `正序比例 ≥ -m`（默认 90%）定 `+`/`-`，否则 `?`（未定向）。
+- `all_oriented()`：所有基因组都非 `?`。未定向块会被剔除（§3.3）。
+
+### 4.4 块内节点（`synteny_block.py`）
+
+`SyntenyBlockNode = (mx, positions)`：`mx` 是块内第 i 个 minimizer 哈希，
+`positions` 是各基因组上的位置列表。块的"最小化器数"取任一基因组的 minimizer 列表长度。
+
+### 4.5 重叠检查（`check_non_overlapping`，仅 --dev）
+
+最终输出前用 intervaltree 检查同 contig 上块是否重叠，重叠 ≥ `-z` 时打 WARNING
+（不做硬失败，仅提示）。
+
+### 4.6 broken_reason 编码
+
+见 §3.6 表。`get_block_string(verbose=True)` 在最终 TSV 输出第 8 列。
+
+## 5. 与 pgr 的对比（pgi = syncmer 有序排列）
+
+| 维度 | ntSynt | pgr 现状（pgi） | 差距 |
+| :--- | :--- | :--- | :--- |
+| 每基因组有序 k-mer 表 | indexlr（minimizer TSV） | `pgr pgi build`（sorted syncmer `.pgi`） | **已有** |
+| 跨基因组共有 k-mer 集合 | common BF（C++ 级联） | `.pgi` 是**排序** k-mer 表，可多路归并求交集 | 需新增（比 BF 更精确，无假阳性） |
+| 邻接图（顶点=共享 minimizer，边=跨基因组相邻，权重=出现基因组数） | ntJoin 图 | — | 需新增 |
+| 图简化/过滤（去气泡、weight≥n） | igraph Python | — | 需新增 |
+| 路径 → 共线性块 | ntSynt 逻辑 | — | 需新增 |
+| indel 断块 / 方向判定 / 共线合并 | 同上 | — | 需新增 |
+| 坐标细化（w_rounds 递减掩膜重采样） | 同上 | — | 可选（二期） |
+
+**核心洞察**：ntSynt 的"输入"（有序 k-mer 位置表 + 跨基因组共有过滤）正好是 `.pgi`
+的排序特性 + 现成的 `PgiQuery` 合并查询能力。pgi 用 **closed syncmer**（密度 ~2/(w+1)、
+覆盖有界）替代 minimizer，采样更稳；pgr 还能直接复用 `pgi align` 的归并、`PgiMmap`
+按需读、rayon 并行等既有基础设施。**缺的是"多基因组图 + 路径 + 共线性块"这一层。**
+
+## 6. 对 pgr 的启示（移植可行性）
+
+1. **算法体量可控**：真正新增的是图构建 + 路径遍历 + 块提取/合并，约 300–500 行 Rust；
+   不需要 Bloom filter（排序归并更精确）、不需要 igraph（图很简单，邻接表即可）、
+   不需要 snakemake（CLI 编排）。
+2. **采样器可换**：ntSynt 用 minimizer（k=24, w=1000）；pgi 用 closed syncmer（k=40,
+   s=8, w=5）。**参数口径完全不同**，移植时按 pgi 语义，不照搬 ntSynt 默认值。
+3. **共享集合用排序归并**：`.pgi` 按 k-mer 排序，跨基因组共有集 = 多路归并求交集
+   （O(总条目数)），比 Bloom filter 精确（无假阳性），且能同时拿到每基因组的
+   (contig, pos, strand)。
+4. **图是稀疏无向的**：顶点 = 共有 syncmer 哈希；边 = 相邻对；权重 = 出现基因组数。
+   用 `HashMap<u128, node>` + 邻接表即可，无需 igraph。
+5. **验证**：用 ntSynt 的 C. elegans demo 数据（`tests/` 下）或 E. coli 多株，
+   对比 block 数量/覆盖与 ntSynt/UCSC chainnet。
+
+---
+
+*参考来源: [ntSynt GitHub](https://github.com/BirolLab/ntSynt) | [ntJoin](https://github.com/bcgsc/ntJoin) | [Coombe et al. 2025, BMC Biology](https://doi.org/10.1186/s12915-025-02455-w) | [ntSynt wiki](https://github.com/BirolLab/ntSynt/wiki/Description-of-the-ntSynt-algorithm)*

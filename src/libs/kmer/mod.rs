@@ -2,7 +2,7 @@
 //!
 //! Native replacement for the FastK (`-p` / `-t` / `-p:<table>`) and Profex
 //! (`-z`) steps of `pgr rept s-kmer` / `e-kmer`, with the `.pgrk` compact
-//! table cache. Design: `notes/design/fastk-migration.md`.
+//! table cache. Design: `notes/design/kmer.md`.
 
 pub mod count;
 pub mod extract;
