@@ -6,7 +6,9 @@ use std::collections::HashMap;
 
 /// Generates a consensus sequence from the POA graph.
 /// Uses a heaviest path algorithm (finding the path with maximum total weight).
-/// Score[u] = NodeWeight[u] + max(Score[v] + EdgeWeight(v, u)) for all predecessors v.
+/// Score[u] = NodeWeight[u] + BestIncomingEdgeWeight(v→u) + Score[v], where the
+/// predecessor v is selected primarily by its incoming edge weight (Score[v]
+/// only breaks ties between equal edge weights).
 pub fn generate_consensus(graph: &PoaGraph) -> Vec<u8> {
     let sorted_nodes = graph.topological_sort();
 

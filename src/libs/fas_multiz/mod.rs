@@ -41,7 +41,9 @@ fn ref_overlaps_window(entry: &FasEntry, window: &Window) -> bool {
     }
     let start = *range.start() as u64;
     let end = *range.end() as u64;
-    start < window.end && end > window.start
+    // Both ranges are 1-based and inclusive, so overlaps are inclusive too;
+    // a single-base block sitting exactly on the window boundary must count.
+    start <= window.end && end >= window.start
 }
 
 pub fn merge_fas_files(

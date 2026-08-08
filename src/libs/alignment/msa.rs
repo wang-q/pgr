@@ -347,6 +347,17 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
         let idx: usize = idx
             .parse()
             .map_err(|e| anyhow!("invalid seq id [{}]: {}", record.id(), e))?;
+        if idx >= out_seqs.len() {
+            // An external aligner may emit extra/renumbered records (e.g. a
+            // consensus or reordered output) whose id index is out of range.
+            // Report a friendly error instead of panicking on the index.
+            anyhow::bail!(
+                "aligner returned record [{}] with sequence index {} out of range (expected 0..{}); refusing to write mislabeled output",
+                record.id(),
+                idx,
+                out_seqs.len()
+            );
+        }
 
         out_seqs[idx] = String::from_utf8(record.seq().to_vec().to_ascii_uppercase())
             .map_err(|e| anyhow!("invalid UTF-8 in record [{}]: {}", record.id(), e))?;

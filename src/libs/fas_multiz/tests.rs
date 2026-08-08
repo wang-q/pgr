@@ -49,6 +49,28 @@ fn derive_windows_inverted_reference_range_no_panic() {
 }
 
 #[test]
+fn ref_overlaps_window_includes_boundary_positions() {
+    // Both the block range and the window are 1-based and inclusive, so a
+    // single-base block sitting exactly on the window's start/end is inside.
+    let (first, _, _) = make_entry("ref", 20, 20, "A");
+    let window = Window {
+        chr: first.range().chr().to_string(),
+        start: 10,
+        end: 20,
+    };
+    // base 20 is the window's inclusive end -> must overlap.
+    assert!(ref_overlaps_window(&first, &window));
+    // base 10 is the window's inclusive start -> must overlap.
+    let (entry_at_start, _, _) = make_entry("ref", 10, 10, "A");
+    assert!(ref_overlaps_window(&entry_at_start, &window));
+    // just outside -> must not overlap.
+    let (entry_before, _, _) = make_entry("ref", 9, 9, "A");
+    assert!(!ref_overlaps_window(&entry_before, &window));
+    let (entry_after, _, _) = make_entry("ref", 21, 21, "A");
+    assert!(!ref_overlaps_window(&entry_after, &window));
+}
+
+#[test]
 fn merge_window_without_coverage_returns_none() {
     let (ref_entry, ref_name, ref_header) = make_entry("ref", 1, 4, "ACGT");
     let (a_entry, a_name, a_header) = make_entry("A", 1, 4, "ACGT");

@@ -117,6 +117,16 @@ pub fn chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 /// }
 /// ```
 pub fn align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> anyhow::Result<i32> {
+    // An empty intspan has no reference positions to map to; `min`/`max` would
+    // panic, so reject it explicitly (mirrors `chr_to_align`'s graceful error
+    // for an empty reference).
+    if ints.is_empty() {
+        return Err(anyhow!(
+            "cannot map alignment position [{}] against an empty sequence intspan",
+            pos
+        ));
+    }
+
     let chr_end = chr_start + ints.size() - 1;
 
     if pos < 1 {
@@ -223,6 +233,7 @@ pub fn reverse_range_1based_pair(start: usize, end: usize, size: usize) -> (usiz
 #[cfg(test)]
 mod tests {
     use super::{align_to_chr, seq_intspan};
+    use crate::libs::ds::IntSpan;
 
     #[test]
     fn align_to_chr_holes_pin_to_left_base() {
@@ -248,5 +259,18 @@ mod tests {
                 seq, pos, chr_start, strand
             );
         }
+    }
+
+    /// Regression: mapping a position against an empty sequence intspan (an
+    /// all-gap sequence) must return an error, not panic on `min`/`max`.
+    #[test]
+    fn align_to_chr_empty_intspan_errors() {
+        let ints = IntSpan::new(); // an all-gap sequence has an empty intspan
+        let result = align_to_chr(&ints, 1, 1, "+");
+        assert!(
+            result.is_err(),
+            "align_to_chr on an empty intspan must error, got {:?}",
+            result
+        );
     }
 }

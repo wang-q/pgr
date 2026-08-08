@@ -408,6 +408,19 @@ mod create {
     }
 
     #[test]
+    fn try_from_rejects_empty_run_tokens() {
+        // An empty token between/around commas used to decay to an implicit
+        // (0,0) pair and silently inject position 0 (e.g. "1,,3" -> {0,1,3}).
+        assert!(IntSpan::try_from("1,,3").is_err());
+        assert!(IntSpan::try_from(",1").is_err());
+        assert!(!IntSpan::valid("1,,3"));
+        // A trailing comma is a harmless no-op run terminator.
+        assert_eq!(IntSpan::try_from("1,").unwrap().to_string(), "1");
+        // A bare '-' is still the valid empty-set marker.
+        assert!(IntSpan::try_from("-").unwrap().is_empty());
+    }
+
+    #[test]
     fn from_pairs_matches_add_pair_build() {
         let pairs = [
             (5, 5),
@@ -2162,6 +2175,17 @@ impl IntSpan {
         let mut in_upper = false;
 
         while idx < len {
+            // A run must contain at least a sign and/or digits. An empty token
+            // (leading comma, or consecutive commas like "1,,3") would decay to
+            // an implicit (0,0) pair and silently inject position 0 into the
+            // set; reject it instead so `try_from` stays strict.
+            if *bytes.get(idx).unwrap() == b',' {
+                return Err(anyhow!(
+                    "Number format error: empty run at {} of {}",
+                    idx,
+                    runlist
+                ));
+            }
             let mut i = 0; // index in one run
             if *bytes.get(idx).unwrap() == b'-' {
                 lower_is_neg = true;

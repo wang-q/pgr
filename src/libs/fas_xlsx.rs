@@ -84,7 +84,7 @@ pub fn export_to_xlsx(
                     }
                 };
 
-                opt.col_cursor += consumed;
+                opt.col_cursor = opt.col_cursor.saturating_add(consumed);
                 if opt.col_cursor > opt.wrap {
                     opt.col_cursor = 1;
                     opt.sec_cursor += 1;
@@ -108,7 +108,10 @@ pub fn export_to_xlsx(
     }
 
     worksheet.set_column_width(0, opt.max_name_len as f64)?;
-    for i in 1..=(opt.wrap + 3) {
+    // `opt.wrap + 3` would overflow u16 for large `--wrap` values (e.g.
+    // 65535); saturating keeps the column range bounded without panicking.
+    let last_col = opt.wrap.saturating_add(3);
+    for i in 1..=last_col {
         worksheet.set_column_width(i, 1.6)?;
     }
 
@@ -169,7 +172,7 @@ fn paint_indel(
 
     let col_taken = indel.length.min(3) as u16;
 
-    if opt.col_cursor + col_taken > opt.wrap {
+    if opt.col_cursor.saturating_add(col_taken) > opt.wrap {
         opt.col_cursor = 1;
         opt.sec_cursor += 1;
         pos_row = opt.sec_height * (opt.sec_cursor - 1);

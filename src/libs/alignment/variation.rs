@@ -656,8 +656,10 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()>
 
 /// Collect substitutions, polarizing with outgroup if provided.
 ///
-/// When `outgroup` is `Some`, the last element of `seqs` is treated as the
-/// outgroup and used to polarize substitutions from the remaining ingroup sequences.
+/// When `outgroup` is `Some`, the last element of `seqs` is excluded from the
+/// ingroup and the provided `outgroup` sequence is used to polarize the
+/// remaining substitutions. Callers must pass the same sequence both as
+/// `outgroup` and as `seqs`' last element.
 pub fn collect_subs(seqs: &[&[u8]], outgroup: Option<&[u8]>) -> anyhow::Result<Vec<Substitution>> {
     let ingroup_count = if outgroup.is_some() {
         seqs.len() - 1
@@ -685,8 +687,10 @@ pub fn vcf_alt_bases(sub: &Substitution) -> Vec<char> {
 
 /// Collect indels, polarizing with outgroup if provided.
 ///
-/// When `outgroup` is `Some`, the last element of `seqs` is treated as the
-/// outgroup and used to polarize indels from the remaining ingroup sequences.
+/// When `outgroup` is `Some`, the last element of `seqs` is excluded from the
+/// ingroup and the provided `outgroup` sequence is used to polarize the
+/// remaining indels. Callers must pass the same sequence both as `outgroup`
+/// and as `seqs`' last element.
 pub fn collect_indels(seqs: &[&[u8]], outgroup: Option<&[u8]>) -> anyhow::Result<Vec<Indel>> {
     let ingroup_count = if outgroup.is_some() {
         seqs.len() - 1

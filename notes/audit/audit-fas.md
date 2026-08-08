@@ -272,6 +272,76 @@ gap，经 `cons.replace('-',"")` 后为空。修复：在 `consensus_block` 生�
 > （空 block、全 gap、短外群、负链、>32 序列、倒置区间），未再发现其他新缺陷；既有已知限制
 > 保持不修复。
 
+## 第三轮复审新增修复（2026-08-08）
+
+对 `fas` 命令族再做一轮纵深复审，聚焦外部对齐器输出解析、窗口边界、runlist 解析、
+Excel 算术溢出与若干文档一致性，新发现并修复以下缺陷（均已补回归测试/文档澄清，
+并通过全部 fas 测试、clippy、fmt）：
+
+### Zero Panic / 越界（3 处）
+
+**外部对齐器返回越界序列 id 时 panic**：`align_seqs`（`refine --engine` 非 builtin 走
+外部 MSA 程序）解析外部对齐器输出时，用记录头 `>N` 的 `N` 直接索引 `out_seqs`。若外部
+对齐器返回额外/重编号的记录（id 超出输入序列索引范围），`out_seqs[idx]` 越界 panic。
+修复：在写入前校验 `idx >= out_seqs.len()` 即返回友好错误，拒绝写入错标输出。
+
+**`multiz` 窗口边界 off-by-one**：`ref_overlaps_window` 原用 `start < window.end &&
+end > window.start` 判断 block 参考区间与窗口是否重叠。两区间均为 1-based 且含端点，
+一个恰好落在窗口边界上的单碱基 block 会被判为不重叠而丢弃。修复：改为含端点的
+`start <= window.end && end >= window.start`。回归
+`ref_overlaps_window_includes_boundary_positions`。
+
+**`IntSpan` runlist 解析空 token 静默注入坐标 0**：`IntSpan::try_from` 解析 runlist 时，
+空 token（前导逗号 `,1`、连续逗号 `1,,3`）会退化为隐式 `(0,0)` 对，静默把坐标 0 注入
+集合。`slice`/`cover` 等命令的 `--runlist` 走此解析。修复：遇到逗号开头的空 run 即返回
+"Number format error: empty run" 错误；尾随逗号（`1,`）仍作无害换行终止符。回归
+`try_from_rejects_empty_run_tokens`。
+
+### 算术溢出（1 处）
+
+**`to-xlsx` `--wrap` 大值导致 u16 溢出**：`export_to_xlsx` 用 `opt.wrap + 3` 遍历设置列宽，
+当 `--wrap` 取接近 u16 上限（如 65535）时 `wrap + 3` 溢出回绕，列宽设置错乱。修复：改为
+`saturating_add(3)`；`paint_indel` 的 `col_cursor + col_taken` 同样改 saturating，`paint_sub`
+的 `col_cursor += consumed` 亦防溢出。
+
+### 文档一致性（2 处）
+
+**`collect_subs`/`collect_indels` 外群语义描述误导**：`variation.rs` 原 doc 称"`seqs`
+最后一条序列被当作外群"。实际约定是：调用方需把同一序列既作为 `seqs` 末元素传入、又作为
+`outgroup` 参数传入，末元素被排除出内群。已更新 doc 澄清该约定。
+
+**`trim_head_tail` doc 描述与实现不符**：`trim.rs` 原 doc 称"返回每序列被删除碱基对应的
+(head, tail) 元组向量"，实际函数就地修改序列与其 range 并返回 `String`（complex 区域）。
+已更新 doc。
+
+> 说明：本轮复审额外复核了 `ds/intspan.rs` 的 `try_from`/`valid` 解析路径、
+> `fas_xlsx.rs` 的列游标与列宽遍历、`alignment/msa.rs` 的外部对齐器输出解析、
+> `fas_multiz/mod.rs` 的窗口重叠判断、`poa/consensus.rs`/`poa/msa.rs`/`alignment/trim.rs`/
+> `variation.rs` 的文档与实现一致性，未再发现其他新缺陷；既有已知限制保持不修复。
+
+## 第四轮复审新增修复（2026-08-08）
+
+再做一轮纵深复审，聚焦坐标换算函数的空集合边界，新发现并修复以下缺陷（已补回归
+测试，并通过全部 fas 测试、clippy、fmt）：
+
+### Zero Panic / 空集合（1 处）
+
+**`align_to_chr` 对空序列 intspan panic**：`alignment/coords.rs` 的 `align_to_chr`
+在 `ints.is_empty()` 时会调用 `ints.min()`/`ints.max()`，二者对空 `IntSpan` 直接
+`panic!`。经核验，`fas` 现有全部调用方（`slice_block`、`write_variations`、
+`write_vcf_block`）当前均不可达该路径：`write_variations`/`write_vcf_block` 的
+`t_ints_seq` 仅在目标全 gap 时为空，而 `get_subs` 只在"所有序列该列均为真实碱基
+（`NT_VAL<=3`）且存在差异"时产出 substitution，目标全 gap 时无任何 substitution 需
+换算坐标；`slice_block` 中任一物种全 gap 会使 `indel_ints` 覆盖全列，子切片被
+`ss_ints.is_empty()` 完全剔除。但 `align_to_chr` 是公开库函数，与其对称的
+`chr_to_align`（对空参考自然返回错误）行为不一致，属潜在 panic 隐患。修复：在函数
+入口对空 intspan 返回友好错误。回归 `align_to_chr_empty_intspan_errors`。
+
+> 说明：本轮复审额外复核了 `slice_block` 的 `chr_to_align`/`align_to_chr` 全部调用
+> 点（空 intspan、负链端点、subslice 空集）、`write_variations`/`write_vcf_block` 的
+> `t_ints_seq` 空集可达性、`get_subs` 对全 gap 目标的 substitution 产出条件，未再发现
+> 其他新缺陷；既有已知限制保持不修复。
+
 ## 验证
 
 * 数据安全：`-o` 同路径（单文件与 `create` 的 `.loc`、`separate`/`split` 目录）、
@@ -305,14 +375,16 @@ gap，经 `cons.replace('-',"")` 后为空。修复：在 `consensus_block` 生�
 
 ## 结论
 
-`fas` 命令族审核完成（累计修复 19 处缺陷并补回归测试与文档澄清），并经多轮纵深
+`fas` 命令族审核完成（累计修复 20 处缺陷并补回归测试与文档澄清），并经多轮纵深
 复审（全部 20 个子命令的执行路径、`-o` 覆盖保护含 `create`/`check` 的 `.loc` 与
 `separate`/`split` 目录输出、`stat`/`variation`/`to-vcf`/`to-xlsx` 的不等长与
 外群越界、`slice_block`/`trim_head_tail` 全 gap 场景、`banded_align` I 态 gap
 成本、`fas_multiz` 合并顺序确定性、`to-xlsx` 外群歧义碱基样式兜底、`slice` 负链
 坐标、POA 共识节点权重与全 gap 首序列、`--required` 去重、`multiz` 倒置参考区间、
-`create`/`separate` 越界与非 IUPAC 边界、`slice` 带 gap 参考坐标映射、`docs/fas.md`
-与帮助文本一致性）复核。
+`create`/`separate` 越界与非 IUPAC 边界、`slice` 带 gap 参考坐标映射、外部对齐器
+输出越界 id、`multiz` 窗口边界 off-by-one、`IntSpan` runlist 空 token、`to-xlsx`
+`--wrap` 算术溢出、`align_to_chr` 空 intspan、`docs/fas.md` 与帮助文本一致性）
+复核。
 
 多轮纵深复审覆盖全部 20 个子命令的执行路径与相关库函数，均未再发现需要修复的新
 `fas` 缺陷。逐命令核验要点：`replace`（`read_replace_tsv` 单字段=删除、多字段=复制、

@@ -278,8 +278,7 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> anyhow::Result<String> {
     Ok(complex_region.to_string())
 }
 
-/// Trims head and tail indels.
-/// Returns a Vecter of Tuple(head, tail) corresponding to the bases deleted from each sequence
+/// Trims head and tail indels in place, updating each sequence and its range.
 ///
 /// If chop length set to 1, the first indel will be trimmed.
 /// Length set to 5 and the second indel will also be trimmed.

@@ -109,7 +109,7 @@ mod tests {
         let msa = poa.msa();
         assert_eq!(msa.len(), 2);
         // Depending on alignment parameters, it might align C and T or gap them.
-        // Default match=2, mismatch=-4, gap_open=-4, gap_extend=-2.
+        // Default match=5, mismatch=-4, gap_open=-8, gap_extend=-6.
         // Mismatch (-4) is costly.
         // ACGT
         // ATGT
