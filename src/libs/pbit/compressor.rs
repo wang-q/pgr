@@ -900,22 +900,6 @@ impl<W: Write + Seek> Compressor<W> {
             // sequence; encoding uses the uppercase copy (2bit semantics).
             let mask_blocks = extract_mask_blocks(seq);
             let seq_upper: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
-            let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(contig_name) {
-                Some(ids) => ids
-                    .iter()
-                    .copied()
-                    .filter(|id| *id >= ref_group_start && *id < ref_group_start + ref_group_count)
-                    .collect(),
-                None => {
-                    log::warn!(
-                        "contig '{}' in sample '{}' not found in reference; skipping",
-                        contig_name,
-                        sample_name
-                    );
-                    continue;
-                }
-            };
-
             let segs = segment_sequence(&seq_upper, self.segment_size);
             if segs.is_empty() {
                 self.collection
@@ -923,41 +907,46 @@ impl<W: Write + Seek> Compressor<W> {
                 continue;
             }
 
-            // The contig exists in the reference index but has no segments in
-            // the current reference (it may be present only in another reference);
-            // cannot encode against the current reference.
-            if ref_group_ids.is_empty() {
-                log::warn!(
-                    "contig '{}' in sample '{}' has no segments in the current reference; skipping",
-                    contig_name,
-                    sample_name
-                );
-                continue;
-            }
-            // Register the contig entry with its soft-mask intervals (v1005);
-            // subsequent `add_segment` calls reuse this entry.
-            {
-                let cs = self
-                    .collection
-                    .register_sample_contig(sample_name, contig_name);
-                cs.mask_blocks = mask_blocks;
-            }
+            // Reference groups matched by contig name (LZ-diff fallback only;
+            // the CIGAR path maps sample contigs via the PAF index and does
+            // not require name identity between sample and reference).
+            let ref_group_ids: Vec<u32> = self
+                .contig_ref_groups
+                .get(contig_name)
+                .map(|ids| {
+                    ids.iter()
+                        .copied()
+                        .filter(|id| {
+                            *id >= ref_group_start && *id < ref_group_start + ref_group_count
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
 
-            // Detect orientation (hint for LZ-diff fallback only).
-            let first_ref_group = ref_group_ids[0];
-            let first_ref_dna = self.segments[first_ref_group as usize].reference_dna();
-            let contig_is_rev_comp = detect_rev_comp(segs[0], &first_ref_dna, self.kmer_len);
+            // Orientation hint for the LZ-diff fallback (only meaningful when
+            // the contig name matches a reference contig).
+            let contig_is_rev_comp = if ref_group_ids.is_empty() {
+                false
+            } else {
+                let first_ref_group = ref_group_ids[0];
+                let first_ref_dna = self.segments[first_ref_group as usize].reference_dna();
+                detect_rev_comp(segs[0], &first_ref_dna, self.kmer_len)
+            };
 
+            let mut any_encoded = false;
             for (seg_idx, seg) in segs.iter().enumerate() {
                 // Try CIGAR encoding first; fall back to LZ-diff.
-                let encoded = self.try_encode_segment_cigar(
+                if self.try_encode_segment_cigar(
                     sample_name,
                     contig_name,
                     seg_idx,
                     seg,
                     &paf_index,
-                )?;
-                if !encoded {
+                )? {
+                    any_encoded = true;
+                    continue;
+                }
+                if !ref_group_ids.is_empty() {
                     self.encode_segment_lzdiff(
                         sample_name,
                         contig_name,
@@ -966,7 +955,22 @@ impl<W: Write + Seek> Compressor<W> {
                         &ref_group_ids,
                         contig_is_rev_comp,
                     )?;
+                    any_encoded = true;
                 }
+            }
+
+            if any_encoded {
+                // Attach soft-mask intervals after encoding (segments were
+                // registered on demand by `add_segment`).
+                self.collection
+                    .register_sample_contig(sample_name, contig_name)
+                    .mask_blocks = mask_blocks;
+            } else {
+                log::warn!(
+                    "contig '{}' in sample '{}' not covered by PAF alignments or a matching reference contig; skipping",
+                    contig_name,
+                    sample_name
+                );
             }
         }
         Ok(())
@@ -1531,6 +1535,61 @@ mod tests {
         comp.finish()?;
 
         // Decompress and verify.
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let got = extract_fasta_seq(&buf);
+        let expected = String::from_utf8(sample_seq.clone()).unwrap();
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_sample_with_paf_cross_assembly_names() -> Result<()> {
+        // Regression: sample contigs named differently from the reference
+        // (draft-assembly vs reference naming) must still be encodable via
+        // the PAF/CIGAR path. The old code gated every contig on a
+        // reference-contig-name lookup before trying CIGAR, so cross-assembly
+        // samples were silently skipped.
+        let dir = tempfile::tempdir()?;
+        let ref_seq = random_dna(2000, 42);
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("refc", &ref_seq)]);
+
+        // Sample = ref with 3 SNPs, under a different contig name.
+        let mut sample_seq = ref_seq.clone();
+        sample_seq[100] = b'G';
+        sample_seq[200] = b'C';
+        sample_seq[300] = b'T';
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("sampc", &sample_seq)]);
+
+        let paf_path = dir.path().join("sample.paf");
+        write_paf(
+            paf_path.to_str().unwrap(),
+            &[paf_line(
+                "sampc",
+                2000,
+                0,
+                2000,
+                "+",
+                "refc",
+                2000,
+                0,
+                2000,
+                "100=1X99=1X99=1X1699=",
+            )],
+        );
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample_with_paf(
+            "sample1",
+            sample_path.to_str().unwrap(),
+            paf_path.to_str().unwrap(),
+        )?;
+        comp.finish()?;
+
         let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
         let mut buf = Vec::new();
         dec.get_sample("sample1", &mut buf)?;

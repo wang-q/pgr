@@ -591,6 +591,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（2026-08-04，见 [[audit/audit-runlist-rg.md]]） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 | [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成（2026-08-06）；`rept masker` 完整 RepeatMasker 模拟已实现（2026-08-07） |
+| [[genome-nn-query.md]] | 百万级基因组最近邻查询/聚类/搜索方法调研（GSearch / RabbitTClust / BIGSI / LexicMap / MMseqs2 等），为 UI 设计铺垫 | 调研完成（2026-08-08）；命令形态与 sketch 选型待讨论 |
 
 ## 11. 外部工具参考索引（notes/references/）
 

@@ -392,9 +392,51 @@ MinHash（最快，单哈希函数）、**ProbMinHash（默认：共享 k-mer �
 加权、按总 k-mer 数归一化）**、SuperMinHash（Jaccard 精度优化）、
 SetSketch（最低内存 2 变体）；"MinHash/SetSketch 距离 + HNSW 近邻"
 组合首次用于基因组搜索。
+**工程细节**：Rust 重写 hnswlib（hnswlib-rs 0.1.19，含内存映射）与
+probminhash 0.1.10（11 种 MinHash 类算法，GSearch 用其中 6 种）；
+三模块 tohnsw（建图）/ add（增量添加）/ request（查询），均并行；
+建图 O(N log N)、查询 O(log N)；M 上限 255（--nbng，24–64 常用）、
+ef_construct 默认 400（论文建议 >1000 提升召回）；
+数据库分片（各片独立建图，汇总 top-K，每片取 ≥K 时与整体等价）；
+三阶段搜索（nt → 全蛋白组 AAI → 通用基因 AAI，阈值 ~78% ANI /
+52% AAI）；论文参数细菌 s=12,000、k=16，真菌 s=48,000、k=21，
+蛋白 k=7；基准：318k RefSeq 建图 4.1 h（24 线程）、8466 查询 9.33
+min；1M 基因组文件 ~118 GB（ProbMinHash）/ 9.8 GB（SetSketch）。
+**源码核对（gsearch-master / hnsw_rs 0.3.4 / probminhash 0.1.12，
+2026-08-08）**：① 图距离实现为 **sketch 签名的 Hamming 距离**
+（`Hnsw::<Sig, DistHamming>`，anndists 实现于 u8/u16/u32/i32/i16），
+并非论文文字里的 1−Jp 直接做图导航——Jaccard 语义由 LSH sketch 本身
+保证，HNSW 只按签名相似度近邻；② 建图参数：ef_construct 默认
+**400**、max_nb_conn = min(--nbng, 255)、capacity 硬编码 1,500,000、
+层数上限 16（GTDB 实际 3 层）；③ **HubNSW 单层化选项**：
+`--scale_modify_f ∈ [0.2,1]`（默认 1.0）可把多层图压成单层 NSW，
+README 明确称对高维数据集 "better space requirement and accuracy"
+（arXiv 2412.01940）——与 pgr 4096 维 HV 的召回问题直接相关；
+④ k-mer 预处理：过滤非 ACGT、2-bit 编码、`rc().min()` 取正则链后
+再哈希；⑤ 处理粒度：默认**逐序列 sketch**，`--block` 才把整文件连成
+一条；基因组级排序用"序列级距离的乘积"聚合（matcher.rs
+compute_merit_wl，阈值 0.99，注释自承 TODO 未调优）；⑥ 请求侧
+ef_search 独立传参，输出阈值 0.99；⑦ README 快速上手参数：
+k=21、s=18,000、n=128、ef=1600、--algo optdens、scale 0.25。
+**召回（Table 3，真值 = 暴力 BLAST-ANI/AAI 的 top-K）**：定义
+recall = |R'∩R|/|R|（R' = GSearch 返回的 top-K），跨查询平均，评估
+top-5 / top-10。原核（对 318k RefSeq）：近缘查询（>78% ANI）nt 图
+top-5/top-10 = 98.3%/96.2%（Tara）、97.7%/95.1%（Ye）；无近缘查询
+nt 图 top-10 跌至 43–49%，换蛋白组图恢复到 95–97%，深分支（通用基因
+图）94–96%；数据库本身无 ≥52% AAI 近缘的深分支只有 50–56%（数据稀疏，
+非检索失败）。真菌（s=48,000，k=21）：nt top-10 99.4%（对 MUMMER-ANI）；
+aa 图 top-5 99.7%、top-10 98.5%。病毒（~3M IMG/VR4，只建 aa 图）：
+top-5 recall 98.32%。基因组完整度 >50% 时 top-10 recall >80%，低于
+50% 不推荐。**注意**：这是"sketch 距离误差 + 图检索误差"的端到端召回，
+真值是 ANI/AAI；比我们 HV 实验的图检索召回（真值 = HV 距离精确 top-10）
+更严格，二者不可直接比大小。
 
 **对 pgr**：pgr dist 的 **ANN 搜索方向（§5.5 方向 6）**的完整工程参考——
 特别是"概率草图距离 + HNSW"的组合，以及 SetSketch 的低内存变体。
+另注意：GSearch 的 sketch（s=12,000 寄存器，u16–u64 计 24–96
+KB/基因组）与我们的 HV（16 KB）体积**同量级**，其优势在 HNSW 图查询
+O(log N) 而非 sketch 更小；单层化 HubNSW 可作 4096 维召回实验的下一个
+对照（见 genome-nn-query §6.4）。
 
 #### HNSW（IEEE TPAMI 2020）—— 完整精读
 

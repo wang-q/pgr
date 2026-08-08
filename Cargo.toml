@@ -114,6 +114,22 @@ harness = false
 name = "dist_sketch_benchmark"
 harness = false
 
+[[bench]]
+name = "hv_ann_recall"
+harness = false
+
+[[bench]]
+name = "hv_ann_hubnsw"
+harness = false
+
+[[bench]]
+name = "hv_ann_clade"
+harness = false
+
+[[bench]]
+name = "hv_ann_real"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]
@@ -131,6 +147,13 @@ nalgebra = "0.34.1"
 # jaccard benchmark
 nohash-hasher = "0.2.0"
 tinyset = { version = "0.5.1", default-features = false }
+hnsw = "0.11.0"
+space = "0.17.0"
+rand_pcg = "0.3.1"
+
+# ANN / sketch experiments (GSearch reference implementation)
+hnsw_rs = "0.3"
+probminhash = "0.1"
 
 [profile.release]
 lto = true
