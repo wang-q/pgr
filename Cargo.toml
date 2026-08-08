@@ -135,6 +135,10 @@ name = "hv_ann_real"
 harness = false
 
 [[bench]]
+name = "poa_benchmark"
+harness = false
+
+[[bench]]
 name = "hv_vector_rs"
 harness = false
 

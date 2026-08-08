@@ -21,6 +21,10 @@
 - **设计基础 7 条定稿**（样本复用参考 / 参考坐标系 / 无损 / PAF 存储 /
   可计算的不存储 / PAF 路由载体 / 匹配区间可访问性），见 `design/pbit.md`
   顶部。
+- **POA SIMD 加速（2026-08-09）**：`libs/poa/simd.rs` 垂直并行（lane = 序列
+  位置），分派沿用 HV 式（AVX2 手写 + `wide` 回退，无 SSE4.1 中间档/SIMDe）；
+  `Poa` 默认引擎切换，标量保留测试对照；基准 120 bp ~8.7× / 600 bp ~12.3×
+  （`benches/poa_benchmark.rs`）；参考分析见 `references/spoa.md`（新增）。
 
 **未提交**：pbit 相关代码、测试与文档（本会话改动，含 v1010 判定 + 强制
 PAF）；并行审计另有 6 文件（fas_xlsx.rs、fas/subset.rs、cli_fas_vars.rs、

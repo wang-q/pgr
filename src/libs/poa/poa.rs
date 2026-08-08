@@ -1,7 +1,8 @@
-use super::align::{AlignmentEngine, AlignmentParams, AlignmentType, ScalarAlignmentEngine};
+use super::align::{AlignmentEngine, AlignmentParams, AlignmentType};
 use super::consensus::generate_consensus;
 use super::graph::PoaGraph;
 use super::msa::generate_msa;
+use super::simd::SimdAlignmentEngine;
 use petgraph::graph::NodeIndex;
 
 pub struct Poa {
@@ -15,7 +16,7 @@ impl Poa {
     pub fn new(params: AlignmentParams, mode: AlignmentType) -> Self {
         Self {
             graph: PoaGraph::new(),
-            engine: Box::new(ScalarAlignmentEngine::new(params, mode)),
+            engine: Box::new(SimdAlignmentEngine::new(params, mode)),
             sequences: Vec::new(),
             paths: Vec::new(),
         }

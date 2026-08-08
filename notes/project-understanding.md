@@ -2,6 +2,9 @@
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-08
+（2026-08-09：`libs/poa` 补 SIMD 垂直并行（`simd.rs`，AVX2 手写 + `wide` 回退，
+ 分派沿用 HV 式），`Poa` 默认引擎切换，基准 120 bp ~8.7× / 600 bp ~12.3×；
+ 更新 §4.1/§9/§10 与 [[spoa.md]] 参考分析（新增，合并原 spoa_port.md 移植状态）。
 （2026-08-08：全量核对子命令注册与库文件——align 4 子命令（fill/lastz/pgi/rest）、paf 10
  子命令（新增 validate）、pl 4 子命令（ir/rept/trf 迁出为独立 rept 命令：ir→e-kmer、
  rept→s-kmer）、rept 独立命令（6 子命令，含 masker）；补 libs/rmblast.rs、
@@ -275,7 +278,10 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - 实现 Partial Order Alignment 算法（参考 SPOA）
 - `poa.rs`：`Poa` 引擎封装（序列逐条入图 → 产出 consensus / MSA / 图+路径）
 - `graph.rs`：POA 图结构
-- `align.rs`：序列到图的比对
+- `align.rs`：序列到图的比对（标量 SISD，保留作测试对照）
+- `simd.rs`：`SimdAlignmentEngine`（2026-08-09）——垂直并行 DP（lane = 序列
+  位置），AVX2 手写 intrinsic + `is_x86_feature_detected!` 运行时检测 +
+  portable `wide` 回退（分派沿用 HV 式），两路与标量逐位一致；`Poa` 默认引擎
 - `consensus.rs`：从 POA 图提取一致性序列
 - `msa.rs`：多序列比对接口
 
@@ -573,7 +579,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | multiz / 多序列合并 | [[multiz.md]] | [[design/fas-multiz.md]] | — | `pgr fas multiz`（`libs/fas_multiz`） |
 | UCSC chain/net 管线 | [[ucsc.md]] | [[chain-algorithms.md]]（实现细节） | — | `pgr pl chainnet`、`pgr chain`、`pgr net`（`libs/chain`） |
 | Cactus / lastz 包装 | [[cactus.md]]、[[cactus_lastz.md]] | — | — | `pgr align lastz`、`sd search --engine lastz`（`libs/lastz`） |
-| POA / 一致性 | [[spoa.md]] | [[design/spoa_port.md]] | — | `pgr fas consensus`（`libs/poa`） |
+| POA / 一致性 | [[spoa.md]] | [[spoa.md]] §8（移植与实现状态） | — | `pgr fas consensus`（`libs/poa`） |
 | PAF 隐式图 / 泛基因组 | [[impg.md]]、[[seqwish.md]]、[[smoothxg.md]]、[[minigraph.md]] | [[paf-pangenome.md]]（场景枢纽） | — | `pgr paf graph`（`libs/paf/graph`） |
 | syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
@@ -590,7 +596,6 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→tube 链→mid-line wave 扩展→PSL） | 已实现（2026-08-05 tube 单流程定稿，端到端反超 FastGA ~2.3×） |
 | [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 方案 A 已落地（2026-08-05）；LBYTE/vlcp 定稿不做，变长种子未立项 |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
-| [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
 | [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令（2026-08-04） |
 | [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（2026-08-04，见 [[audit/audit-runlist-rg.md]]） |

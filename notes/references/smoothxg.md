@@ -377,7 +377,7 @@ smoothxg 同时支持 SPOA 和 abPOA 两个 POA 引擎，通过 `-A` 切换：
 深 block 跳过该固定最小值但仍按 `avg_seq_len * 0.001` 加 padding（可能很短，避免深 block
 浪费算力）。
 
-**对 pgr 的启示**：pgr 的 `libs/poa/` 已有 SPOA 移植（参见 `notes/design/spoa_port.md`）。smoothxg
+**对 pgr 的启示**：pgr 的 `libs/poa/` 已有 SPOA 移植（参见 `notes/references/spoa.md` §8）。smoothxg
 的 padding 机制是 pgr 当前 POA 没有的——若 `pgr paf to-gfa` 在 block 边界产出不完整
 对齐，可借鉴此方案。
 

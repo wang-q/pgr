@@ -3,8 +3,7 @@
 > 整理于 2026-08，源自对 `spoa-4.1.5/` 目录源码（约 5000 行 C++）及 README 的通读。
 > 目的：理解 Spoa 的偏序比对（POA）算法、图结构与 SIMD 加速机制，为 pgr 的
 > Rust 原生 POA（`libs/poa/`，`pgr fas consensus` / `pgr fas refine`）提供
-> 参考与差异对照。
-> 移植计划与实现状态见 [[../design/spoa_port.md]]；本文档仅分析参考项目本身。
+> 参考与差异对照；移植与实现状态见 §8（原 `design/spoa_port.md` 已合并）。
 
 ## 1. Spoa 概览
 
@@ -180,7 +179,7 @@ POA 做 SIMD，分派应沿用 HV 式**（见 §7）。
 |---|---|---|
 | 比对模式 | kSW / kNW / kOV | Local / Global / SemiGlobal ✓ |
 | gap 模式 | linear / affine / convex | 仅 affine（gap_open + gap_extend） |
-| DP 实现 | SISD + SIMD（SSE4.1/AVX2/SIMDe） | 标量 SISD |
+| DP 实现 | SISD + SIMD（SSE4.1/AVX2/SIMDe） | 标量 + SIMD（AVX2 手写 / `wide` 回退，2026-08-09） |
 | 线程模型 | 库/CLI 单线程 | 单线程（pgr 侧 `--parallel` 按 block 并行） |
 | 权重存储 | 全在边上（labels + weight） | 节点 weight + 边 weight |
 | 权重入参 | 统一 / 逐位 / Phred quality | 统一（默认 1） |
@@ -197,21 +196,29 @@ POA 做 SIMD，分派应沿用 HV 式**（见 §7）。
 - **权重语义**: C++ 版权重全在边上（`weights[i-1] + weights[i]` 隐含节点贡献）；
   Rust 版额外把 coverage 存为节点 `weight` 并在 heaviest path 得分中计入
   （`consensus.rs`），使多数碱基胜过首序列骨架——输出一致性已由移植验证
-  （`spoa_port.md` §5 双引擎对照）。
-- **单线程标量**: 移植按 `spoa_port.md` §3.3 决策只实现标量版本；spoa 参考
-  的 SIMD 机制（§5）未迁移。外部 `spoa` 二进制仍比 `builtin` 快（
-  `spoa_port.md` §1），差距主要来自 SIMD DP。
+  （§8 双引擎对照）。
+- **SIMD 落地（2026-08-09）**: 移植初期只做标量（§8 实施阶段）；
+  后补 `libs/poa/simd.rs`（垂直并行，分派沿用 HV 式——AVX2 手写 +
+  `is_x86_feature_detected!` + `wide` 回退，§5.4 对照），`Poa` 默认引擎
+  已切换。基准：120 bp ~8.7×、600 bp ~12.3×（`benches/poa_benchmark.rs`）。
 
 ## 7. 参考价值与可借鉴点
 
-1. **SIMD 垂直并行方案**（若未来为 `libs/poa` 加速）：lane = 序列位置、
-   向量内移位取对角线、前缀最大值扫描、i16/i32 动态选型——与 pgr HV 的
-   AVX2 经验（`bench-simd-hv-jaccard.md`）相互印证：移位指令延迟高是共同
-   限速因素（spoa README 自评收益 "marginal"；pgr HV 的 i16 变量移位实验
-   同样否决），故**移植时先做标量是合理决策**，SIMD 化收益需按真实 block
-   规模实测后再立项。若立项，分派沿用 HV 式（§5.4 对照）——单一 AVX2 手写
-   路径 + `is_x86_feature_detected!` + `wide` 可移植回退，不复制 spoa 的
-   SSE4.1 中间档与 SIMDe。
+1. **SIMD 垂直并行方案**（**已落地 2026-08-09**，`libs/poa/simd.rs`）：
+   lane = 序列位置、向量内移位取对角线、前缀最大值扫描（affine 的 E 状态
+   一阶依赖，无需 i16/i32 动态选型，统一 i32 lane 与标量 `neg_inf` 语义
+   对齐）。分派沿用 HV 式（§5.4 对照）——单一 AVX2 手写路径 +
+   `is_x86_feature_detected!` + `wide` 可移植回退，不复制 spoa 的 SSE4.1
+   中间档与 SIMDe。三路基准（Ryzen 9 7945HX，`benches/poa_benchmark.rs`）：
+   120 bp 对齐 scalar 981 µs / wide 205 µs / avx2 124 µs；600 bp scalar
+   23.5 ms / wide 3.85 ms / avx2 1.97 ms——wide ~4.8–6.1×、avx2 ~7.9–12×
+   （相对标量），avx2 相对 wide 再快 ~1.7–2×。与 pgr HV 的 AVX2 经验
+   （`bench-simd-hv-jaccard.md`）相互印证：移位指令延迟高是共同限速因素
+   （spoa README 自评收益 "marginal"；pgr HV 的 i16 变量移位实验同样否决），
+   故移植初期先做标量是合理决策。CLI 实测（2026-08-09，单线程，100 条 ×
+   1 kb block FA）：`pgr fas consensus --engine builtin` ~1.9 s vs 外部
+   `spoa` 4.1.4 ~7.0 s——Rust SIMD 反超外部 C++ SIMD 约 3.5×（输出逐字节
+   一致）。
 2. **Subgraph / UpdateAlignment 分治原语**：若未来需要长序列/大 block 并行
    或局部重比对，这是 spoa 提供的现成分解思路（pgr 移植未含）。
 3. **quality 权重与 min_coverage**：Rust 版 `AddAlignment` 只支持统一权重；
@@ -220,3 +227,18 @@ POA 做 SIMD，分派应沿用 HV 式**（见 §7）。
 4. **参数语义对照**: subtype 判定规则（linear/affine/convex 折叠）与
    `WorstCaseAlignmentScore` 溢出预检是 pgr `ScalarAlignmentEngine` 尚未
    完整对齐的部分（Rust 版仅 affine 路径）。
+
+## 8. 移植与实现状态（原 `design/spoa_port.md`，2026-08-09 合并）
+
+- **目标**：将 Spoa 移植为 Rust 原生 POA（`libs/poa/`），集成到
+  `pgr fas consensus` / `pgr fas refine`。保留外部 `spoa` 二进制作为引擎
+  选项——移植初期外部 C++ SIMD 更快，后被内置反超（§7 CLI 实测 ~3.5×）。
+- **架构决策**：图复用 `petgraph::DiGraph<NodeData, EdgeData>`（`NodeData` =
+  碱基 + 失配分支 `aligned_nodes`，`EdgeData` = 边权重）；`AlignmentType`
+  Global/Local/SemiGlobal + 仿射罚分；模块布局 = `mod/poa/graph/align/
+  consensus/msa`（后加 `simd`）。
+- **实施阶段**：① 图 + 标量 DP + 拓扑排序（对照 Spoa 验证）；② consensus/MSA
+  与双引擎（`--engine builtin|spoa`、`--msa builtin|spoa`）集成，删除临时
+  `cmd_pgr/poa/`；③ SIMD 垂直并行（§7，2026-08-09）。
+- **现状**：功能齐备 + SIMD 加速，输出与外部 `spoa` 一致（§6 对照表）；
+  命令用法见 `docs/fas.md`。
