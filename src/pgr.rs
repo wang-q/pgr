@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
     * psl   - PSL statistics, manipulation, and conversion
 
 * Distance:
-    * dist  - Metrics: hv, pgi, seq
+    * dist  - Metrics: mini / mash / frac / hv / pgi
     * pgi   - Genome index (.pgi): build, stat, to-hv
 
 * Analysis:

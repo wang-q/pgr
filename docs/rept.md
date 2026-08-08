@@ -62,7 +62,7 @@ perl -ne 'if (/^>/) { print; next } if (/>/) { s/>([A-Za-z0-9_.]*\d)/\n>$1\n/g }
 
 # Sanity check and quality filter
 pgr fa size tncentral.fa.gz
-pgr dist seq tncentral.fa.gz -k 17 -w 5 -p 8 |
+pgr dist mini tncentral.fa.gz -k 17 -w 5 -p 8 |
     tva filter stdin --ge 5:0.9
 ```
 
@@ -85,7 +85,7 @@ pgr fa filter Libraries/RepeatMaskerLib.embl.fasta --upper --iupac --dash --uniq
 
 # Sanity check and quality filter
 pgr fa size repbase.fa.gz
-pgr dist seq repbase.fa.gz -k 17 -w 5 -p 8 |
+pgr dist mini repbase.fa.gz -k 17 -w 5 -p 8 |
     tva filter stdin --ge 5:0.9
 ```
 
@@ -115,7 +115,7 @@ gzip -dc Dfam-RepeatMasker.lib.gz |
 
 # Sanity check and quality filter
 pgr fa size dfam.fa.gz
-pgr dist seq dfam.fa.gz -k 17 -w 5 -p 8 |
+pgr dist mini dfam.fa.gz -k 17 -w 5 -p 8 |
     tva filter stdin --ge 5:0.9
 ```
 

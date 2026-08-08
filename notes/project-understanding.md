@@ -229,7 +229,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 
 | 模块   | 子命令数 | 核心能力                                                  |
 |--------|----------|-----------------------------------------------------------|
-| `dist` | 3        | 距离计算：hv (hypervector，支持 .hv 文件直接比较)、pgi (两索引归并精确距离)、seq (minimizer/closed syncmer 双采样器) |
+| `dist` | 5        | 距离计算：mini (minimizer 草图，排序/粗筛)、mash (MinHash bottom-k，与 Mash 字节级兼容)、frac (FracMinHash + CI，无偏数值 ANI)、hv (hypervector，支持 .hv 文件直接比较)、pgi (两索引归并精确距离) |
 | `pgi`  | 3        | 基因组索引：build (syncmer 稀疏排序 k-mer 索引)、stat、to-hv (稀疏投影)；比对在 `pgr align pgi` |
 
 ### 3.5 模拟、流程、可视化 (Simulation, Pipelines, Plot)
@@ -334,7 +334,8 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
   `IntSpan`（`intspan.rs`）与 `Range`（`range.rs`），API 与原 crate 一致
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：FastK →
   Profex → runlist 重复识别驱动）
-- `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样
+- `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `pgi build`
+  比对锚点（dist 侧已改用 mini/mash/frac 草图，不再使用 syncmer）
 - `libs/nt.rs`：核苷酸类型与 2-bit k-mer 编解码（`pack_kmer`/`rc_key`/`rolling_kmer_keys`）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 - `libs/plot/`：绘图工具（dot/histogram/nrps/venn）
@@ -415,8 +416,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠），复测后 35.5 MB，
   比 GIX 真实数据 48.2 MB 小 ~23%，详见 [[pgi-align.md]] 与
   `notes/benchmarks/bench-pgi-vs-gix-storage.md`。
-- **距离工具**：`dist` 的 hv/pgi/seq 三个子命令已实现；`seq` 支持 minimizer/closed syncmer
-  双采样器，DNA/protein 均提供 syng 风格默认参数；`dist pgi` 为确定性精确归并距离，
+- **距离工具**：`dist` 的 mini/mash/frac/hv/pgi 五个子命令已实现（2026-08-08
+  拆分，`dist seq` 删除）：`dist mini` minimizer 草图（排序/粗筛，DNA 默认
+  k=21/w=5）、`dist mash` bottom-k MinHash（与 Mash 2.3 字节级兼容，20 对
+  真实基因组对照一致，见 `benchmarks/bench-dist-mash-compat.md`）、
+  `dist frac` FracMinHash + ANI CI（无偏数值）、`dist pgi` 确定性精确归并距离、
   `dist hv` 支持 `.hv` 文件直接比较（稀疏投影，与 `dist pgi` 排序 ρ=0.97、快 50×）。
 - **通用算法下沉**：chain 的通用算法（KdTree/GapCalc/BitMap/DupeTree/TopKPurity/
   best_crossover/merge_intervals）已下沉 `libs/ds/`，并被 PAF syntenic filter、

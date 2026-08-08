@@ -183,32 +183,32 @@ pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
 #### Distance with pgr
 
 ```bash
-pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --hasher mod -k 21 -w 1
+pgr dist mini tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --hasher mod -k 21 -w 1
 #NC_002695       NC_000913       0.0221  0.4580  0.5881
 #NC_002127       NC_000913       0.6640  0.0000  0.0006
 #NC_002128       NC_000913       0.4031  0.0001  0.0053
 
 pgr fa rc tests/pgr/mg1655.fa.gz |
-    pgr dist seq tests/pgr/sakai.fa.gz stdin --hasher mod -k 21 -w 1
+    pgr dist mini tests/pgr/sakai.fa.gz stdin --hasher mod -k 21 -w 1
 #NC_002695       RC_NC_000913    0.0221  0.4580  0.5881
 #NC_002127       RC_NC_000913    0.6640  0.0000  0.0006
 #NC_002128       RC_NC_000913    0.4031  0.0001  0.0053
 
 pgr fa rc tests/pgr/mg1655.fa.gz |
-    pgr dist seq tests/pgr/mg1655.fa.gz stdin --hasher mod -k 21 -w 1
+    pgr dist mini tests/pgr/mg1655.fa.gz stdin --hasher mod -k 21 -w 1
 #NC_000913       RC_NC_000913    0.0000  1.0000  1.0000
 pgr fa rc tests/pgr/mg1655.fa.gz |
-    pgr dist seq tests/pgr/mg1655.fa.gz stdin --hasher rapid -k 21 -w 1
+    pgr dist mini tests/pgr/mg1655.fa.gz stdin --hasher rapid -k 21 -w 1
 #NC_000913       RC_NC_000913    0.2289  0.0041  0.0082
 
-pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher mod -k 21 -w 1
+pgr dist mini tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher mod -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5302382 4543891 3064483 6781790 0.0226  0.4519  0.5779
 
-pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher rapid -k 21 -w 1
+pgr dist mini tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher rapid -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5394043 4562542 3071076 6885509 0.0230  0.4460  0.5693
 
 echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
-    pgr dist seq stdin --merge --list-files --hasher mod -k 21 -w 1
+    pgr dist mini stdin --merge --list-files --hasher mod -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/sakai.fa.gz   5302382 5302382 5302382 5302382 0.0000  1.0000  1.0000
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5302382 4543891 3064483 6781790 0.0226  0.4519  0.5779
 #tests/pgr/mg1655.fa.gz  tests/pgr/sakai.fa.gz   4543891 5302382 3064483 6781790 0.0226  0.4519  0.6744
@@ -237,13 +237,13 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf tests/multiz/S288cvsSpar.maf 1 out1 
 
 ```bash
 pgr dist hv tests/clust/IBPA.fa
-pgr dist seq tests/clust/IBPA.fa --merge
+pgr dist mini tests/clust/IBPA.fa --merge
 
 pgr dist hv tests/genome/mg1655.pro.fa.gz
-pgr dist seq tests/genome/mg1655.pro.fa.gz --merge
+pgr dist mini tests/genome/mg1655.pro.fa.gz --merge
 
 pgr dist hv tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1
-pgr dist seq tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1 --merge
+pgr dist mini tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1 --merge
 ```
 
 ### Assemblies

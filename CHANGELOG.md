@@ -4,6 +4,37 @@
 
 ### New Features
 
+#### Sketch Distance Family (`dist mini` / `mash` / `frac`)
+
+* **`pgr dist mini`** - Minimizer sketch distances (fast ranking/screening);
+  replaces the minimizer mode of `dist seq`.
+* **`pgr dist mash`** - Mash-compatible bottom-k MinHash distances
+  (MurmurHash3_x64_128 seed 42, canonical, default sketch size 1000);
+  verified byte-identical to `mash dist` on E. coli MG1655 x Sakai
+  (456/1000 shared, distance 0.0222766); containment uses the full sketch
+  intersection / first-set size (Mash `within` semantics), verified against
+  the standard containment on 20 real E. coli pairs.
+* **`pgr dist frac`** - FracMinHash distances (unbiased Jaccard/containment,
+  ANI 95% CI with `--ci`); replaces the FracMinHash mode of `dist seq`.
+* **`dist mash` correctness fixes (audit)** - Jaccard/`union` now use Mash's
+  merge `denom` (completed with remaining hashes when a sketch is undersized,
+  capped at `--size`) instead of a fixed `--size`, matching `mash dist` on
+  undersized sketches (e.g. 2/2 -> distance 0); sketch building is now
+  streaming (rolling O(k) window + incremental bottom-k), cutting memory
+  from O(genome length) to O(sketch size); empty sketches no longer emit NaN
+  (two empty sketches are identical -> distance 0, matching Mash).
+* **Default scene is DNA** - `dist mini` / `frac` / `mash` now show DNA
+  defaults in help (`-k 21`, `-w 5` for minimizers); `--protein` still falls
+  back to k=7 (and w=1 for minimizers) automatically. `dist mash` default
+  k-mer is 21, matching `mash dist` (was 7, which saturates the 4^7 k-mer
+  space on megabase genomes).
+
+#### Breaking change: `pgr dist seq` removed
+
+* The combined sampler command was split by algorithm; syncmer sampling is no
+  longer exposed through `dist` (kept in `pgi build` / `align` where it is the
+  anchor basis). Use `pgr dist mini` / `mash` / `frac`.
+
 #### Interval Operations (`rg` / `runlist`)
 
 * **`pgr rg`** - New command family for line-oriented operations on `.rg` range

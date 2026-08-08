@@ -8,8 +8,16 @@
 
 ## 1. 手头数据就能做
 
+- [x] **dist 命令族拆分 + Mash 兼容**（2026-08-08）：`dist seq` 删除，拆为
+      `dist mini`（Minimizer 草图，默认 k=21/w=5）/ `dist mash`（bottom-k
+      MinHash，**与 Mash 字节级兼容**，Mash-master/test 三对 + 5 株 E. coli
+      20 对全部一致，见 `benchmarks/bench-dist-mash-compat.md`）/
+      `dist frac`（FracMinHash + `--ci`）；`dist pgi`/`dist hv` 保留；
+      `pl prefilter` 改用 `dist mini`。syncmer 从 dist 侧移除，仅保留在
+      `pgi build` 作比对锚点。
 - [x] **FracMinHash 采样器落地**（2026-08-08）：`dist seq --sampler frachash`
-      （canonical k-mer 保留 hash < u64::MAX/scale，`--scale` 默认 1000）
+      → 现为独立命令 `dist frac`（canonical k-mer 保留 hash < u64::MAX/scale，
+      `--scale` 默认 1000）
       + `--ci` 输出 ANI 95% 置信区间（正态近似）。无偏验证：5 株 × 10 对
       与全 k=40 集合真值排序 **Spearman 1.0**、Jaccard 0.417 vs 真值
       0.451（`dist pgi` 仅 0.095——syncmer 偏差）；MG1655×Sakai ANI
@@ -40,7 +48,7 @@
       兼容比对）的锚点基石，不能换 FracMinHash（双选概率 1/scale、
       scale=1000 时锚点只剩 1/1000 且无窗口保证，链化失效）。正确分工：
       pgi+syncmer = 比对/排序；**无偏数值 ANI 用 `dist seq --sampler
-      frachash`**（已实现 + CI）。补充（2026-08-08）：containment 略稳
+      frachash` → 现为 `dist frac`**（已实现 + CI）。补充（2026-08-08）：containment 略稳
       于 jaccard（相对偏差 34% vs 39%、排序 ρ 0.66 vs 0.52，但仍不可靠）；
       `.pgi` 约 FASTA 的 27×（37.6MB vs 1.4MB），**距离计算不应为它建
       索引**（初筛用 `.hv`、数值用 frachash，见 docs/dist.md 分层建议）。
@@ -49,7 +57,7 @@
       s=1 排序一致性（理论 + 10 对实测已支持，此为收尾验证）。
 - [ ] FracMinHash containment/ANI 偏差校正（2026-08-08 立项，等 Hera
       论文：Hera et al. 2023, *Genome Res* 33(7):1061–1068,
-      doi:10.1101/gr.277651.123）：当前 `dist seq --sampler frachash`
+      doi:10.1101/gr.277651.123）：当前 `dist frac`
       的 containment 有 ~10% Jensen 偏差（实测与 scale 无关、增大采样
       无效）；实现 Hera 校正公式消除到一阶/二阶，使 containment/ANI
       数值精确（来源：`benchmarks/dist-cohort-validation.md`
@@ -78,7 +86,7 @@
 
 ## 3. 低风险审计记录项（可顺手修）
 
-- [x] `dist seq` / `dist hv` 的 minimizer 默认参数对 DNA 不充分
+- [x] `dist mini`（原 `dist seq`）/ `dist hv` 的 minimizer 默认参数对 DNA 不充分
       （2026-08-08 已修复）：默认 k=7 的 2-bit 编码仅 2^14 空间 →
       unique minimizer ≈ 16383（4.6Mb 基因组饱和），采样严重不足；
       `resolve_kmer_window` 现对 DNA minimizer 默认 k=21/w=5（与文档

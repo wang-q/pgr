@@ -32,7 +32,7 @@ Notes:
 * Reference file must be Protein FASTA
 * Automatic index creation (.loc) if missing
 * Cannot read from stdin (requires random access)
-* Output format matches `pgr dist seq`
+* Output format matches `pgr dist mini`
 
 Examples:
 1. Basic usage:
@@ -133,7 +133,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             run_cmd!(
                 ${pgr} fa six-frame ${temp_input_path} --min-len ${opt_len} |
-                    ${pgr} dist seq stdin ${match_file} -k ${opt_kmer} -w ${opt_window} > ${temp_output_path}
+                    ${pgr} dist mini stdin ${match_file} -k ${opt_kmer} -w ${opt_window} > ${temp_output_path}
             )?;
 
             // Best-effort cleanup of the input temp file; failure is non-fatal.

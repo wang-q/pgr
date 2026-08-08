@@ -12,7 +12,7 @@ merges for distance computation and seed discovery.
 - **Input**: FASTA (plain or `.gz`) or 2bit genome files.
 - **Output**: `.pgi` binary indexes, `.hv` hypervectors, or PSL alignments.
 - **Complements**:
-  - Upstream: `pgr fa to-2bit` (fastest index input), `pgr dist seq/hv`
+  - Upstream: `pgr fa to-2bit` (fastest index input), `pgr dist mini/mash/frac/hv`
     (sketch distances from sequences).
   - Downstream: `pgr dist pgi` (merge distance on the index; secondary
     consumer — see note below), `pgr psl to-chain` and `pgr pl chainnet`
@@ -20,7 +20,7 @@ merges for distance computation and seed discovery.
 - **Storage note (2026-08-08)**: a `.pgi` is ~27× the gzipped FASTA
   (e.g. MG1655: 37.6 MB index vs 1.4 MB FASTA; `.hv` is 16 KB). The index
   exists for `align pgi` (chaining needs positions/strands); **distance
-  computation should not build `.pgi`** — use `dist seq` (FASTA, no index)
+  computation should not build `.pgi`** — use `dist mini`/`dist frac` (FASTA, no index)
   or `dist hv` (`.hv`, 1/87 of FASTA). `dist pgi` is a secondary consumer
   for the "index already built" case and as a calibration reference for
   `.hv`; its merge distance has syncmer sampling bias (see
@@ -123,7 +123,7 @@ explicit `.pgi` indexes.
 > so the intersection is underestimated and Jaccard/containment are biased
 > low (up to ~3% ANI; containment is slightly more stable than Jaccard,
 > ~34% vs ~39% relative error on a 5-strain test). Rankings stay roughly
-> usable. For unbiased numeric ANI use `pgr dist seq --sampler frachash`
+> usable. For unbiased numeric ANI use `pgr dist frac`
 > (with `--ci`); `dist pgi` is for the "index already built" case and as a
 > calibration reference for `.hv`. Details:
 > `notes/benchmarks/dist-cohort-validation.md`.

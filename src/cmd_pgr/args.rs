@@ -833,22 +833,24 @@ pub fn protein_arg() -> Arg {
 ///   negligible (20^7 ≈ 1.3e9) and matches the protein k=7 convention; w=5
 ///   gives ~33% density so short proteins still yield enough syncmers.
 ///
-/// Shared by `dist seq` and `dist hv`.
+/// Shared by the sketch-distance commands and `dist hv`.
 pub fn resolve_kmer_window(
     args: &ArgMatches,
     opt_sampler: &str,
     is_protein: bool,
 ) -> (usize, usize) {
     let kmer_cli = matches!(args.value_source("kmer"), Some(ValueSource::CommandLine));
-    let window_cli = matches!(args.value_source("window"), Some(ValueSource::CommandLine));
+    let window_cli = args.try_contains_id("window").unwrap_or(false)
+        && matches!(args.value_source("window"), Some(ValueSource::CommandLine));
     let (def_k, def_w) = if is_protein { (7, 5) } else { (8, 55) };
-    // DNA minimizer defaults (k=21/w=5, matching docs/dist.md and Mash
-    // convention): k=7's 2-bit space (4^7 = 16384) saturates on megabase
-    // genomes (all unique 7-mers appear), giving useless sketches.
-    let (min_k, min_w) = if is_protein { (7, 1) } else { (21, 5) };
     let k = match (opt_sampler, kmer_cli, is_protein) {
         ("syncmer", false, _) => def_k,
-        ("minimizer", false, false) => min_k,
+        // Default scene is DNA: minimizer k=21/w=5 (Mash convention; k=7's
+        // 2-bit space (4^7 = 16384) saturates on megabase genomes). With
+        // --protein, fall back to k=7/w=1 without depending on the clap
+        // default so help can show the DNA defaults.
+        ("minimizer", false, false) => 21,
+        ("minimizer", false, true) => 7,
         ("frachash", false, _) => {
             if is_protein {
                 7
@@ -860,7 +862,9 @@ pub fn resolve_kmer_window(
     };
     let w = match (opt_sampler, window_cli, is_protein) {
         ("syncmer", false, _) => def_w,
-        ("minimizer", false, false) => min_w,
+        ("minimizer", false, false) => 5,
+        ("minimizer", false, true) => 1,
+        ("frachash", _, _) => 1, // window unused by FracMinHash
         _ => *args.get_one::<usize>("window").unwrap(),
     };
     (k, w)
@@ -869,6 +873,18 @@ pub fn resolve_kmer_window(
 /// `-k/--kmer` size argument.
 pub fn kmer_arg() -> Arg {
     kmer_arg_with_default("7")
+}
+
+/// `-k/--kmer` for sketch commands. The default scene is DNA (21); with
+/// `--protein` the effective default (7) is applied in `resolve_kmer_window`.
+pub fn kmer_arg_mode_dependent() -> Arg {
+    Arg::new("kmer")
+        .long("kmer")
+        .short('k')
+        .num_args(1)
+        .default_value("21")
+        .value_parser(clap::value_parser!(usize))
+        .help("K-mer size (DNA default 21, protein 7)")
 }
 
 /// `-k/--kmer` size argument with a custom default value.
@@ -911,6 +927,22 @@ pub fn list_arg() -> Arg {
         .long("list-files")
         .action(ArgAction::SetTrue)
         .help("Treat infiles as list files, where each line is a path to a sequence file")
+}
+
+/// `--zero` flag (also write results with zero Jaccard index).
+pub fn zero_arg() -> Arg {
+    Arg::new("zero")
+        .long("zero")
+        .action(ArgAction::SetTrue)
+        .help("Also write results with zero Jaccard index")
+}
+
+/// `--merge` flag (merge all sequences within a file into a single set).
+pub fn merge_arg() -> Arg {
+    Arg::new("merge")
+        .long("merge")
+        .action(ArgAction::SetTrue)
+        .help("Merge all sequences within a file into a single set for comparison")
 }
 
 /// Collect the `infiles` positional args as `&str` slices borrowing `args`.

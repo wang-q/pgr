@@ -12,9 +12,10 @@ minimizers or closed syncmers, projected onto hypervectors.
 * The outputs are printed to stdout in the following format:
     <file1> <file2> <total1> <total2> <inter> <union> <mash_distance> <jaccard_index> <containment_index>
 
-* Samplers, hash algorithms, --protein, -k/-w semantics are the same as `pgr dist seq`;
-  see its help for details. Syncmer defaults (DNA smer=8/window=55, protein smer=7/window=5)
-  are applied automatically when --sampler syncmer is used without explicit -k/-w.
+* Samplers, hash algorithms, --protein, -k/-w semantics are the same as the
+  sketch-distance family (`pgr dist mini` / `pgr dist frac`). Syncmer defaults
+  (DNA smer=8/window=55, protein smer=7/window=5) are applied automatically
+  when --sampler syncmer is used without explicit -k/-w.
 
 * Input Modes:
     * For a single sequence file: Merge all sequences within the file into a single hypervector.

@@ -110,6 +110,10 @@ harness = false
 name = "hv_benchmark"
 harness = false
 
+[[bench]]
+name = "dist_sketch_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]

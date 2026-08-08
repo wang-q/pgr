@@ -146,9 +146,9 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
 | `load_minimizers(infile, hasher, k, w, is_merge) -> Vec<MinimizerEntry>` | 从 FASTA 加载 | `load_syncmers`（同模式） |
 | `set_distances` / `mash_distance` / `mash_to_sim` | 距离度量 | **不变**（与采样器无关，共用） |
 
-调用点（已接入；`--sampler` 在 `dist seq` / `dist hv` 的 `execute` 中分流到 syncmer 或 minimizer 路径）：
+调用点（已接入；`--sampler` 在 `dist hv` 的 `execute` 中分流到 syncmer 或 minimizer 路径；`dist seq` 已于 2026-08-08 删除，其 syncmer 路径随 `pgi build` 保留、minimizer 路径由 `dist mini` 继承）：
 
-- [src/cmd_pgr/dist/seq.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/seq.rs) — `--sampler syncmer` → `load_syncmers`；否则 `load_minimizers` → `pgr dist seq`
+- [src/cmd_pgr/dist/mini.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/mini.rs) — minimizer 草图 → `pgr dist mini`（原 `dist seq` 的 minimizer 模式）
 - [src/cmd_pgr/dist/hv.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/hv.rs) — `--sampler syncmer` → `load_hv_from_fasta_syncmer`；否则 `load_hv_from_fasta` → `pgr dist hv`
 - `set_distances` / `calc_distances` / `mash_distance`（不变，与采样器无关）
 - `--kmer`/`--window` 默认值由 `args::resolve_kmer_window` 统一分流（两命令共用）
@@ -182,7 +182,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
 3. **哈希函数选择**：syng 用乘加移位（`k * factor1 >> shift1`）。最终实现按双轨选择——DNA 路径采用 syng 式 2-bit packed 乘加移位（`k_hash = x * factor >> (64-2k)`，[syncmer.rs:184-186](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L184)，`factor` 用 splitmix64 由 seed 生成，与 syng 的 `libc random()` 值不同但同样均匀），蛋白路径复用 `RapidHash` 作用于 s-mer 字节串。DNA 不用 `--hasher`（2-bit 路径自带哈希），蛋白沿用 `--hasher`（rapid/fx/murmur）。
 4. **canonical 处理**：syng 同时维护 `h` 与 `hRC` 取 min。pgr 的 `seq_sketch` 已通过 `.canonical()` 做了等价事；移植 syncmer 时需在迭代器内部完成（因为判定"端点最小"必须用 canonical 哈希），不能依赖外部 crate 的后处理。
 
-5. **氨基酸适配（硬约束）**：pgr 当前 minimizer 同时服务 DNA 和蛋白（[dist/seq.rs:20-21](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/seq.rs#L20)，蛋白 `-k 7 -w 2`、DNA `-k 21 -w 5`），靠的是字节串哈希（`rapid`/`fx`/`murmur`）对任意字母表工作。但 syng 的 syncmer 实现 **DNA 强绑定**：2-bit 编码（仅 4 碱基）、`patternRC` 反向互补、canonical 三处都假设 DNA。**蛋白没有反向互补链概念**，因此蛋白 syncmer 反而更简单——去掉 canonical 即可。移植必须双轨：DNA 路径保留 canonical（链无关性对 `pgr dist seq` 的距离稳定性必要），蛋白路径用字节哈希、不做 canonical。
+5. **氨基酸适配（硬约束）**：pgr 当前 minimizer 同时服务 DNA 和蛋白（[dist/mini.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/mini.rs)，蛋白 `-k 7 -w 2`、DNA `-k 21 -w 5`），靠的是字节串哈希（`rapid`/`fx`/`murmur`）对任意字母表工作。但 syng 的 syncmer 实现 **DNA 强绑定**：2-bit 编码（仅 4 碱基）、`patternRC` 反向互补、canonical 三处都假设 DNA。**蛋白没有反向互补链概念**，因此蛋白 syncmer 反而更简单——去掉 canonical 即可。移植必须双轨：DNA 路径保留 canonical（链无关性对 `pgr dist hv` 的距离稳定性必要），蛋白路径用字节哈希、不做 canonical。
 
 ### 5.2 建议的模块结构
 

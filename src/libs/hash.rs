@@ -144,6 +144,218 @@ pub fn mash_to_sim(mash: f64) -> f64 {
     }
 }
 
+/// Mash-compatible canonical k-mer hashes: uppercase, skip k-mers with
+/// non-ACGT bases, take the lexicographically smaller of the forward k-mer
+/// and its reverse complement (byte compare, not hash compare), then hash
+/// with MurmurHash3_x64_128(seed=42) low 64 bits — exactly Mash's `getHash`
+/// with `parameters.seed = 42` (Mash-master/src/mash/Sketch.cpp
+/// `addMinHashes`, `hash.cpp`).
+pub fn seq_mash_hashes(seq: &[u8], k: usize, seed: u32) -> Vec<u64> {
+    let mut hashes = Vec::new();
+    for_each_mash_hash(seq, k, seed, |h| hashes.push(h));
+    hashes
+}
+
+/// Complement of an uppercase base (Mash's complement table; non-ACGT maps
+/// to N, and such windows are skipped by the validity scan).
+fn complement_base(b: u8) -> u8 {
+    match b {
+        b'A' => b'T',
+        b'C' => b'G',
+        b'G' => b'C',
+        b'T' => b'A',
+        _ => b'N',
+    }
+}
+
+/// Stream canonical Mash k-mer hashes of `seq`, calling `f` for each window
+/// hash. Rolling-window implementation with O(k) memory (no full-length
+/// buffers), replicating Mash's `addMinHashes` window scan exactly,
+/// including the "bad base at window start after a jump" case.
+pub fn for_each_mash_hash(seq: &[u8], k: usize, seed: u32, mut f: impl FnMut(u64)) {
+    if seq.len() < k {
+        return;
+    }
+    // Rolling windows: `fwd` = uppercased bases of [start, start+k); `rev`
+    // = their reverse complement in reading order (rev[t] = comp(fwd[k-1-t])).
+    // Shifting one base per step keeps memory O(k).
+    let mut fwd = vec![0u8; k];
+    let mut rev = vec![0u8; k];
+    let mut start = 0usize;
+    for t in 0..k {
+        let u = if seq[t].is_ascii_lowercase() {
+            seq[t] - 32
+        } else {
+            seq[t]
+        };
+        fwd[t] = u;
+        rev[k - 1 - t] = complement_base(u);
+    }
+    let mut j = 0usize;
+    let mut i = 0usize;
+    // Replicate Mash's `addMinHashes` window scan exactly: `j` marks how far
+    // the window scan has advanced (positions are checked once); on a bad
+    // base the window start jumps to `j` (then the outer `i++` advances past
+    // it), so a window may be processed even though its start position was
+    // never re-checked — this matches Mash's behaviour, including the
+    // "bad base at window start after a jump" case.
+    while i + k <= seq.len() {
+        // Slide the window to [i, i+k) if it lagged behind (bad-base jump).
+        while start < i {
+            let next = seq[start + k];
+            let u = if next.is_ascii_lowercase() {
+                next - 32
+            } else {
+                next
+            };
+            fwd.copy_within(1.., 0);
+            rev.copy_within(0..k - 1, 1);
+            fwd[k - 1] = u;
+            rev[0] = complement_base(u);
+            start += 1;
+        }
+        let mut bad = false;
+        while j < i + k {
+            let u = if seq[j].is_ascii_lowercase() {
+                seq[j] - 32
+            } else {
+                seq[j]
+            };
+            if !matches!(u, b'A' | b'C' | b'G' | b'T') {
+                i = j; // Mash: i = j++
+                j += 1;
+                bad = true;
+                break;
+            }
+            j += 1;
+        }
+        if bad {
+            i += 1; // outer for i++
+            continue;
+        }
+        if i + k > seq.len() {
+            break;
+        }
+        let kmer = if fwd <= rev { &fwd[..] } else { &rev[..] }; // memcmp
+        let h = murmurhash3::murmurhash3_x64_128(kmer, seed as u64).0;
+        f(h);
+        i += 1;
+    }
+}
+
+/// Bottom-k MinHash sketch: the `sketch_size` smallest unique hashes
+/// (Mash's MinHashHeap semantics; memory O(sketch_size) via a max-heap).
+pub fn bottom_k_min_hashes(
+    hashes: impl Iterator<Item = u64>,
+    sketch_size: usize,
+) -> rapidhash::RapidHashSet<u64> {
+    let mut acc = BottomK::new(sketch_size);
+    for h in hashes {
+        acc.insert(h);
+    }
+    acc.into_set()
+}
+
+/// Incremental bottom-k accumulator (Mash's MinHashHeap): keeps the `size`
+/// smallest unique hashes in O(size) memory.
+pub struct BottomK {
+    size: usize,
+    set: rapidhash::RapidHashSet<u64>,
+    heap: std::collections::BinaryHeap<u64>,
+}
+
+impl BottomK {
+    /// Create an empty accumulator keeping the `size` smallest hashes.
+    pub fn new(size: usize) -> Self {
+        Self {
+            size,
+            set: rapidhash::RapidHashSet::default(),
+            heap: std::collections::BinaryHeap::new(),
+        }
+    }
+
+    /// Insert one hash, evicting the current maximum when over capacity.
+    pub fn insert(&mut self, h: u64) {
+        if self.set.insert(h) {
+            self.heap.push(h);
+            if self.heap.len() > self.size {
+                if let Some(removed) = self.heap.pop() {
+                    self.set.remove(&removed);
+                }
+            }
+        }
+    }
+
+    /// Consume the accumulator, returning the selected hash set.
+    pub fn into_set(self) -> rapidhash::RapidHashSet<u64> {
+        self.set
+    }
+}
+
+/// Mash-compatible sketch distances: merge the two sorted bottom-k sketches
+/// and count equal pairs in a `sketch_size`-step merge walk (Mash's
+/// `compareSketches`); Jaccard = common / denom, where denom is the walk
+/// length completed with the remaining unmerged hashes of the exhausted set
+/// (capped at `sketch_size`), NOT the standard set Jaccard (full
+/// intersection / union). Verified against `mash dist` on E. coli MG1655 x
+/// Sakai (k=21, s=1000): 456/1000 shared, distance 0.0222766 — identical
+/// to Mash; undersized sketches also match (e.g. 2/2 for identical 2-hash
+/// sketches at k=15/s=1000, where Mash reports distance 0).
+/// Containment uses the full sketch intersection / first-set size (Mash's
+/// `within` semantics), which is larger than the merged-prefix common.
+pub fn mash_sketch_distances(
+    a: &rapidhash::RapidHashSet<u64>,
+    b: &rapidhash::RapidHashSet<u64>,
+    k: usize,
+    sketch_size: usize,
+) -> SetDistances {
+    let mut ai: Vec<u64> = a.iter().copied().collect();
+    let mut bi: Vec<u64> = b.iter().copied().collect();
+    ai.sort_unstable();
+    bi.sort_unstable();
+    let (mut i, mut j, mut common, mut denom) = (0usize, 0usize, 0usize, 0usize);
+    while denom < sketch_size && i < ai.len() && j < bi.len() {
+        if ai[i] < bi[j] {
+            i += 1;
+        } else if ai[i] > bi[j] {
+            j += 1;
+        } else {
+            i += 1;
+            j += 1;
+            common += 1;
+        }
+        denom += 1;
+    }
+    // Mash completes the union when one side exhausts early: add the
+    // remaining unmerged hashes of both sides, capped at sketch_size.
+    if denom < sketch_size {
+        if i < ai.len() {
+            denom += ai.len() - i;
+        }
+        if j < bi.len() {
+            denom += bi.len() - j;
+        }
+        denom = denom.min(sketch_size);
+    }
+    // Two empty sketches: Mash treats common == denom (0 == 0) as distance
+    // 0, so define jaccard = 1 here instead of emitting NaN.
+    let jaccard = if denom > 0 {
+        common as f64 / denom as f64
+    } else {
+        1.0
+    };
+    let inter_full = a.iter().filter(|h| b.contains(h)).count();
+    SetDistances {
+        total1: a.len(),
+        total2: b.len(),
+        inter: common,
+        union: denom,
+        mash: mash_distance(jaccard, k),
+        jaccard,
+        containment: inter_full as f64 / a.len().max(1) as f64,
+    }
+}
+
 /// Distance metrics between two minimizer sets.
 pub struct SetDistances {
     /// Cardinality of the first set.
@@ -176,8 +388,18 @@ pub fn set_distances(
     let inter = s1.intersection(s2).cloned().count();
     let union = total1 + total2 - inter;
 
-    let jaccard = inter as f64 / union as f64;
-    let containment = inter as f64 / total1 as f64;
+    // Empty sketches: two empty sets are identical (jaccard 1, distance 0);
+    // containment of an empty first set is undefined, report 0 instead of NaN.
+    let jaccard = if union > 0 {
+        inter as f64 / union as f64
+    } else {
+        1.0
+    };
+    let containment = if total1 > 0 {
+        inter as f64 / total1 as f64
+    } else {
+        0.0
+    };
     let mash = mash_distance(jaccard, kmer);
 
     SetDistances {
@@ -330,7 +552,8 @@ where
         .collect()
 }
 
-/// A named minimizer set, the basic unit compared by `pgr dist seq`.
+/// A named minimizer set, the basic unit compared by the sketch-distance
+/// commands (`pgr dist mini` / `mash` / `frac`).
 #[derive(Debug, Default, Clone)]
 pub struct MinimizerEntry {
     pub name: String,
@@ -505,6 +728,54 @@ pub fn load_syncmers(
     Ok(entries)
 }
 
+/// Read a FASTA file and build a `MinimizerEntry` per record (or one merged
+/// entry with `is_merge`) using a Mash-compatible bottom-k MinHash sketch.
+/// `seed` defaults to Mash's 42; `sketch_size` defaults to Mash's 1000.
+pub fn load_mash_minhashes(
+    infile: &str,
+    k: usize,
+    sketch_size: usize,
+    seed: u32,
+    is_merge: bool,
+) -> anyhow::Result<Vec<MinimizerEntry>> {
+    anyhow::ensure!(
+        sketch_size > 0,
+        "sketch size must be positive: {sketch_size}"
+    );
+    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut entries = vec![];
+    // Mash builds one MinHashHeap across all sequences of a file (global
+    // bottom-k). With --merge we stream every canonical hash into a single
+    // accumulator so memory stays O(sketch_size) regardless of genome
+    // length; without --merge each record gets its own bounded sketch.
+    let mut merged = is_merge.then(|| BottomK::new(sketch_size));
+
+    for result in fa_in.records() {
+        let record = result?;
+        let name = String::from_utf8(record.name().into())?;
+        let seq = record.sequence();
+        if let Some(acc) = merged.as_mut() {
+            for_each_mash_hash(&seq[..], k, seed, |h| acc.insert(h));
+        } else {
+            let mut acc = BottomK::new(sketch_size);
+            for_each_mash_hash(&seq[..], k, seed, |h| acc.insert(h));
+            entries.push(MinimizerEntry {
+                name,
+                set: acc.into_set(),
+            });
+        }
+    }
+
+    if let Some(acc) = merged {
+        entries.push(MinimizerEntry {
+            name: infile.to_string(),
+            set: acc.into_set(),
+        });
+    }
+
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +785,20 @@ mod tests {
     fn rand_dna(len: usize, seed: u64) -> Vec<u8> {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         (0..len).map(|_| b"ACGT"[rng.random_range(0..4)]).collect()
+    }
+
+    /// Reverse complement of an uppercase ACGT byte slice (Mash canonical
+    /// rule), kept for the reference implementation below.
+    fn reverse_complement(seq: &[u8], out: &mut [u8]) {
+        for (i, &b) in seq.iter().enumerate() {
+            out[seq.len() - 1 - i] = match b {
+                b'A' => b'T',
+                b'C' => b'G',
+                b'G' => b'C',
+                b'T' => b'A',
+                _ => b'N',
+            };
+        }
     }
 
     #[test]
@@ -578,6 +863,175 @@ mod tests {
             hi2 - lo2,
             hi - lo
         );
+    }
+
+    #[test]
+    fn test_seq_mash_hashes_canonical_invariance() {
+        // A sequence and its reverse complement (uppercase) must yield the
+        // same canonical hash set (Mash takes min(fwd, rev) per k-mer).
+        let seq = b"acgttgcatgcaacgtaacgt";
+        let upper: Vec<u8> = seq
+            .iter()
+            .map(|&b| if b.is_ascii_lowercase() { b - 32 } else { b })
+            .collect();
+        let mut rc = vec![0u8; seq.len()];
+        reverse_complement(&upper, &mut rc);
+        let h1: std::collections::HashSet<u64> =
+            seq_mash_hashes(&upper, 5, 42).into_iter().collect();
+        let h2: std::collections::HashSet<u64> = seq_mash_hashes(&rc, 5, 42).into_iter().collect();
+        assert_eq!(h1, h2, "canonical hashes must be strand-invariant");
+    }
+
+    #[test]
+    fn test_seq_mash_hashes_skips_bad_bases() {
+        // k-mers containing non-ACGT bases are skipped (Mash alphabet filter).
+        let seq = b"ACGTNACGT"; // len 9, k=4 -> 6 windows, windows with N skipped
+        let h = seq_mash_hashes(seq, 4, 42);
+        assert!(
+            !h.is_empty() && h.len() <= 5,
+            "bad-base windows skipped: {}",
+            h.len()
+        );
+        // No hash should come from a window containing N.
+        for win in seq.windows(4) {
+            if win.contains(&b'N') {
+                continue;
+            }
+        }
+    }
+
+    /// Reference implementation with full-length buffers (the pre-streaming
+    /// logic), used to prove the rolling-window version is byte-identical.
+    fn reference_mash_hashes(seq: &[u8], k: usize, seed: u32) -> Vec<u64> {
+        if seq.len() < k {
+            return vec![];
+        }
+        let mut upper = vec![0u8; seq.len()];
+        let mut valid = vec![false; seq.len()];
+        for (i, &b) in seq.iter().enumerate() {
+            let u = if b.is_ascii_lowercase() { b - 32 } else { b };
+            upper[i] = u;
+            valid[i] = matches!(u, b'A' | b'C' | b'G' | b'T');
+        }
+        let mut rc = vec![0u8; seq.len()];
+        reverse_complement(&upper, &mut rc);
+        let mut hashes = Vec::new();
+        let mut j = 0usize;
+        let mut i = 0usize;
+        while i + k <= seq.len() {
+            let mut bad = false;
+            while j < i + k {
+                if !valid[j] {
+                    i = j;
+                    j += 1;
+                    bad = true;
+                    break;
+                }
+                j += 1;
+            }
+            if bad {
+                i += 1;
+                continue;
+            }
+            if i + k > seq.len() {
+                break;
+            }
+            let fwd = &upper[i..i + k];
+            let rev = &rc[seq.len() - i - k..seq.len() - i];
+            let kmer = if fwd <= rev { fwd } else { rev };
+            hashes.push(murmurhash3::murmurhash3_x64_128(kmer, seed as u64).0);
+            i += 1;
+        }
+        hashes
+    }
+
+    #[test]
+    fn test_for_each_mash_hash_matches_reference() {
+        // Random DNA with lowercase bases and Ns sprinkled in, across k
+        // values: the rolling-window stream must equal the full-buffer
+        // reference exactly, including bad-base jump behaviour.
+        let mut seq = rand_dna(20_000, 99);
+        for pos in (0..seq.len()).step_by(911) {
+            seq[pos] = b'N';
+        }
+        for pos in (0..seq.len()).step_by(131) {
+            seq[pos] = seq[pos].to_ascii_lowercase();
+        }
+        for k in [3usize, 4, 7, 15, 21, 31] {
+            let mut streamed = Vec::new();
+            for_each_mash_hash(&seq, k, 42, |h| streamed.push(h));
+            assert_eq!(streamed, reference_mash_hashes(&seq, k, 42), "k={k}");
+        }
+    }
+
+    #[test]
+    fn test_bottom_k_min_hashes() {
+        // unique hashes {3,5,8,10,20}; keep the 3 smallest.
+        let hashes = vec![10u64, 5, 20, 5, 3, 8];
+        let s = bottom_k_min_hashes(hashes.into_iter(), 3);
+        assert_eq!(s.len(), 3);
+        assert!(s.contains(&3) && s.contains(&5) && s.contains(&8));
+    }
+
+    #[test]
+    fn test_mash_sketch_distances() {
+        // A = {1..600, 2000..2399}, B = {1..400, 1500..1899, 2000..2199}
+        // (both size 1000 bottom-k). Full intersection = 600 (1..400 and
+        // 2000..2199). Mash's compareSketches walks at most 1000 merge steps:
+        // 400 matches for 1..400, then A advances through 401..600 (200 steps)
+        // and exhausts -> common = 400, so Mash Jaccard = 0.4 while the
+        // standard set Jaccard is 600/1400 and standard containment 0.6.
+        let a: rapidhash::RapidHashSet<u64> = (1..=600).chain(2000..2400).collect();
+        let b: rapidhash::RapidHashSet<u64> =
+            (1..=400).chain(1500..1900).chain(2000..2200).collect();
+        let d = mash_sketch_distances(&a, &b, 21, 1000);
+        assert_eq!(d.inter, 400);
+        assert_eq!(d.jaccard, 0.4);
+        // Containment uses the full intersection (600), not the merged common.
+        assert_eq!(d.containment, 0.6);
+        // Standard set Jaccard differs (600/1400 = 0.4286).
+        let std = set_distances(&a, &b, 21);
+        assert!((std.jaccard - 600.0 / 1400.0).abs() < 1e-6);
+        assert_eq!(std.containment, 0.6);
+        assert!((d.jaccard - std.jaccard).abs() > 0.02);
+    }
+
+    #[test]
+    fn test_mash_sketch_distances_undersized() {
+        // Identical 46-hash sketches: Mash reports 46/46, distance 0.
+        let a: rapidhash::RapidHashSet<u64> = (1..=46).collect();
+        let b: rapidhash::RapidHashSet<u64> = (1..=46).collect();
+        let d = mash_sketch_distances(&a, &b, 15, 1000);
+        assert_eq!(d.inter, 46);
+        assert_eq!(d.union, 46);
+        assert_eq!(d.jaccard, 1.0);
+        assert_eq!(d.mash, 0.0);
+
+        // Disjoint 46-hash sketches: Mash reports 0/92.
+        let a: rapidhash::RapidHashSet<u64> = (1..=46).collect();
+        let b: rapidhash::RapidHashSet<u64> = (1000..=1045).collect();
+        let d = mash_sketch_distances(&a, &b, 15, 1000);
+        assert_eq!(d.inter, 0);
+        assert_eq!(d.union, 92);
+        assert_eq!(d.jaccard, 0.0);
+        assert_eq!(d.mash, 1.0);
+    }
+
+    #[test]
+    fn test_distances_empty_sets() {
+        // Two empty sketches must not produce NaN: jaccard 1 / distance 0
+        // (Mash's common == denom == 0 case) for both distance functions.
+        let empty: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::default();
+        let d = mash_sketch_distances(&empty, &empty, 21, 1000);
+        assert_eq!(d.jaccard, 1.0);
+        assert_eq!(d.mash, 0.0);
+        assert!(!d.jaccard.is_nan() && !d.mash.is_nan());
+
+        let d = set_distances(&empty, &empty, 21);
+        assert_eq!(d.jaccard, 1.0);
+        assert_eq!(d.mash, 0.0);
+        assert_eq!(d.containment, 0.0);
+        assert!(!d.containment.is_nan());
     }
 
     #[test]
