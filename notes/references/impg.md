@@ -113,8 +113,9 @@ impg 的 22 个子命令并非平级，而是按**数据流方向**构成四层�
   `--min-match-len`（默认 23）/`--repeat-max`/`--sparse-factor` 控制传递闭包的比对挑选。
 - **应用层依赖图构建** — 基因分型需要图或隐式图作为 evidence 来源，是能力栈的顶端消费者。
 
-pgr 的当前能力覆盖索引层（Chain/PSL 处理）与查询层（`psl lift` 单链投影），但
-**图构建层与 应用层是空白**——这正是 §9 启示聚焦的方向。
+pgr 的当前能力已覆盖索引层（Chain/PSL/PAF 处理）、查询层（`psl lift` 单链投影、`pgr paf
+query` 区间投影 + 传递闭包）与图构建层（`pgr paf graph` 粗粒度 GFA + `pgr paf to-gfa` 区域 GFA，
+含 `--crush`，详见 §9.4），但**应用层（基因分型）仍是空白**——这正是 §9 启示聚焦的方向。
 
 #### 1.1.4 关键概念名词解释
 
@@ -1110,7 +1111,7 @@ union 风格合并）。pairwise 与 Block FA 比对均已成熟。
 - **比对输入** — `pgr` AXT/MAF/PSL/Chain（UCSC 风格）；`impg` PAF/1ALN/TPA（wfmash 风格）
 - **查询模式** — `pgr` 按 coordinate 直接读取 / `psl lift` 线性单链投影；`impg` 区间投影 + 传递闭包
 - **泛基因组图构建** — `pgr` `pgr paf graph`（seqwish 风格 DSU，粗粒度）；`impg` 内嵌 sweepga/seqwish/allwave/crush 管道
-- **bounded bubble 处理** — `pgr` 无；`impg` crush 算法（POVU + aligner 路由 + polish）
+- **bounded bubble 处理** — `pgr` `pgr paf to-gfa --crush`（简单 bubble 压缩，§9.3）；`impg` crush 算法（POVU + aligner 路由 + polish）
 - **免比对后端** — `pgr` 无；`impg` syng syncmer GBWT
 - **基因分型** — `pgr` 无；`impg` `genotype cos` + `infer` (cosigt 模型)
 - **CLI 风格** — `pgr` `pgr <format> <subcommand>` 多级；`impg` 单级，参数众多
@@ -1170,9 +1171,11 @@ impg 的隐式图以 PAF/1ALN/TPA all-vs-all 比对为边集。pgr 不应改用 
 **两序列 MAF → PAF**的转换路径（每个 MAF block = 一条 pairwise alignment，可直接序列化为 PAF 行
 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然桥梁，无需引入 wfmash。
 
-物化图（pggb/Minigraph-Cactus 路线）的代价是"即使用户只关心一个位点，也要先构建整张图"。pgr 当前
-没有 GFA 构建管道（[notes/references/gfa.md](../../../notes/references/gfa.md) 是规划文档），
-**"先物化再分析"对 pgr 是过载的**——应优先实现按需投影，把物化推迟到用户显式要求 `gfa`/`maf`输出时。
+物化图（pggb/Minigraph-Cactus 路线）的代价是"即使用户只关心一个位点，也要先构建整张图"。pgr 已通过
+`pgr paf graph`（粗粒度 GFA，[src/cmd_pgr/paf/graph.rs](../../../src/cmd_pgr/paf/graph.rs)）与
+`pgr paf to-gfa`（区域精细 GFA，[src/cmd_pgr/paf/to_gfa.rs](../../../src/cmd_pgr/paf/to_gfa.rs)）
+实现 GFA 构建管道（详见 §9.4），但仍以按需投影（隐式图）为优先，把物化推迟到用户显式要求
+`gfa`/`maf` 输出时。
 
 §1.1.2 的适用边界表给出判断依据：pgr 的典型场景（locus 查询、cohort 区间投影）落在"隐式图赢"
 的区域；只有未来需要全图统计（coverage/layout/variant calling）时才考虑物化。
@@ -1207,18 +1210,20 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
 
 ### 9.3 crush 算法的必要性
 
-**答：现阶段不需要，未来若需要可只移植 median 三档路由核心。**
+**答：已实现简单版（`pgr paf to-gfa --crush`），impg 的完整 median 三档路由核心暂不需要。**
 
 理由（详见 §6.5）：
 
-- crush 解决的是"已有 GFA 图后如何压缩 bubble"，是图构建**之后**的优化步骤。pgr 当前还没有 GFA
-  构建管道，先解决"能否构建图"再考虑"如何压缩图"。
+- crush 解决的是"已有 GFA 图后如何压缩 bubble"，是图构建**之后**的优化步骤。pgr 已通过
+  `pgr paf to-gfa --crush`（[src/libs/paf/poa_compact.rs](../../../src/libs/paf/poa_compact.rs) 的
+  `crush_bubbles`）实现简单 bubble 压缩——把同入/出邻居的节点合并为单节点、保留最高权重等位基因，足以
+  支撑 SV overview 图。它等价于 impg crush 的最简单形态，但**不**含 median 三档 aligner 路由
+  （< 1kb → SPOA、1-10kb → POASTA、≥ 10kb → sweepga）与 polish 阶段。
 - pgr 的 `fas consensus`（`libs/poa/` SPOA）已能做单 locus 的 MSA consensus，对于"只想看一个位点"
   的场景，隐式图投影 + 局部 MSA 比 crush 更轻量。
 - crush 的 8 阶段流程 + 15 method 复杂度对 pgr 是过载的。impg 自己的 C4 sweep（§10.2/§10.3.2）显示
   大部分场景只跑 `Auto`/`Hierarchical`/`Sweepga` 3-4 种，15 种 method 的存在本身就是工程失控的
-  标志。若未来确需，可只移植 §6.5.2 的 median 三档路由核心（< 1kb → SPOA、1-10kb → POASTA、≥ 10kb →
-  sweepga），跳过 8 个月的 method zoo 考古层。
+  标志。若未来确需，可只移植 §6.5.2 的 median 三档路由核心，跳过 8 个月的 method zoo 考古层。
 - `libs/poa/` 已是 crush 算法 aligner 层的现成基础。`fas consensus` 已验证该 POA 在 MSA 场景可用，
   迁移到 graph bubble 场景的门槛低于从零起步。
 
@@ -1247,7 +1252,8 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
 > query 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，
 > 理由见 [[paf-pangenome.md]] §3.1）。**graph 已实现**`pgr paf graph [-f refs.fa] --min-var-len 100`，
 > 输出 GFA v1.0（S/L/P），seqwish DSU 风格（详见 [[paf-pangenome.md]] §3.3、[[seqwish.md]]
-> §6.2）；`-f` 可选，拓扑模式零序列依赖（见 [[paf-pangenome.md]] §1.1 原则 5、§3.3）。
+> §6.2）；`-f` 可选，拓扑模式零序列依赖（见 [[paf-pangenome.md]] §1.1 原则 5、§3.3）。**区域图已实现**
+> `pgr paf to-gfa`（POA 紧凑图，`--crush` 可做简单 bubble 压缩，详见 §9.3）。
 
 具体目标：
 
@@ -1271,7 +1277,8 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
 - MAF 输出的序列与源基因组 FASTA 逐字节一致（path 保真不变量）。
 - Zero Panic：畸形/二进制 PAF 输入返回友好错误而非 panic。
 
-**暂不实现**：GFA 物化、crush、partitioned 模式、partition/lace/refine 子命令。这些是"按需物化"
+**暂不实现**：完整 crush（median 三档 aligner 路由 + polish）、partitioned 模式、partition/lace/refine 子命令。
+基本的 GFA 物化（`pgr paf graph` / `pgr paf to-gfa`）与简单 `--crush` 已实现；上述完整能力是"按需物化"
 路径上的后续步骤，待最小原型验证后再决定是否需要。
 
 **为何 pgr 不需要 `--sparsify`**：impg 的 `--sparsify auto`（§6.4）是为了在**没有现成比对**时
