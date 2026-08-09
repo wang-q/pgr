@@ -25,6 +25,49 @@ pub struct Histogram {
     pub max_inst: u64,
 }
 
+/// Coverage statistics and a genome-size estimate from a k-mer table.
+#[derive(Debug, Clone, Copy)]
+pub struct GenomeEstimate {
+    /// Coverage at the histogram peak (main k-mer frequency mode).
+    pub peak_cov: u64,
+    /// Total number of distinct k-mers.
+    pub total_distinct: u64,
+    /// Total k-mer instances (sum of all counts).
+    pub total_kmers: u128,
+    /// Estimated genome size = total k-mer instances / peak coverage.
+    pub genome_size: f64,
+}
+
+/// Estimate coverage and genome size from a count table.
+///
+/// `peak_cov` is the frequency with the most distinct k-mers; for
+/// single-copy genomes `genome_size = total_kmers / peak_cov` approximates
+/// the haploid length (this is the cheap pre-GenomeScope estimate; model
+/// fitting is a separate step).
+pub fn estimate(table: &KmerTable) -> GenomeEstimate {
+    let h = from_table(table);
+    let total_distinct = table.keys.len() as u64;
+    let total_kmers: u128 = table.counts.iter().map(|&c| c as u128).sum();
+    let peak_cov = h
+        .hist
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, &v)| v)
+        .map(|(i, _)| (i + 1) as u64)
+        .unwrap_or(0);
+    let genome_size = if peak_cov > 0 {
+        total_kmers as f64 / peak_cov as f64
+    } else {
+        0.0
+    };
+    GenomeEstimate {
+        peak_cov,
+        total_distinct,
+        total_kmers,
+        genome_size,
+    }
+}
+
 /// Aggregate `table.counts` into the fixed `1..=32767` frequency bins.
 ///
 /// Counts above 32767 are folded into the top bin and their instances are
@@ -175,5 +218,56 @@ mod tests {
         bytes[8..12].copy_from_slice(&1000u32.to_le_bytes()); // high != 32767
         std::fs::write(&path, &bytes).unwrap();
         assert!(load(&path).is_err(), "foreign range must be rejected");
+    }
+
+    #[test]
+    fn estimate_peak_and_genome_size() {
+        // Synthetic 30x coverage: 300 reads of 100 bp sampled from a
+        // deterministic 1 kb genome. The peak should sit near 30x and the
+        // estimated genome size near 1000 bp.
+        let genome = random_genome(1000, 42);
+        let reads = sample_reads(&genome, 100, 300, 7);
+        let table = crate::libs::kmer::count::build_table(&reads, 17).unwrap();
+        let est = estimate(&table);
+        assert!(
+            (8..=60).contains(&est.peak_cov),
+            "peak coverage {} far from 30x",
+            est.peak_cov
+        );
+        assert_eq!(est.total_distinct, table.keys.len() as u64);
+        let ratio = est.genome_size / 1000.0;
+        assert!(
+            (0.5..=2.0).contains(&ratio),
+            "genome size {} far from 1000 bp",
+            est.genome_size
+        );
+    }
+
+    /// Deterministic pseudo-random genome.
+    fn random_genome(len: usize, seed: u64) -> Vec<u8> {
+        let bases = *b"ACGT";
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                bases[(x >> 33) as usize & 3]
+            })
+            .collect()
+    }
+
+    /// Sample fixed-length reads at random positions (with replacement).
+    fn sample_reads(genome: &[u8], read_len: usize, n: usize, seed: u64) -> Vec<Vec<u8>> {
+        let mut x = seed;
+        (0..n)
+            .map(|_| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let start = (x >> 33) as usize % (genome.len() - read_len + 1);
+                genome[start..start + read_len].to_vec()
+            })
+            .collect()
     }
 }

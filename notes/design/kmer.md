@@ -412,7 +412,7 @@ Fastrm Table-<k>
 
 ### 10.1 命令归属
 
-新增顶级命令组 `pgr kmer`（table/profile/hist），**`rept s-kmer` /
+新增顶级命令组 `pgr kmer`（table/profile/hist/gc/qhist/qcheck/gsize），**`rept s-kmer` /
 `e-kmer` 保留不动**：它们是完整"重复提取管线"（计数只是第一步），语义归
 rept；`pgr kmer` 是通用 k-mer 分析（表/谱/直方图），消费者是
 GenomeScope/MerquryFK 场景。`libs/kmer` 共享，命令层互不依赖。
@@ -424,6 +424,8 @@ GenomeScope/MerquryFK 场景。`libs/kmer` 共享，命令层互不依赖。
 | `.pkt` | canonical k-mer 计数表（原 `.pgrk` 改名，magic `PKTT`） | pgr 自有单文件 | `count.rs`（紧凑编码，同 §4.3） |
 | `.pkp` | 逐序列 profile（magic `PKPP`） | pgr 自有单文件 | `profile.rs save/load_profiles` |
 | `.hist` | 频次直方图 | **FASTK 字节兼容** | `hist.rs`（新增） |
+| `.kgc` | GC×覆盖度矩阵 | **KatGC 兼容**（实测逐行一致） | `gc.rs`（新增） |
+| qhist 输出 | 质量偏置直方图 | **quorum `histo_mer_database` 格式兼容** | `quality.rs`（新增） |
 
 `.hist` 布局（与 FastK `count.c` 写侧一致，实测 Histex 读 pgr 输出 =
 FastK 自产，diff 为空）：
@@ -445,6 +447,72 @@ header）。
   relative（表内 count，缺省 0）。`k` 解析规则：有表用表 k（header 读取，
   `count::k_of`），命令行给 k 则校验一致；无表时 `-k` 必填。
 * `hist`：序列直算或 `-t` 表二选一（`required_unless_present`）。
+* `gc`：同 hist 输入形态；`-X`（绝对 x 上限，兼作 count cap）/`-x`（倍数，
+  默认 2.1）对齐 KatGC 峰值语义；`--tex` 渲染 heat 图（复用
+  `plot hh` 的 heatmap.tex + 自适应轴，pgr 无 R 依赖）。
+* `qhist`：FASTQ 必需（质量阈值判定）；阈值默认 = 自动检测 Phred 偏移
+  （复用 `fq trim` 的 BBDuk 检测）+ 5（quorum 默认），`-q` 可显式覆盖。
+* `qcheck`：FASTQ 必需；建质量表（同 qhist 阈值/bits）+ 逐 read 判定
+  （anchor + 双向 extend），`-o` 保留 / `--discard-file` 丢弃。
+* `gsize`：同 hist 输入形态；输出 peak_coverage/total_distinct/total_kmers/
+  genome_size（= total_kmers / peak_cov，简单单倍体估计）；`--model` 跑
+  GenomeScope 完整拟合（见 §10.7）。
+
+### 10.7 GenomeScope 完整迁移（2026-08-09）
+
+`gsize --model` = **genescopefk.R（GenomeScope 2.0）原生移植**
+（`libs/kmer/genomescope.rs`）。范围：
+
+* **模型**：p=1（unique + repeat 两负二项分量）、p=2（AA/AB/BB 四类混合，
+  `predict2_1`）；公式逐行对齐 R（alpha 系数 + `dnbinom(x, size=kmercov*i/
+  bias, mu=kmercov*i)`），`predict` 返回 mixture，公式层乘 `x^1 * length`
+  （R 的 `y_transform ~ x*length*predict`）。
+* **拟合**：手写 **Levenberg-Marquardt**（数值雅可比 + Marquardt 阻尼 +
+  高斯消元，无新依赖）；`length` 用 **log 参数化**（estLength 初值因
+  y_transform 含 x³ 因子可达真实值 ~1700 倍，线性尺度病态，log 后 LM
+  稳定收敛）；多 r 初值（p=2 六组）、`p` 个 kmercov 候选、四轮 trimming
+  （start += 5）、打分（RSSE + percent modeled）跨轮选最优。
+* **输出**：`summary.txt`（property/min/max 表）+ `model.txt`（参数表，
+  `kmercov` 行可被 anchr `2_fastk` 的 `grep '^kmercov' | cut -f 2` 解析）。
+* **不做**：p>2 多拓扑、错误分量、端部修正、R 绘图（明确记录）。
+* **验证**：无噪声合成谱精确还原 d/kmercov/bias/length（单测，dev≈0）；
+  真实 60× reads：kmercov 55.9（准）、genome_size 1282（受端部异质性
+  影响偏高）、Model Fit ~26%。无 R 环境，未与 R 版端到端对照（记录限制）。
+* **排错记录**：`predict` 误含 x*length 导致 LM 无法收敛（R 的 predict
+  只返回 mixture）——已修复；`est_length` 初值尺度问题用 log-length
+  解决。
+
+### 10.5 QUORUM 质量偏置计数（2026-08-09 补充）
+
+quorum `hash_with_quality` 的 nval 编码 `(count<<1)|quality` 更新语义经
+推导**与出现顺序无关**：key 只要出现过一次高质量（窗口 k 碱基全 ≥ 阈值），
+最终 count = 高质量出现次数、quality = 1（低质量出现不参与计数）；从未
+高质量则 count = 低质量出现次数。因此 pgr 用"收集 (key, is_high) → 排序 →
+分组聚合"实现，无需保序哈希表。质量判定：非 ACGT 拆分两条 stretch，
+碱基 < 阈值只断 high stretch，窗口 high 当且仅当 high_len ≥ k（对齐
+`quality_mer_counter`）。端到端对照受本机无 Jellyfish 2.0 限制未做，
+语义经源码逐行核对 + 单测（顺序无关性/N 拆分/阈值/bits 封顶），并新增
+**独立逐事件仿真对照**（随机 reads k=4/8/17 × 20 组：按 quorum `add()`
+的 nval 更新规则保序仿真 vs 顺序无关聚合，直方图完全一致）。
+
+### 10.6 QUORUM read 判定器（2026-08-09 补充）
+
+`pgr kmer qcheck` 只判定不修正：重建 quorum 的**错误信号**（quorum.md
+§6.1 确认的 anchr 场景 = 检测有错 read 直接丢弃）。关键语义：
+
+* **anchor**：`get_val` 对低质量 k-mer 返回 0（`v.second ? v.first : 0`），
+  故只有高质量 k-mer（quality=1）能作 anchor；连续 `good` 个 count ≥
+  anchor-count。
+* **extend 判定**（双向，backward 用反转序列镜像为 forward）：
+  `get_best_alternatives` = 把当前（最新）碱基替换为 4 种，取最高质量
+  等级候选的 count；count==0 → truncation，count==1 且唯一候选 ≠ 当前
+  碱基 → substitution，count>1 且当前碱基不满足保留条件（count ≤
+  min-count 或 Poisson 检验不通过）→ 事件。任何事件 → read 丢弃。
+* **Poisson 检验**：`p = Σcounts × (apriori_error_rate/3)`，
+  `poisson_term < threshold(1e-6)` 保留（Stirling 近似 i≥11）。
+* 未移植：修正输出、err_log 窗口限制（判定器只看有无事件）、homo_trim、
+  污染库。参数默认对齐 quorum（skip=0/good=1/anchor-count=1/min-count=1/
+  cutoff=4/error-rate=0.01）。
 
 ### 10.4 兼容性结论（决策记录）
 

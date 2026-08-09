@@ -216,6 +216,30 @@ echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
 
 ```
 
+### K-mer analysis (pgr kmer)
+
+See [kmer.md](kmer.md) for the full command reference. Quick examples:
+
+```bash
+# Count k-mers into a reusable table
+pgr kmer table reads.fq.gz -k 21 -o reads.pkt
+
+# Frequency histogram (FastK .hist layout, readable by Histex/GenomeScope)
+pgr kmer hist -t reads.pkt -o reads.hist
+Histex -G reads.hist
+
+# GC-content x coverage matrix (KatGC .kgc format) or its LaTeX heatmap
+pgr kmer gc -t reads.pkt -o reads.kgc
+pgr kmer gc -t reads.pkt --tex -o reads.tex
+
+# Quality-weighted histogram and error-read filtering (quorum semantics)
+pgr kmer qhist reads.fq.gz -k 21 -o reads.qhist
+pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
+
+# Coverage peak and genome-size estimate
+pgr kmer gsize reads.fq.gz -k 21
+```
+
 ### Alignment pipelines (lastz, UCSC, multiz)
 
 Repeat masking (libraries, RepeatMasker, and pgr's `rept e-kmer/s-kmer/trf`) is

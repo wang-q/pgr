@@ -6,8 +6,12 @@
 
 pub mod count;
 pub mod extract;
+pub mod gc;
+pub mod genomescope;
 pub mod hist;
 pub mod profile;
+pub mod qcheck;
+pub mod quality;
 
 /// Sorted canonical k-mer table with parallel counts.
 #[derive(Debug, Clone, Default)]

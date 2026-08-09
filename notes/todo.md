@@ -4,14 +4,46 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-09 深夜：`pgr kmer` 命令组 / 三种格式 / FASTK 兼容）
+## 0. 会话交接（2026-08-09：`pgr kmer` 七子命令全量交付）
 
-**已完成（本会话，lib 688 + 集成套件全绿，clippy clean）**：
+**已完成（本会话，测试 1544 全绿，clippy clean）**：
 
 - **`pgr kmer` 命令组（新顶级命令）**：`table`（FASTA/FASTQ → `.pkt`，
   多输入合并，`-t1` 语义）/ `profile`（self 或缺省 `-t` relative → `.pkp`）/
   `hist`（序列直算或 `-t` 表 → `.hist`）；k 解析 = 有表用表 k（
   `count::k_of`），命令行给 k 则校验。`rept s-kmer`/`e-kmer` 保留不动。
+- **`pgr kmer gc`（KatGC 等价，已实现）**：`libs/kmer/gc.rs`（GC 字节查
+  表 + `gc_matrix` + 峰值/XMAX + `.kgc` 矩阵写）+ `cmd_pgr/kmer/gc.rs`
+  （`-X`/`-x` 对齐 KatGC）；**实测与本地编译的 MerquryFK KatGC 两个数据集
+  逐行 diff 为空**（峰值/XMAX/4 邻域平均/clamp 全一致）；`--tex` 渲染
+  KatGC heat 图等价（复用 `plot hh` 的 heatmap.tex 渲染器 + 自适应轴）。
+- **`pgr kmer qhist`（QUORUM 直方图等价，已实现）**：`libs/kmer/quality.rs`
+  （quorum `hash_with_quality` 语义：高质量出现主导、低质量不污染、N 拆分、
+  顺序无关聚合）+ `cmd_pgr/kmer/qhist.rs`（FASTQ 输入、阈值 = 自动检测
+  Phred 偏移 + 5 或 `-q` 显式）；输出 = quorum `histo_mer_database` 格式
+  （`count n_lowq n_highq`，cap 1000 + `-b` bits 封顶默认 127）。本机无
+  Jellyfish 2.0 未做端到端对照；验证 = 源码逐行核对 + 单测 + **独立逐事件
+  仿真对照**（随机 reads k=4/8/17 × 20 组：保序 quorum `add()` 仿真 vs
+  顺序无关聚合，结果一致）。
+- **`pgr kmer qcheck`（QUORUM read 判定器，已实现）**：
+  `libs/kmer/qcheck.rs`（anchor + 双向 extend 判定信号：高质量 anchor
+  查找、无延续 truncation、substitution、Poisson 碰撞检验；只判定不
+  修正）+ `cmd_pgr/kmer/qcheck.rs`（-o 保留 reads、`--discard-file` 丢弃
+  reads、参数对齐 quorum `--skip/--good/--anchor-count/--min-count/
+  --cutoff/--apriori-error-rate/--poisson-threshold`）。语义 = quorum
+  `find_starting_mer`/`extend`（`get_val` 仅高质量 k-mer 可作 anchor、
+  `get_best_alternatives` 最高质量等级候选）。anchr 场景 = 检测错误 read
+  直接丢弃（quorum.md §6.1）。
+- **`pgr kmer gsize`（峰值/基因组大小估计，已实现）**：
+  `hist.rs estimate`（peak_cov = 频次众数、total_kmers/peak 简单单倍体
+  估计）+ `cmd_pgr/kmer/gsize.rs`；合成 30× 1 kb reads 实测 peak≈26、
+  估计 969 bp（误差 ~3%）。`--model` 已实现 **genescopefk.R（GenomeScope
+  2.0）原生迁移**（`libs/kmer/genomescope.rs`）：负二项混合（p=1/2）+
+  手写 Levenberg-Marquardt（log-length 参数化 + 高斯消元，无新依赖）+
+  四轮 trimming + 打分选择；输出 `summary.txt`/`model.txt`（对齐 anchr
+  `2_fastk` 的 `grep ^kmercov` 解析）。无噪声合成谱精确还原参数
+  （d/kmercov/bias/length 全准）；真实 reads 的 kmercov 准（60×→55.9），
+  基因组大小受端部异质性影响（p>2 多拓扑/错误分量明确不做）。
 - **三种 kmer 格式定稿**：`.pkt`（表，原 `.pgrk` 改名，magic `PKTT`）、
   `.pkp`（profile，magic `PKPP`，header + raw u16）、`.hist`（直方图，
   **FASTK 字节兼容**：固定 low=1/high=32767，28B 头 + 32767×8B；实测
@@ -50,17 +82,19 @@
   （这些已提交：`2081dca`/`c536898`/`1bed636`/`e6f5b33`。）
 
 **未提交（本会话改动，勿覆盖；`.git` 只读，用户回来后提交）**：
-`libs/kmer/`（count.rs 改名 + k_of、profile.rs pkp 读写、hist.rs 新增）、
-`cmd_pgr/kmer/`（新目录三子命令）、`pgr.rs`/`cmd_pgr/mod.rs`（注册）、
-`docs/kmer.md`、`docs/rept.md`/`README.md`/`AGENTS.md`/`CHANGELOG.md`、
-`tests/cli_kmer.rs`/`tests/cli_rept.rs`、`notes/design/kmer.md`、
-`notes/todo.md` 等。提交前跑 fmt/clippy/test（已跑，全绿）。
+`libs/kmer/`（gc.rs/quality.rs/qcheck.rs 新增、count.rs 改名、hist.rs 增
+estimate、profile.rs pkp）、`cmd_pgr/kmer/`（gc/gsize/qhist/qcheck 新增）、
+`tests/cli_kmer.rs`、`docs/kmer.md`/`docs/formats/kmer.md`/
+`docs/usage_examples.md`、`README.md`/`CHANGELOG.md`/`AGENTS.md`、
+`notes/design/kmer.md`/`notes/todo.md`/`notes/project-understanding.md`/
+`notes/benchmarks/kmer-throughput.md`、`docs/rept.md` 等共 20 文件。
+提交前跑 fmt/clippy/test（已跑，全绿）。
 
 **挂账/待决**：
 
-1. **kmer 峰值/基因组大小估计**：直方图本体已实现（`pgr kmer hist`，
-   `.hist` 兼容 FASTK）；**GenomeScope 模型拟合（kmercov/基因组大小）仍是
-   第二步**，未立项（R 侧拟合或原生实现待议）。
+1. **kmer GenomeScope 完整模型**：`genescopefk.R` 原生迁移已实现（
+   `pgr kmer gsize --model`，p=1/2 负二项 + LM，summary/model.txt 对齐
+   anchr）；**p>2 多拓扑、错误分量、端部修正仍是后续**（明确不做/待议）。
 2. **anchr BBTools 替换**三决策点：一期 `fq split`/`fq sample` 是否先做；
    接头修剪完全复刻 bbduk（tbo/tpe）vs 简化；流水线管道串联是否可接受。
 3. **`fq range` 二期**：双端 S2（`R1.fq R2.fq` + `--outfile-2`）。

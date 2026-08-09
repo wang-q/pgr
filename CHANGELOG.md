@@ -13,6 +13,30 @@
   binary layout (fixed bins 1..=32767), readable by Histex / KatGC /
   GenomeScope tooling; verified byte- and value-identical against a real
   FastK histogram on the same input.
+* **`pgr kmer gc`** - GC-content × k-mer coverage matrix in the KatGC
+  `.kgc` format (2×2 neighbor average, peak-based x-range); verified
+  line-identical against a locally compiled MerquryFK KatGC on the same
+  input. `--tex` renders the KatGC heat-map equivalent as LaTeX
+  (pgfplots, adaptive ticks; compile with tectonic).
+* **`pgr kmer qhist`** - quality-weighted k-mer histogram from FASTQ reads
+  in quorum's `histo_mer_database` format (`count n_lowq n_highq`);
+  implements quorum's `hash_with_quality` bias (high-quality occurrences
+  dominate, low-quality evidence never raises a high-quality count) with an
+  auto-detected Phred offset + 5 threshold and a `-b` count cap (default 7
+  bits, max count 127, matching quorum `create_database`).
+* **`pgr kmer qcheck`** - flags reads quorum would correct or truncate and
+  keeps the rest as-is; reproduces quorum's anchor + extend error signals
+  (high-quality anchors only, substitution/truncation events, Poisson
+  collision test) without producing corrected sequences.
+* **`pgr kmer gsize`** - coverage peak and haploid genome-size estimate
+  (total k-mer instances / peak coverage) from sequences or a `.pkt` table.
+  `--model` runs a native port of `genescopefk.R` (GenomeScope 2.0):
+  negative-binomial mixture (p=1/2) fitted by a hand-written
+  Levenberg-Marquardt solver across four trimming rounds, writing
+  `summary.txt` / `model.txt` in the formats anchr's `2_fastk` consumes.
+  Exact on noiseless synthetic spectra; real-read coverage heterogeneity
+  is handled by the negative-binomial dispersion, with the p>2/error
+  components documented as out of scope.
 
 ### Repeat Detection (`rept`)
 

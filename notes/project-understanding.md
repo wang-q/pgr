@@ -101,7 +101,7 @@ src/
 │   ├── pbit/           #   群体基因组压缩
 │   ├── dist/           #   距离计算 (hv/pgi/seq)
 │   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv
-│   ├── kmer/           #   k-mer 表/profile/直方图：table/profile/hist (.pkt/.pkp/.hist)
+│   ├── kmer/           #   k-mer 表/profile/直方图/GC 矩阵/质量谱/read 判定/大小估计：table/profile/hist/gc/qhist/qcheck/gsize
 │   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
 │   ├── rept/           #   重复检测与遮蔽 (e-kmer/e-align/s-kmer/s-align/trf/masker)
 │   ├── rg/             #   .rg 行级区间操作 (cover/coverage/count/merge/prop/runlist/sort/span)
@@ -125,7 +125,7 @@ src/
     │   └── graph/      #     DSU 图构建 + GFA 输出
     ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
     ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
-    ├── kmer/           #   canonical k-mer 计数表 (.pkt)/profile (.pkp)/直方图 (.hist)/run 提取
+    ├── kmer/           #   canonical 计数表 (.pkt)/profile (.pkp)/直方图 (.hist)/GC×count (.kgc)/质量谱+read 判定 (quorum 语义)/run 提取
     ├── sd/             #   分段重复检测核心
     ├── runlist/        #   runlist/.rg 区间核心 (IntSpan 构建、深度扫描线、merge 聚类、JSON I/O)
     ├── pl/             #   pipeline 共享逻辑 (PipelineCtx + 内建 runlist 管道)
@@ -270,7 +270,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 
 | 模块 | 子命令数 | 核心能力 |
 |------|----------|----------|
-| `kmer` | 3        | 通用 k-mer 分析：table (计数表 .pkt)、profile (逐序列谱 .pkp)、hist (直方图 .hist，FASTK 兼容) |
+| `kmer` | 7        | 通用 k-mer 分析：table (计数表 .pkt)、profile (逐序列谱 .pkp)、hist (直方图 .hist，FASTK 兼容)、gc (GC×覆盖度矩阵 .kgc + `--tex` 热图，KatGC 兼容)、qhist (质量偏置直方图，quorum 兼容)、qcheck (read 错误判定，quorum 语义)、gsize (峰值/基因组大小估计 + `--model` GenomeScope 完整拟合) |
 | `sd`   | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
 | `rept` | 6        | 重复检测与遮蔽：e-kmer / e-align / s-kmer / s-align / trf / masker (RepeatMasker 模拟) |
 
@@ -357,7 +357,12 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `libs/kmer/`：canonical k-mer 计数表（`count.rs`，`.pkt` 紧凑持久化 +
   `k_of` 读 header）、基因组 profile 生成 + `.pkp` 读写（`profile.rs`）、
   直方图 + FASTK `.hist` 兼容写（`hist.rs`）、profile → 重复 run 提取
-  （`extract.rs`）；命令层 = `pgr kmer`（table/profile/hist）+ `rept
+  （`extract.rs`）、GC×count 矩阵 + KatGC `.kgc` 兼容写（`gc.rs`）、
+  质量偏置直方图 + quorum `histo_mer_database` 格式（`quality.rs`）；
+  read 错误判定（`qcheck.rs`，anchor+extend 信号）、峰值/基因组大小估计
+  （`hist.rs estimate`）、GenomeScope 完整拟合（`genomescope.rs`，
+  genescopefk.R 移植，LM + 负二项 p=1/2）；命令层 = `pgr kmer`
+  （table/profile/hist/gc/qhist/qcheck/gsize）+ `rept
   s-kmer`/`e-kmer`；替代 FastK `-p/-t/-p:<table>` + Profex `-z` + Histex
   输入（设计：`notes/design/kmer.md`，含 §10 命令组与格式定稿）
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：k-mer →
@@ -675,3 +680,4 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-nt-simd.md]] | fa 逐字节统计 SIMD 基准（nt_simd）：count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，wide 回退 ~2.8×；单基因组 CLI 上 I/O 主导（2026-08-09） |
 | [[benchmarks/bench-profile-hotspots.md]] | 热点 profiling 实测（2026-08-09，perf）：fa size gz 中 inflate 43%+memset 35%；rept s-kmer 中 table_profiles 79%（partition_point cache miss 41%）→ 排序合并优化 ~5.2–5.4×、整命令 3.4×；pgi build 无单一主导；gzip 并行解压已裁定不做 |
 | [[benchmarks/bench-simd-tiers.md]] | SIMD 三级回退速度对比（AVX2 / wide128 / 标量，2026-08-09 汇总）：统计类 AVX2 超 wide 5–6×、DP/打包类仅 1.2–1.8×；count_n/masked 无 wide、norm 无 AVX2 手写、cigar 无 wide 的设计取舍与依据 |
+| [[benchmarks/kmer-throughput.md]] | `pgr kmer` 六子命令吞吐 sanity（2026-08-09，release）：5 Mb 基因组 table/hist/gc ~0.1 s、profile 0.26 s；1 万 reads qhist 0.07 s、qcheck 0.51 s（2.6% 判定有错） |
