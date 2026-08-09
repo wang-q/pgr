@@ -40,17 +40,21 @@
   估计 969 bp（误差 ~3%）。`--model` 已实现 **genescopefk.R（GenomeScope
   2.0）原生迁移**（`libs/kmer/genomescope.rs`）：负二项混合（p=1/2）+
   **minpack lmdif 完整移植**（fdjac2/qrfac/qrsolv/lmpar/主循环，投影
-  边界，无新依赖）+ 四轮 trimming + 打分选择 + 真实 SE（hessian）；
-  输出 `summary.txt`/`model.txt`（对齐 anchr `2_fastk` 的
+  边界，无新依赖）+ **R nmath dnbinom 逐位移植**（`libs/kmer/nbinom.rs`：
+  bd0/stirlerr/dbinom_raw/ebd0/dpois_raw，见
+  [[design/genescopefk.md]]）+ 四轮 trimming + 打分选择 + 真实 SE
+  （hessian）；输出 `summary.txt`/`model.txt`（对齐 anchr `2_fastk` 的
   `grep ^kmercov` 解析）。**R 端到端对照（2026-08-10，本机 R + minpack.lm）：
-  kmercov/bias/d/length/SE 高度一致**（55.7 vs 55.73 等）；Model Fit
-  62% vs 64%（2% 已知偏差）；p>2 多拓扑/错误分量明确不做。
+  修复 lmdif 移植 4 处列主序索引反转后单起点与 R 同盆地**（pgr
+  d=0/kmercov=55.76/bias=0/length=1017 vs R 55.73/988；summary 除
+  Model Fit/Error Rate 外逐字节一致；剩余为 Rust vs f2c C 语言级浮点
+  差异，详见 [[design/genescopefk.md]]）；p>2 多拓扑/错误分量明确不做。
 - **`pgr plot heat` / `pgr plot spectra`（绘图拆分，已实现）**：计算与
   绘图分开（CLI 统一：单文件 `-o <file>`、多文件套件 `-o <dir>` 固定名）。
   `heat` 读 `.kgc` 画 GC×覆盖度热图（KatGC 等价）；`spectra` 读 `.hist` +
-  `model.txt` 画四视图谱图（linear/transformed/log/transformed-log，
-  observed/model/errors/峰值/图例/摘要，内容对齐 genescopefk.R、渲染
-  pgfplots 原生）；模板 = `src/assets/spectra.tex`（独立可编译示例，
+  `model.txt` 画单张标准谱图（linear，observed/model/errors/峰值/图例/
+  摘要，内容对齐 genescopefk.R、渲染 pgfplots 原生）；模板 =
+  `src/assets/spectra.tex`（独立可编译示例，
   样式验证用，惯例同 venn/heatmap）；`gc --tex` / `gsize --model --plot`
   为共享渲染的快捷
   入口（`gsize --model --plot -o dir` → dir 内 summary/model/spectra.tex）。

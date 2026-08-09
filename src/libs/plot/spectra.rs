@@ -1,9 +1,8 @@
 //! GenomeScope-style k-mer spectra rendering (genescopefk.R plots).
 //!
-//! Renders the four views (linear / transformed / log / transformed-log)
-//! as a single standalone LaTeX document: observed histogram, full model,
-//! error region, and k-mer peak markers, with the model summary in the
-//! figure title.
+//! Renders a single standard view (linear coverage vs frequency) as a
+//! standalone LaTeX document: observed histogram, full model, error region,
+//! and k-mer peak markers, with the model summary in the figure title.
 
 use crate::libs::kmer::genomescope::{predict, ModelParams};
 use std::io::Write;
