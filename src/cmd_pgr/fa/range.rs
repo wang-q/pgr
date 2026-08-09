@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
+use pgr::libs::fmt::fa::FastaRecord;
 use pgr::libs::loc;
 use std::io::Write;
 
@@ -86,7 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
     let opt_cache = *args.get_one::<std::num::NonZeroUsize>("cache").unwrap();
-    let mut cache: lru::LruCache<String, noodles_fasta::Record> = lru::LruCache::new(opt_cache);
+    let mut cache: lru::LruCache<String, FastaRecord> = lru::LruCache::new(opt_cache);
 
     // Open files
     let force_update = args.get_flag("update");
@@ -105,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             cache.put(seq_id.clone(), record);
         }
 
-        let record: &noodles_fasta::Record = cache
+        let record: &FastaRecord = cache
             .get(&seq_id)
             .ok_or_else(|| anyhow::anyhow!("seq not in cache: {}", seq_id))?;
 
@@ -115,9 +116,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        let definition = noodles_fasta::record::Definition::new(rg.to_string(), None);
         let sequence = loc::slice_record(record, &rg)?;
-        let record_rg = noodles_fasta::Record::new(definition, sequence);
+        let record_rg = FastaRecord::new(&rg.to_string(), &sequence);
 
         fa_out.write_record(&record_rg)?;
     }

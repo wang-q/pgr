@@ -404,6 +404,47 @@ noodles_bgzf 引用清零（仅 benches/tests 的 dev 对照保留）；
 - dev-deps 的 noodles-bgzf 仅作基准对照（IndexedReader）；正式代码
   已完全自研。
 
+## 9. 移除 noodles-fasta / noodles-fastq（2026-08-09）
+
+读取侧早已自研（SeqReader），剩余使用集中在**输出层记录类型**。
+参考 SEQTK：无 Record 对象，直接对缓冲格式化输出（`qual.l != 0`
+判定 @/>，`line_len` 折行）。
+
+### 自研组件（`fmt/fa.rs`）
+
+- `FastaRecord`：owned 记录（name: BString, desc: Option<BString>,
+  seq: Vec<u8>），构造 `new`/`with_desc`/`preserving_desc`。
+- `FastaWriter<W>`：`write_record` 输出 `>name[ desc]\nseq\n`；
+  `line_base_count = usize::MAX` 默认单行（**LOC 契约**，与 noodles
+  行为一致）；空序列只输出定义行（不写空 seq 行，对齐旧行为）；
+  折行经 `with_line_width`。
+- `fmt::fa::reader` 返回 `SeqReader`（run_window 改 `read_record`
+  循环）。
+
+### 迁移
+
+- `loc.rs`：fetch_record/records_offset 用 `SeqReader` 内存解析 →
+  `FastaRecord`；slice_record 返回 `Vec<u8>`（普通 1-based 切片 +
+  revcomp，去掉 noodles Position）；**fetch_record 丢弃 description**
+  （.loc 只存裸名，旧行为）。
+- `fa/range.rs`、`paf/fasta.rs`：缓存类型 `noodles_fasta::Record` →
+  `FastaRecord`。
+
+### 依赖
+
+- 移除正式：noodles 主 crate（0.104）、noodles-core、noodles-fasta、
+  noodles-fastq；保留 noodles-gff。
+- dev-deps 增加 noodles-fasta/noodles-fastq（bench 基线、fmt/seq.rs
+  测试对比）。
+
+### 行为回归（测试暴露）
+
+- `command_replace` 95 行 vs 100 行：noodles writer 对空序列只写
+  `>name\n`；自研 writer 补上"空序列不写 seq 行"。
+- `command_range` name-only 输出带 desc：fetch_record 旧代码显式
+  `Definition::new(name, None)`；恢复为丢弃 desc。
+- 全量：672 lib + 57 集成套件通过；fmt/clippy clean。
+
 解读：
 
 - **多行拼接是 noodles 慢的主因**：FASTA 80 bp 多行时每记录逐行 append

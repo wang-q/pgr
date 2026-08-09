@@ -1,7 +1,6 @@
+use crate::libs::fmt::fa::FastaRecord;
 use crate::libs::loc;
 use indexmap::IndexMap;
-use noodles_core::Position;
-use noodles_fasta as fasta;
 use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::num::NonZeroUsize;
@@ -93,7 +92,7 @@ pub fn load_all_seqs(tsv_path: Option<&str>) -> anyhow::Result<HashMap<String, V
 pub struct FastaEntry {
     reader: loc::Input,
     loc_of: IndexMap<String, (u64, usize)>,
-    cache: lru::LruCache<String, fasta::Record>,
+    cache: lru::LruCache<String, FastaRecord>,
 }
 
 /// Manages multiple BGZF FASTA files keyed by file path, with a name -> file
@@ -184,17 +183,9 @@ impl FastaStore {
             anyhow::bail!("end position {end} exceeds sequence length {total_len} for '{name}'");
         }
 
-        // noodles Position is 1-based inclusive; our coords are 0-based half-open.
-        let start_pos = Position::new(start as usize + 1)
-            .ok_or_else(|| anyhow::anyhow!("invalid start position {start}"))?;
-        let end_pos = Position::new(end as usize)
-            .ok_or_else(|| anyhow::anyhow!("invalid end position {end}"))?;
-        let slice = record
-            .sequence()
-            .slice(start_pos..=end_pos)
-            .ok_or_else(|| anyhow::anyhow!("slice [{start},{end}) out of range for '{name}'"))?;
-
-        Ok((slice.as_ref().to_vec(), total_len))
+        let seq = record.sequence();
+        let slice = &seq[start as usize..end as usize];
+        Ok((slice.to_vec(), total_len))
     }
 
     /// Fetch the full sequence bytes for a name.

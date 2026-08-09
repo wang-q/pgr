@@ -81,6 +81,32 @@ fn command_fa_size_gz() {
 }
 
 #[test]
+fn command_fa_size_multi_member_gzip() {
+    // Concatenated plain gzip members (not BGZF): the reader must traverse
+    // every member, not stop after the first.
+    use std::io::Write;
+    let dir = TempDir::new().unwrap();
+    let part1 = ">s1\nACGTACGTACGT\n>s2\nTTTTGGGGCCCCAAAA\n";
+    let part2 = ">s3\nACGT\n>s4\nNNNNACGTNNNN\n";
+    let gz_path = dir.path().join("multi.fa.gz");
+    let mut file = std::fs::File::create(&gz_path).unwrap();
+    file.write_all(&pgr::libs::bgzf::gzip_compress(part1.as_bytes(), 6).unwrap())
+        .unwrap();
+    file.write_all(&pgr::libs::bgzf::gzip_compress(part2.as_bytes(), 6).unwrap())
+        .unwrap();
+    drop(file);
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "size", gz_path.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout.lines().count(), 4);
+    assert!(stdout.contains("s1\t12"), "s1 missing: {stdout}");
+    assert!(stdout.contains("s2\t16"), "s2 missing: {stdout}");
+    assert!(stdout.contains("s3\t4"), "s3 missing: {stdout}");
+    assert!(stdout.contains("s4\t12"), "s4 missing: {stdout}");
+}
+
+#[test]
 fn command_fa_size_no_ns() {
     // seq1: 12 bases, 4 Ns (ACGT NNNN ACGT) -> 8 bases
     // seq2: 4 bases, 0 Ns -> 4 bases

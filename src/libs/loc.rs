@@ -1,8 +1,8 @@
 use crate::libs::bgzf::CachedBgzfReader;
 use crate::libs::ds::Range;
+use crate::libs::fmt::fa::FastaRecord;
+use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use indexmap::IndexMap;
-use noodles_core;
-use noodles_fasta as fasta;
 use std::io::BufReader;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;
@@ -154,39 +154,39 @@ pub fn fetch_record(
     reader: &mut Input,
     loc_of: &IndexMap<String, (u64, usize)>,
     name: &str,
-) -> anyhow::Result<fasta::Record> {
+) -> anyhow::Result<FastaRecord> {
     let (offset, size) = loc_of
         .get(name)
         .ok_or_else(|| anyhow::anyhow!("{} not found in the .loc index file", name))?;
 
     let data_buf = read_offset(reader, *offset, *size)?;
-    let mut fa_in = fasta::io::Reader::new(&data_buf[..]);
-
-    fa_in.read_definition(&mut String::new())?;
-    let mut buf = Vec::new();
-    fa_in.read_sequence(&mut buf)?;
-
-    let definition = fasta::record::Definition::new(name, None);
-    let sequence = fasta::record::Sequence::from(buf);
-    let record = fasta::Record::new(definition, sequence);
-
-    Ok(record)
+    let mut fa_in = SeqReader::from_reader(Box::new(std::io::Cursor::new(data_buf)));
+    let mut rec = SeqRecord::default();
+    if !fa_in.read_record(&mut rec)? {
+        anyhow::bail!("empty record for {}", name);
+    }
+    // The .loc index stores the bare name; the description is not part of the
+    // indexed record (historical behavior).
+    Ok(FastaRecord::new(name, rec.sequence()))
 }
 
 pub fn records_offset(
     reader: &mut Input,
     offset: u64,
     size: usize,
-) -> anyhow::Result<Vec<fasta::Record>> {
+) -> anyhow::Result<Vec<FastaRecord>> {
     let mut records = Vec::new();
 
     let data_buf = read_offset(reader, offset, size)?;
-    let mut fa_in = fasta::io::Reader::new(&data_buf[..]);
-
-    for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result?;
-        records.push(record);
+    let mut fa_in = SeqReader::from_reader(Box::new(std::io::Cursor::new(data_buf)));
+    let mut rec = SeqRecord::default();
+    while fa_in.read_record(&mut rec)? {
+        let name = String::from_utf8_lossy(rec.name());
+        records.push(FastaRecord::with_desc(
+            &name,
+            rec.description(),
+            rec.sequence(),
+        ));
     }
 
     Ok(records)
@@ -194,26 +194,20 @@ pub fn records_offset(
 
 /// Slice a subsequence from `record` by 1-based `rg`, applying reverse
 /// complement for `-` strand. Returns the resulting owned sequence.
-pub fn slice_record(
-    record: &fasta::Record,
-    rg: &crate::libs::ds::Range,
-) -> anyhow::Result<fasta::record::Sequence> {
-    let start = noodles_core::Position::new(*rg.start() as usize)
-        .ok_or_else(|| anyhow::anyhow!("invalid start position: {}", *rg.start()))?;
-    let end = noodles_core::Position::new(*rg.end() as usize)
-        .ok_or_else(|| anyhow::anyhow!("invalid end position: {}", *rg.end()))?;
-
-    let mut slice = record
-        .sequence()
-        .slice(start..=end)
-        .ok_or_else(|| anyhow::anyhow!("slice error for [{}]", rg))?;
+pub fn slice_record(record: &FastaRecord, rg: &crate::libs::ds::Range) -> anyhow::Result<Vec<u8>> {
+    let seq = record.sequence();
+    let start = *rg.start() as usize;
+    let end = *rg.end() as usize;
+    if start == 0 || end < start || end > seq.len() {
+        anyhow::bail!("slice error for [{}]", rg);
+    }
+    let mut slice = seq[start - 1..end].to_vec();
     if rg.strand() == "-" {
         // Reverse complement using the `NT_COMP` lookup table (standard and
         // IUPAC bases complemented, case preserved; unknown bytes like `-`/`*`
         // kept as-is). This matches `fa rc`'s documented behavior and avoids
         // `Sequence::complement()`, which errors on non-IUPAC characters.
-        let seq_rc: Vec<u8> = slice
-            .as_ref()
+        slice = slice
             .iter()
             .rev()
             .map(|&b| {
@@ -225,7 +219,6 @@ pub fn slice_record(
                 }
             })
             .collect();
-        slice = fasta::record::Sequence::from(seq_rc);
     }
     Ok(slice)
 }
@@ -248,17 +241,12 @@ pub fn fetch_range_seq(
 
     // name only
     if *rg.start() == 0 {
-        let seq = record
-            .sequence()
-            .as_ref()
-            .iter()
-            .map(|&b| b as char)
-            .collect();
+        let seq = record.sequence().iter().map(|&b| b as char).collect();
         return Ok(seq);
     }
 
     let slice = slice_record(&record, rg)?;
-    let seq = slice.as_ref().iter().map(|&b| b as char).collect();
+    let seq = slice.iter().map(|&b| b as char).collect();
     Ok(seq)
 }
 
