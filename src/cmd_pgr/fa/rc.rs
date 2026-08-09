@@ -57,8 +57,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         protected.push(list.as_str());
     }
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, protected)?;
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+    let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
     let is_consistent = args.get_flag("consistent");
 
@@ -73,12 +74,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         HashSet::new()
     };
 
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
 
         if args.contains_id("name_list") && !set_list.contains(&name) {
-            fa_out.write_record(&record)?;
+            let out =
+                pgr::libs::fmt::fa::new_record_with_desc(&name, rec.description(), rec.sequence());
+            fa_out.write_record(&out)?;
             continue;
         }
 
@@ -93,9 +95,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // (e.g. `-`, `*`) is kept as-is, matching the documented behavior
         // ("Non-IUPAC characters are preserved as-is"). The previous
         // `noodles` `Sequence::complement()` errored on such characters.
-        let seq_rc: Vec<u8> = record
+        let seq_rc: Vec<u8> = rec
             .sequence()
-            .as_ref()
             .iter()
             .rev()
             .map(|&b| {
@@ -107,7 +108,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             })
             .collect();
-        let record_rc = pgr::libs::fmt::fa::new_record_preserving_desc(&new_name, &record, &seq_rc);
+        let record_rc =
+            pgr::libs::fmt::fa::new_record_with_desc(&new_name, rec.description(), &seq_rc);
         fa_out.write_record(&record_rc)?;
     }
 

@@ -54,8 +54,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             args.get_one::<String>("replace_tsv").unwrap().as_str(),
         ],
     )?;
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+    let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
     let replace_of =
         pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
@@ -64,21 +65,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
 
         if let Some(new_names) = replace_of.get(&name) {
             for el in new_names {
-                let record_replace = pgr::libs::fmt::fa::new_record_preserving_desc(
-                    el,
-                    &record,
-                    &record.sequence()[..],
-                );
+                let record_replace =
+                    pgr::libs::fmt::fa::new_record_with_desc(el, rec.description(), rec.sequence());
                 fa_out.write_record(&record_replace)?;
             }
         } else if !is_some {
-            fa_out.write_record(&record)?;
+            let record_out =
+                pgr::libs::fmt::fa::new_record_with_desc(&name, rec.description(), rec.sequence());
+            fa_out.write_record(&record_out)?;
         }
     }
 

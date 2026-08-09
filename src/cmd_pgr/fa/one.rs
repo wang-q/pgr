@@ -37,8 +37,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str()])?;
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+    let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
@@ -46,11 +47,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let name = args.get_one::<String>("seq_name").unwrap();
 
     let mut found = false;
-    for result in fa_in.records() {
-        let record = result?;
-
-        if record.name() == name.as_bytes() {
-            fa_out.write_record(&record)?;
+    while reader.read_record(&mut rec)? {
+        if rec.name() == name.as_bytes() {
+            let out = pgr::libs::fmt::fa::new_record_with_desc(
+                &String::from_utf8_lossy(rec.name()),
+                rec.description(),
+                rec.sequence(),
+            );
+            fa_out.write_record(&out)?;
             found = true;
             break;
         }

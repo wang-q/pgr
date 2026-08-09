@@ -131,42 +131,37 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut subject_map: IndexMap<u64, Vec<String>> = IndexMap::new();
 
     for infile in infiles {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
-        for result in fa_in.records() {
-            let record = result?;
+        while reader.read_record(&mut rec)? {
+            let name = rec.name();
+            let desc = rec.description();
+            let seq = rec.sequence();
 
-            let name = record.name();
-            let desc = record.description();
-            let seq = record.sequence();
-
-            let name_str = String::from_utf8(record.name().into())?;
+            let name_str = String::from_utf8(rec.name().to_vec())?;
 
             let mut flag_pass = true;
 
             // name/desc/sequence to u64 signatures
-            let subject = pgr::libs::fasta::dedup::record_signature(
-                name,
-                desc.map(|v| &**v),
-                seq.as_ref(),
-                &opts,
-            )?;
+            let subject = pgr::libs::fasta::dedup::record_signature(name, desc, seq, &opts)?;
 
             match subject_map.entry(subject) {
                 indexmap::map::Entry::Vacant(e) => {
-                    e.insert(vec![name_str]);
+                    e.insert(vec![name_str.clone()]);
                 }
                 indexmap::map::Entry::Occupied(mut e) => {
                     flag_pass = false;
-                    e.get_mut().push(name_str);
+                    e.get_mut().push(name_str.clone());
                 }
             }
 
             if !flag_pass {
                 continue;
             }
-            fa_out.write_record(&record)?;
+            let record_out = pgr::libs::fmt::fa::new_record_with_desc(&name_str, desc, seq);
+            fa_out.write_record(&record_out)?;
         }
     }
 

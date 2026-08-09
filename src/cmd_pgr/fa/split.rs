@@ -93,22 +93,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     if mode == "name" {
         for infile in &infiles {
-            let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
                 .with_context(|| format!("Failed to open reader for {}", infile))?;
+            let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
-            for result in fa_in.records() {
-                // obtain record or fail with error
-                let record = result?;
-
-                let name = String::from_utf8(record.name().into())
+            while reader.read_record(&mut rec)? {
+                let name = String::from_utf8(rec.name().to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
-                let desc = record
+                let desc = rec
                     .description()
                     .map(|d| std::str::from_utf8(d))
                     .transpose()
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in description: {}", e))?;
-                let seq = record.sequence();
-                let seq_str = std::str::from_utf8(seq.as_ref())
+                let seq = rec.sequence();
+                let seq_str = std::str::from_utf8(seq)
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = pgr::libs::io::sanitize_filename(&name);
@@ -132,27 +130,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let part_width = (opt_max_part.checked_ilog10().unwrap_or(0) + 1) as usize;
 
         'outer: for infile in &infiles {
-            let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
                 .with_context(|| format!("Failed to open reader for {}", infile))?;
+            let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
-            for result in fa_in.records() {
+            while reader.read_record(&mut rec)? {
                 if chunker.max_files_exceeded() {
                     break 'outer;
                 }
 
-                // obtain record or fail with error
-                let record = result?;
-
-                let name = String::from_utf8(record.name().into())
+                let name = String::from_utf8(rec.name().to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
-                let desc = record
+                let desc = rec
                     .description()
                     .map(|d| std::str::from_utf8(d))
                     .transpose()
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in description: {}", e))?;
 
-                let seq = record.sequence();
-                let seq_str = std::str::from_utf8(seq.as_ref())
+                let seq = rec.sequence();
+                let seq_str = std::str::from_utf8(seq)
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = format!("{:0width$}", chunker.file_index(), width = part_width);

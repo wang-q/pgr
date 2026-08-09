@@ -1,7 +1,6 @@
 use crate::libs::ds::IntSpan;
 use crate::libs::poa::{AlignmentParams, AlignmentType, Poa};
 use anyhow::anyhow;
-use bio::io::fasta;
 use std::fs;
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -9,7 +8,6 @@ use std::process::Command;
 use std::str;
 
 use super::coords::indel_intspan;
-use crate::reader;
 
 /// ```
 /// match which::which("spoa") {
@@ -338,29 +336,28 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
     for _ in 0..seqs.len() {
         out_seqs.push("".to_string());
     }
-    let reader = reader(seq_out_path.to_string_lossy().as_ref())?;
-    let fa_in = fasta::Reader::new(reader);
-    for result in fa_in.records() {
-        let record = result?;
-
-        let idx = record.id().trim_start_matches("seq-");
+    let mut fa_in = crate::libs::fmt::seq::SeqReader::new(seq_out_path.to_string_lossy().as_ref())?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
+    while fa_in.read_record(&mut rec)? {
+        let id = String::from_utf8_lossy(rec.name()).into_owned();
+        let idx = id.trim_start_matches("seq-");
         let idx: usize = idx
             .parse()
-            .map_err(|e| anyhow!("invalid seq id [{}]: {}", record.id(), e))?;
+            .map_err(|e| anyhow!("invalid seq id [{id}]: {e}"))?;
         if idx >= out_seqs.len() {
             // An external aligner may emit extra/renumbered records (e.g. a
             // consensus or reordered output) whose id index is out of range.
             // Report a friendly error instead of panicking on the index.
             anyhow::bail!(
                 "aligner returned record [{}] with sequence index {} out of range (expected 0..{}); refusing to write mislabeled output",
-                record.id(),
+                id,
                 idx,
                 out_seqs.len()
             );
         }
 
-        out_seqs[idx] = String::from_utf8(record.seq().to_vec().to_ascii_uppercase())
-            .map_err(|e| anyhow!("invalid UTF-8 in record [{}]: {}", record.id(), e))?;
+        out_seqs[idx] = String::from_utf8(rec.sequence().to_vec().to_ascii_uppercase())
+            .map_err(|e| anyhow!("invalid UTF-8 in record [{id}]: {e}"))?;
     }
 
     // closing the `TempPath` explicitly

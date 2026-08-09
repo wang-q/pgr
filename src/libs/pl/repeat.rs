@@ -12,15 +12,10 @@ use std::sync::Mutex;
 /// `pgr fa masked` also reports N/gap regions, so it cannot be used to
 /// detect soft-masking specifically; scan the sequences directly instead.
 fn has_soft_mask(infile: &str) -> anyhow::Result<bool> {
-    let mut reader = crate::libs::fmt::fa::reader(infile)?;
-    for result in reader.records() {
-        let rec = result?;
-        if rec
-            .sequence()
-            .as_ref()
-            .iter()
-            .any(|b| b.is_ascii_lowercase())
-        {
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(infile)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
+    while reader.read_record(&mut rec)? {
+        if rec.sequence().iter().any(|b| b.is_ascii_lowercase()) {
             return Ok(true);
         }
     }
@@ -38,10 +33,10 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 
 /// Read the first FASTA record's sequence bytes.
 fn read_fasta_sequence(path: &str) -> anyhow::Result<Vec<u8>> {
-    let mut reader = crate::libs::fmt::fa::reader(path)?;
-    if let Some(result) = reader.records().next() {
-        let rec = result?;
-        return Ok(rec.sequence().as_ref().to_vec());
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(path)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
+    if reader.read_record(&mut rec)? {
+        return Ok(rec.sequence().to_vec());
     }
     anyhow::bail!("no FASTA records in {path}")
 }

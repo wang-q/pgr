@@ -120,22 +120,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut set_list: BTreeSet<String> = BTreeSet::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
-
-        for result in fa_in.records() {
-            // obtain record or fail with error
-            let record = result?;
-
-            let mut name = String::from_utf8(record.name().into())?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
+        while reader.read_record(&mut rec)? {
+            let mut name = String::from_utf8(rec.name().to_vec())?;
             if is_simplify {
                 name = pgr::libs::io::simplify_name(&name).to_string();
             }
-            let seq = record.sequence();
+            let seq = rec.sequence();
 
             // Apply filters
             if !pgr::libs::fasta::filter::pass_filters(
-                seq.as_ref(),
+                seq,
                 opt_minsize,
                 opt_maxsize,
                 opt_maxn,
@@ -147,15 +144,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // Apply formatters
-            let seq_out = pgr::libs::fasta::filter::format_sequence(
-                seq.as_ref(),
-                is_dash,
-                is_iupac,
-                is_upper,
-            );
+            let seq_out =
+                pgr::libs::fasta::filter::format_sequence(seq, is_dash, is_iupac, is_upper);
 
-            let record_out =
-                pgr::libs::fmt::fa::new_record_preserving_desc(&name, &record, seq_out.as_bytes());
+            let record_out = pgr::libs::fmt::fa::new_record_with_desc(
+                &name,
+                rec.description(),
+                seq_out.as_bytes(),
+            );
             fa_out.write_record(&record_out)?;
         }
     }

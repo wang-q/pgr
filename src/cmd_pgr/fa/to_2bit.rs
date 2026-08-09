@@ -58,11 +58,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut data = Vec::new();
 
     for infile in infiles {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
-        for result in fa_in.records() {
-            let record = result?;
-            let mut name = String::from_utf8(record.name().into())?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
+        while reader.read_record(&mut rec)? {
+            let mut name = String::from_utf8(rec.name().to_vec())?;
 
             if strip_version {
                 if let Some(idx) = name.rfind('.') {
@@ -84,8 +84,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
 
-            let seq = record.sequence();
-            let seq_str = String::from_utf8(seq.as_ref().to_vec())?;
+            let seq = rec.sequence();
+            let seq_str = String::from_utf8(seq.to_vec())?;
             data.push((name, seq_str));
         }
     }

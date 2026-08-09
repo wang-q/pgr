@@ -589,21 +589,18 @@ pub fn load_minimizers(
     opt_window: usize,
     is_merge: bool,
 ) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(infile)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
 
     let mut entries = vec![];
     // Set to merge all minimizers if --merge is true
     let mut all_set: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::default();
 
-    for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result?;
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
+        let seq = rec.sequence();
 
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
-
-        let set: rapidhash::RapidHashSet<u64> =
-            seq_mins(&seq[..], opt_hasher, opt_kmer, opt_window)?;
+        let set: rapidhash::RapidHashSet<u64> = seq_mins(seq, opt_hasher, opt_kmer, opt_window)?;
 
         if is_merge {
             all_set.extend(set);
@@ -671,15 +668,15 @@ pub fn load_fracminhash(
     is_protein: bool,
     is_merge: bool,
 ) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(infile)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
     let mut entries = vec![];
     let mut all_set: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::default();
 
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
-        let set = seq_fracminhash(&seq[..], k, scale, is_protein)?;
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
+        let seq = rec.sequence();
+        let set = seq_fracminhash(seq, k, scale, is_protein)?;
 
         if is_merge {
             all_set.extend(set);
@@ -714,7 +711,8 @@ pub fn load_mash_minhashes(
         sketch_size > 0,
         "sketch size must be positive: {sketch_size}"
     );
-    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(infile)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
     let mut entries = vec![];
     // Mash builds one MinHashHeap across all sequences of a file (global
     // bottom-k). With --merge we stream every canonical hash into a single
@@ -722,15 +720,14 @@ pub fn load_mash_minhashes(
     // length; without --merge each record gets its own bounded sketch.
     let mut merged = is_merge.then(|| BottomK::new(sketch_size));
 
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
+        let seq = rec.sequence();
         if let Some(acc) = merged.as_mut() {
-            for_each_mash_hash(&seq[..], k, seed, |h| acc.insert(h));
+            for_each_mash_hash(seq, k, seed, |h| acc.insert(h));
         } else {
             let mut acc = BottomK::new(sketch_size);
-            for_each_mash_hash(&seq[..], k, seed, |h| acc.insert(h));
+            for_each_mash_hash(seq, k, seed, |h| acc.insert(h));
             entries.push(MinimizerEntry {
                 name,
                 set: acc.into_set(),

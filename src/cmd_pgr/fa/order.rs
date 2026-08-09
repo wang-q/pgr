@@ -47,8 +47,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             args.get_one::<String>("name_list").unwrap().as_str(),
         ],
     )?;
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+    let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
@@ -61,11 +62,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Load records into a BTreeMap for efficient lookup
     let mut record_of = BTreeMap::new();
 
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
 
         if list.contains(&name) {
+            let record =
+                pgr::libs::fmt::fa::new_record_with_desc(&name, rec.description(), rec.sequence());
             record_of.insert(name, record);
         }
     }

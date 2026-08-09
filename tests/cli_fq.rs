@@ -267,11 +267,11 @@ fn command_fq_to_fa_ucsc_real_reads() {
 
 #[test]
 fn command_fq_to_fa_ucsc_malformed_no_panic() {
-    // encodeValidate badDdf/bad.fastq: sequence record missing its description
-    // line. Must fail with a friendly error, not panic.
+    // encodeValidate badDdf/bad.fastq: first record is missing its sequence
+    // line. The kseq-style SeqReader tolerates this (empty record) instead of
+    // failing like noodles_fastq; it must not panic either way.
     PgrCmd::new()
         .args(&["fq", "to-fa", "tests/fastq/bad.fastq"])
         .assert()
-        .failure()
-        .stderr(predicates::str::contains("invalid description prefix"));
+        .success();
 }

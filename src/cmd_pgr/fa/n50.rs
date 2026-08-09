@@ -121,14 +121,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut lens = vec![];
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
-        for result in fa_in.records() {
-            // obtain record or fail with error
-            let record = result?;
-
-            let len = record.sequence().len();
+        while reader.read_record(&mut rec)? {
+            let len = rec.sequence().len();
 
             lens.push(len);
         }

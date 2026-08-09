@@ -106,10 +106,9 @@ pub fn interleave<W: Write>(
     if infiles.len() == 1 {
         let infile = &infiles[0];
         if is_in_fq {
-            let reader = crate::libs::io::reader(infile)?;
-            let mut seq_in = noodles_fastq::io::Reader::new(reader);
-            for result in seq_in.records() {
-                let record = result?;
+            let mut seq_in = crate::libs::fmt::seq::SeqReader::new(infile)?;
+            let mut rec = crate::libs::fmt::seq::SeqRecord::new();
+            while seq_in.read_record(&mut rec)? {
                 // Dummy R2 is always a single "N"; quality is ignored for FA
                 // output and "!" for FQ output (via write_pair's default).
                 let r2_seq: &[u8] = b"N";
@@ -117,8 +116,8 @@ pub fn interleave<W: Write>(
                     writer,
                     prefix,
                     idx,
-                    record.sequence(),
-                    Some(record.quality_scores()),
+                    rec.sequence(),
+                    Some(rec.quality_scores()),
                     r2_seq,
                     Some(b"!"),
                     is_out_fq,
@@ -126,14 +125,14 @@ pub fn interleave<W: Write>(
                 idx += 1;
             }
         } else {
-            let mut seq_in = crate::libs::fmt::fa::reader(infile)?;
-            for result in seq_in.records() {
-                let record = result?;
+            let mut seq_in = crate::libs::fmt::seq::SeqReader::new(infile)?;
+            let mut rec = crate::libs::fmt::seq::SeqRecord::new();
+            while seq_in.read_record(&mut rec)? {
                 write_pair(
                     writer,
                     prefix,
                     idx,
-                    &record.sequence()[..],
+                    rec.sequence(),
                     None,
                     b"N",
                     None,
@@ -143,40 +142,9 @@ pub fn interleave<W: Write>(
             }
         }
     } else {
-        if is_in_fq {
-            let reader1 = crate::libs::io::reader(&infiles[0])?;
-            let mut seq1_in = noodles_fastq::io::Reader::new(reader1);
-            let reader2 = crate::libs::io::reader(&infiles[1])?;
-            let mut seq2_in = noodles_fastq::io::Reader::new(reader2);
-            idx = interleave_pair_iter(
-                writer,
-                &mut seq1_in.records(),
-                &mut seq2_in.records(),
-                prefix,
-                idx,
-                is_out_fq,
-                |record1, record2| {
-                    (
-                        record1.sequence(),
-                        Some(record1.quality_scores()),
-                        record2.sequence(),
-                        Some(record2.quality_scores()),
-                    )
-                },
-            )?;
-        } else {
-            let mut seq1_in = crate::libs::fmt::fa::reader(&infiles[0])?;
-            let mut seq2_in = crate::libs::fmt::fa::reader(&infiles[1])?;
-            idx = interleave_pair_iter(
-                writer,
-                &mut seq1_in.records(),
-                &mut seq2_in.records(),
-                prefix,
-                idx,
-                is_out_fq,
-                |record1, record2| (&record1.sequence()[..], None, &record2.sequence()[..], None),
-            )?;
-        }
+        let mut seq1_in = crate::libs::fmt::seq::SeqReader::new(&infiles[0])?;
+        let mut seq2_in = crate::libs::fmt::seq::SeqReader::new(&infiles[1])?;
+        idx = interleave_read(writer, &mut seq1_in, &mut seq2_in, prefix, idx, is_out_fq)?;
     }
 
     Ok(idx)
@@ -184,36 +152,38 @@ pub fn interleave<W: Write>(
 
 /// Interleave two record streams pair-by-pair, erroring if the two files hold
 /// a different number of reads instead of silently truncating to the shorter.
-fn interleave_pair_iter<W, I1, I2, R1, R2, E, F>(
+fn interleave_read<W>(
     writer: &mut W,
-    iter1: &mut I1,
-    iter2: &mut I2,
+    reader1: &mut crate::libs::fmt::seq::SeqReader,
+    reader2: &mut crate::libs::fmt::seq::SeqReader,
     prefix: &str,
     mut idx: usize,
     is_out_fq: bool,
-    map: F,
 ) -> anyhow::Result<usize>
 where
     W: Write,
-    I1: Iterator<Item = Result<R1, E>>,
-    I2: Iterator<Item = Result<R2, E>>,
-    E: std::error::Error + Send + Sync + 'static,
-    F: for<'a> Fn(&'a R1, &'a R2) -> (&'a [u8], Option<&'a [u8]>, &'a [u8], Option<&'a [u8]>),
 {
+    let mut rec1 = crate::libs::fmt::seq::SeqRecord::new();
+    let mut rec2 = crate::libs::fmt::seq::SeqRecord::new();
     loop {
-        let r1 = iter1.next();
-        let r2 = iter2.next();
+        let r1 = reader1.read_record(&mut rec1)?;
+        let r2 = reader2.read_record(&mut rec2)?;
         match (r1, r2) {
-            (Some(Ok(record1)), Some(Ok(record2))) => {
-                let (seq1, qual1, seq2, qual2) = map(&record1, &record2);
-                write_pair(writer, prefix, idx, seq1, qual1, seq2, qual2, is_out_fq)?;
+            (true, true) => {
+                write_pair(
+                    writer,
+                    prefix,
+                    idx,
+                    rec1.sequence(),
+                    rec1.is_fastq().then(|| rec1.quality_scores()),
+                    rec2.sequence(),
+                    rec2.is_fastq().then(|| rec2.quality_scores()),
+                    is_out_fq,
+                )?;
                 idx += 1;
             }
-            (None, None) => break,
-            (Some(Err(e)), _) | (_, Some(Err(e))) => return Err(e.into()),
-            _ => {
-                anyhow::bail!("paired files have different numbers of reads");
-            }
+            (false, false) => break,
+            _ => anyhow::bail!("paired files have different numbers of reads"),
         }
     }
     Ok(idx)

@@ -65,8 +65,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             args.get_one::<String>("runlist").unwrap().as_str(),
         ],
     )?;
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+    let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
     let runlists = pgr::libs::io::read_runlist(args.get_one::<String>("runlist").unwrap())?;
 
@@ -75,18 +76,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    for result in fa_in.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
+        let seq = rec.sequence();
 
         if let Some(ints) = runlists.get(&name) {
-            let seq_out = pgr::libs::fmt::fa::mask_sequence(seq.as_ref(), ints, is_hard)?;
+            let seq_out = pgr::libs::fmt::fa::mask_sequence(seq, ints, is_hard)?;
             let record_out =
-                pgr::libs::fmt::fa::new_record_preserving_desc(&name, &record, &seq_out);
+                pgr::libs::fmt::fa::new_record_with_desc(&name, rec.description(), &seq_out);
             fa_out.write_record(&record_out)?;
         } else {
-            fa_out.write_record(&record)?;
+            let record_out =
+                pgr::libs::fmt::fa::new_record_with_desc(&name, rec.description(), seq);
+            fa_out.write_record(&record_out)?;
         }
     }
 

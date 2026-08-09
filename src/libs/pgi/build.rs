@@ -289,13 +289,13 @@ pub fn build_from_seqs(
 
 /// Read all sequences from a FASTA file (plain or gzipped).
 pub fn read_fasta(path: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
-    let mut reader = crate::libs::fmt::fa::reader(path)
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(path)
         .with_context(|| format!("failed to open FASTA {path}"))?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
     let mut contigs = Vec::new();
-    for result in reader.records() {
-        let rec = result?;
-        let name = String::from_utf8(rec.name().into()).context("FASTA name utf8")?;
-        contigs.push((name, rec.sequence().as_ref().to_vec()));
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec()).context("FASTA name utf8")?;
+        contigs.push((name, rec.sequence().to_vec()));
     }
     Ok(contigs)
 }

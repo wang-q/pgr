@@ -428,17 +428,16 @@ pub fn load_hv_from_fasta(
     window: usize,
     dim: usize,
 ) -> anyhow::Result<HvEntry> {
-    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(infile)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
 
     let mut file_set = rapidhash::RapidHashSet::default();
 
-    for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result?;
-        let seq = record.sequence();
+    while reader.read_record(&mut rec)? {
+        let seq = rec.sequence();
 
         let set: rapidhash::RapidHashSet<u64> =
-            crate::libs::hash::seq_mins(&seq[..], hasher, kmer, window)?;
+            crate::libs::hash::seq_mins(seq, hasher, kmer, window)?;
 
         file_set.extend(set);
     }
@@ -472,14 +471,14 @@ pub fn load_hv_from_fasta_syncmer(
     };
     params.validate()?;
 
-    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(infile)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
 
     let mut file_set = rapidhash::RapidHashSet::default();
 
-    for result in fa_in.records() {
-        let record = result?;
-        let seq = record.sequence();
-        let set = crate::libs::syncmer::seq_syncmer_set(&seq[..], &params, is_protein)?;
+    while reader.read_record(&mut rec)? {
+        let seq = rec.sequence();
+        let set = crate::libs::syncmer::seq_syncmer_set(seq, &params, is_protein)?;
         file_set.extend(set);
     }
 

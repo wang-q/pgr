@@ -46,16 +46,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let no_ns = args.get_flag("no_ns");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
-
-        for result in fa_in.records() {
-            let record = result?;
-            let name = String::from_utf8(record.name().into())?;
-            let seq = record.sequence();
-
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
+        while reader.read_record(&mut rec)? {
+            let name = String::from_utf8(rec.name().to_vec())?;
+            let seq = rec.sequence();
             let len = if no_ns {
-                pgr::libs::nt_simd::count_valid(&seq[..])
+                pgr::libs::nt_simd::count_valid(seq)
             } else {
                 seq.len()
             };

@@ -48,6 +48,13 @@ pub fn new_record(name: &str, seq: &[u8]) -> fasta::Record {
     fasta::Record::new(definition, sequence)
 }
 
+/// Build a FASTA record from a name, optional description, and sequence.
+pub fn new_record_with_desc(name: &str, desc: Option<&[u8]>, seq: &[u8]) -> fasta::Record {
+    let definition = fasta::record::Definition::new(name, desc.map(bstr::BString::from));
+    let sequence = fasta::record::Sequence::from(seq.to_vec());
+    fasta::Record::new(definition, sequence)
+}
+
 /// Build a FASTA record from a new name and sequence, preserving the
 /// description from `source`.
 pub fn new_record_preserving_desc(name: &str, source: &fasta::Record, seq: &[u8]) -> fasta::Record {

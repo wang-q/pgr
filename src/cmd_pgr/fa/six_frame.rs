@@ -64,8 +64,9 @@ Examples:
 /// Execute the six-frame command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+    let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
 
     let opt_len = *args.get_one::<usize>("min_len").unwrap();
     let is_start = args.get_flag("start_met");
@@ -76,15 +77,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result?;
-
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
+        let seq = rec.sequence();
 
         // Perform six-frame translation
-        let translations = pgr::libs::translate::six_frame_translation(&seq[..]);
+        let translations = pgr::libs::translate::six_frame_translation(seq);
 
         for (protein, frame, is_reverse) in translations {
             let orfs = pgr::libs::translate::find_orfs(&protein);

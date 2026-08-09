@@ -44,17 +44,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader =
-            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
-        let mut seq_in = noodles_fastq::io::Reader::new(reader);
-
-        for result in seq_in.records() {
-            // obtain record or fail with error
-            let record = result?;
-
+        let mut seq_in = pgr::libs::fmt::seq::SeqReader::new(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
+        while seq_in.read_record(&mut rec)? {
             // Output FASTA format
-            let name = std::str::from_utf8(record.name())?;
-            let record_out = pgr::libs::fmt::fa::new_record(name, record.sequence());
+            let name = std::str::from_utf8(rec.name())?;
+            let record_out = pgr::libs::fmt::fa::new_record(name, rec.sequence());
             fa_out.write_record(&record_out)?;
         }
     }

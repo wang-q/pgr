@@ -50,15 +50,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer.write_fmt(format_args!("#seq\tlen\tA\tC\tG\tT\tN\n"))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
+        while reader.read_record(&mut rec)? {
+            let name = String::from_utf8(rec.name().to_vec())?;
+            let seq = rec.sequence();
 
-        for result in fa_in.records() {
-            let record = result?;
-            let name = String::from_utf8(record.name().into())?;
-            let seq = record.sequence();
-
-            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq.as_ref());
+            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq);
 
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",

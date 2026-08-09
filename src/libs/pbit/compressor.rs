@@ -28,12 +28,12 @@ use crate::libs::paf::cigar::{extract_cigar, gap_compressed_identity, CigarOp};
 
 /// Read a FASTA file into a vector of (contig_name, sequence_bytes) pairs.
 fn read_fasta(path: &str) -> Result<Vec<(String, Vec<u8>)>> {
-    let mut reader = crate::libs::fmt::fa::reader(path)?;
+    let mut reader = crate::libs::fmt::seq::SeqReader::new(path)?;
+    let mut rec = crate::libs::fmt::seq::SeqRecord::new();
     let mut out = Vec::new();
-    for result in reader.records() {
-        let record = result?;
-        let name = String::from_utf8(record.name().into())?;
-        let seq: Vec<u8> = record.sequence().as_ref().to_vec();
+    while reader.read_record(&mut rec)? {
+        let name = String::from_utf8(rec.name().to_vec())?;
+        let seq: Vec<u8> = rec.sequence().to_vec();
         out.push((name, seq));
     }
     Ok(out)

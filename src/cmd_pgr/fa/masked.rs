@@ -53,15 +53,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
+        let mut rec = pgr::libs::fmt::seq::SeqRecord::new();
+        while reader.read_record(&mut rec)? {
+            let name = String::from_utf8(rec.name().to_vec())?;
+            let seq = rec.sequence();
 
-        for result in fa_in.records() {
-            let record = result?;
-            let name = String::from_utf8(record.name().into())?;
-            let seq = record.sequence();
-
-            for (begin, end) in pgr::libs::fmt::fa::find_masked_regions(&seq[..], is_gap) {
+            for (begin, end) in pgr::libs::fmt::fa::find_masked_regions(seq, is_gap) {
                 writer.write_all(out_line(&name, begin, end).as_ref())?;
             }
         }
