@@ -626,6 +626,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 | [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成（2026-08-06）；`rept masker` 完整 RepeatMasker 模拟已实现（2026-08-07） |
 | [[genome-nn-query.md]] | 百万级基因组最近邻查询/聚类/搜索方法调研（GSearch / RabbitTClust / BIGSI / LexicMap / MMseqs2 等），为 UI 设计铺垫 | 调研完成（2026-08-08）；命令形态与 sketch 选型待讨论 |
+| [[genescopefk.md]] | genescopefk.R（GenomeScope 2.0）移植对齐：lmdif 移植 4 处列主序索引反转根因与修复（qrsolv/lmpar）、R nmath dnbinom（bd0/stirlerr/ebd0）逐位移植、qrfac/enorm 对齐 minpack.lm 实际源码、gfortran 差分验证（2026-08-10） | 已对齐：pgr 与 R 同盆地，summary 逐字节一致（Model Fit/Error Rate 除外） |
 | [[simd-optimization.md]] | SIMD 优化方法论（HV/POA/fa 逐字节三轮的"三步模式"、适用边界表、gzip 主导实测、后续候选热点与建议流程） | 已建立（2026-08-09） |
 | [[kmer-sampling-simd.md]] | Kmer 采样消费方分析 + simd-minimizers/packed-seq 参考评估（2026-08-09）：pgi build/align rest/dist mini/frac/mash/hv 采样占比；窗口最小型仅 pgi build 值得（分块法已优化 -16.6%）；frac 8 路并行滚动证伪（87→282 ms）；"人基因组 4 秒"来源分析；基线基准数据 | 已建立（2026-08-09，自 benchmarks/references 合并迁入） |
 | [[seq-reader.md]] | FAFQ（FASTA/FASTQ）读取与 noodles 切换决策（2026-08-09）：读取性能基准（记录构造占 64%）、noodles_bgzf 不完整 + pgr 后加清单（gzi 索引/头部检测/64KB 块）、kseq 缓冲复用/FAFQ 统一、tva SIMD 分隔符搜索、切换边界（BGZF 独立，部分切换可行，借用式 reader 候选） | 已建立（2026-08-09，自 fasta-reader 更名） |
