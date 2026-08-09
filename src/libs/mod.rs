@@ -13,6 +13,7 @@ pub mod io;
 pub mod kmer;
 pub mod lastz;
 pub mod linalg;
+pub mod lm;
 pub mod loc;
 pub mod ms;
 pub mod nt;
