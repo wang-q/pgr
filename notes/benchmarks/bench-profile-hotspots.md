@@ -67,6 +67,27 @@
 - 无单一主导热点：syncmer 采样 + HashMap 去重 + 排序 + 写文件均摊；
   总耗时 ~0.85 s。无明显向量化切入点。
 
+### 优化落地 2：MAF→PAF 的 CIGAR 生成（2026-08-09）
+
+`maf_block_to_paf`（`src/libs/paf/maf_import.rs`）对每个 block 调用
+`cigar_from_alignment` + `cs_from_alignment`，40 M 列 `maf to-paf` 实测
+占 53.4%（两次逐列扫描 + cg:Z 格式化 11.8%）。优化：`classify_alignment`
+（AVX2 + 标量回退）一次生成 I/D/=/X 四掩码，两个生成函数共享，并用
+`trailing_zeros/ones` 位运算跳扫 match run。0.55 s → 0.347 s（~37%），
+输出逐字节一致；剩余瓶颈 cg:Z 格式化 ~13.6%。
+
+函数级拆分（`benches/cigar_benchmark.rs`，40 M 列，95% match）：
+
+| 测量 | 耗时 | 说明 |
+|---|---:|---|
+| old_two_pass | 138 ms | 旧实现（两次逐列扫描 + 输出） |
+| new_classify_scan | 88 ms | 新全流程，~1.57× |
+| new_classify_only | 9.6 ms | 纯 SIMD 分类，~7× 级 |
+
+口径教训：纯计算函数（count_bases 等）微基准直接给 10–50×；cigar 的
+另一半是字符串输出（~79 ms，不可 SIMD），函数级仅 1.57×、端到端 37%。
+百分比 vs 倍数 = 优化覆盖面差异，不是 SIMD 失效。
+
 ## 结论
 
 1. gzip 主导假设成立，且 inflate 已被依赖库（zlib-rs AVX2）优化。

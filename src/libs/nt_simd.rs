@@ -1,11 +1,13 @@
 //! SIMD-accelerated per-byte nucleotide statistics.
 //!
-//! Platform policy (same as `libs::hv` and `libs::poa::simd`): a hand-written
-//! AVX2 path is the primary x86-64 implementation, dispatched at runtime with
-//! `is_x86_feature_detected!`; other targets fall through to portable
-//! implementations. All paths are bit-identical to the scalar reference.
+//! Platform policy (notes/design/simd-optimization.md §5): a hand-written
+//! AVX2 path is the primary x86-64 implementation, dispatched at runtime
+//! with `is_x86_feature_detected!`; without AVX2 the portable `wide` path
+//! uses **128-bit** types (`u8x16` = SSE2 on x86-64 / NEON on aarch64,
+//! independent of the compile-time avx2 flag); a pure scalar path remains
+//! the final fallback. All paths are bit-identical to the scalar reference.
 
-use wide::u8x32;
+use wide::u8x16;
 
 /// SIMD implementation selector, mainly for benchmarking and diagnostics.
 pub enum SimdPath {
@@ -15,6 +17,8 @@ pub enum SimdPath {
     Wide,
     /// Force the AVX2 path (falls back to portable on CPUs without AVX2).
     Avx2,
+    /// Force the pure scalar fallback (diagnostics / SIMD-less targets).
+    Scalar,
 }
 
 /// Lowercased ASCII values of A/C/G/T/U (the `NT_VAL` 0..=3 set).
@@ -57,6 +61,7 @@ pub fn count_valid(seq: &[u8]) -> usize {
 /// [`count_valid`] with an explicit implementation path.
 pub fn count_valid_with(path: SimdPath, seq: &[u8]) -> usize {
     match path {
+        SimdPath::Scalar => scalar_count_valid(seq),
         SimdPath::Wide => count_valid_wide(seq),
         SimdPath::Auto | SimdPath::Avx2 => {
             #[cfg(target_arch = "x86_64")]
@@ -67,6 +72,12 @@ pub fn count_valid_with(path: SimdPath, seq: &[u8]) -> usize {
             count_valid_wide(seq)
         }
     }
+}
+
+/// Pure scalar fallback for [`count_valid`]: no SIMD dependency, works on
+/// every target.
+fn scalar_count_valid(seq: &[u8]) -> usize {
+    seq.iter().filter(|&&b| is_valid_base(b)).count()
 }
 
 /// Counts bases mapped to `Nt::N` (IUPAC ambiguous codes + N + X);
@@ -82,6 +93,7 @@ pub fn count_n_with(path: SimdPath, seq: &[u8]) -> usize {
         // Measured 2026-08-09: 12 equality lanes cost more than the scalar
         // filter (wide 3.99 ms vs scalar 2.81 ms on 10 MB), unlike count_valid
         // and count_bases whose scalar baselines are much slower.
+        SimdPath::Scalar => scalar(seq),
         SimdPath::Wide => scalar(seq),
         SimdPath::Auto | SimdPath::Avx2 => {
             #[cfg(target_arch = "x86_64")]
@@ -104,6 +116,7 @@ pub fn count_bases(seq: &[u8]) -> [usize; 5] {
 /// [`count_bases`] with an explicit implementation path.
 pub fn count_bases_with(path: SimdPath, seq: &[u8]) -> [usize; 5] {
     match path {
+        SimdPath::Scalar => scalar_count_bases(seq),
         SimdPath::Wide => count_bases_wide(seq),
         SimdPath::Auto | SimdPath::Avx2 => {
             #[cfg(target_arch = "x86_64")]
@@ -116,22 +129,41 @@ pub fn count_bases_with(path: SimdPath, seq: &[u8]) -> [usize; 5] {
     }
 }
 
-/// Portable `wide` path for [`count_bases`]: 32-byte lanes, one saturating-
+/// Pure scalar fallback for [`count_bases`] (same class match as the wide
+/// path's tail loop).
+fn scalar_count_bases(seq: &[u8]) -> [usize; 5] {
+    let mut cnt = [0usize; 5];
+    for &b in seq {
+        match b | 0x20 {
+            0x61 => cnt[0] += 1,
+            0x63 => cnt[1] += 1,
+            0x67 => cnt[2] += 1,
+            0x74 | 0x75 => cnt[3] += 1,
+            0x62 | 0x64 | 0x68 | 0x6B | 0x6D | 0x6E | 0x72 | 0x73 | 0x76 | 0x77 | 0x78 | 0x79 => {
+                cnt[4] += 1
+            }
+            _ => {}
+        }
+    }
+    cnt
+}
+
+/// Portable `wide` path for [`count_bases`]: 16-byte lanes, one saturating-
 /// subtraction equality per candidate value (17 total), popcount per class.
 fn count_bases_wide(seq: &[u8]) -> [usize; 5] {
-    let or20 = u8x32::splat(0x20);
+    let or20 = u8x16::splat(0x20);
     let mut cnt = [0usize; 5];
-    let (chunks, remainder) = seq.as_chunks::<32>();
+    let (chunks, remainder) = seq.as_chunks::<16>();
     for chunk in chunks {
-        let t = u8x32::from(*chunk) | or20;
-        cnt[0] += eq_bits(t, u8x32::splat(0x61)).count_ones() as usize;
-        cnt[1] += eq_bits(t, u8x32::splat(0x63)).count_ones() as usize;
-        cnt[2] += eq_bits(t, u8x32::splat(0x67)).count_ones() as usize;
+        let t = u8x16::from(*chunk) | or20;
+        cnt[0] += eq_bits(t, u8x16::splat(0x61)).count_ones() as usize;
+        cnt[1] += eq_bits(t, u8x16::splat(0x63)).count_ones() as usize;
+        cnt[2] += eq_bits(t, u8x16::splat(0x67)).count_ones() as usize;
         cnt[3] +=
-            (eq_bits(t, u8x32::splat(0x74)) | eq_bits(t, u8x32::splat(0x75))).count_ones() as usize;
+            (eq_bits(t, u8x16::splat(0x74)) | eq_bits(t, u8x16::splat(0x75))).count_ones() as usize;
         let mut n_bits = 0u32;
         for &val in &N_LOWER {
-            n_bits |= eq_bits(t, u8x32::splat(val));
+            n_bits |= eq_bits(t, u8x16::splat(val));
         }
         cnt[4] += n_bits.count_ones() as usize;
     }
@@ -173,6 +205,7 @@ pub fn masked_bitmap_with(path: SimdPath, seq: &[u8], gap_only: bool) -> Vec<u32
             .collect()
     };
     match path {
+        SimdPath::Scalar => scalar(seq),
         SimdPath::Wide => scalar(seq),
         SimdPath::Auto | SimdPath::Avx2 => {
             #[cfg(target_arch = "x86_64")]
@@ -185,29 +218,30 @@ pub fn masked_bitmap_with(path: SimdPath, seq: &[u8], gap_only: bool) -> Vec<u32
     }
 }
 
-/// Portable `wide` path for [`count_valid`]: 32-byte lanes, equality via
+/// Portable `wide` path for [`count_valid`]: 16-byte lanes, equality via
 /// saturating-subtraction masks (bit 7 set when unequal), popcount per word.
 fn count_valid_wide(seq: &[u8]) -> usize {
-    let or20 = u8x32::splat(0x20);
+    let or20 = u8x16::splat(0x20);
     let mut count = 0usize;
-    let (chunks, remainder) = seq.as_chunks::<32>();
+    let (chunks, remainder) = seq.as_chunks::<16>();
     for chunk in chunks {
-        let t = u8x32::from(*chunk) | or20;
+        let t = u8x16::from(*chunk) | or20;
         let mut bits = 0u32;
         for &val in &VALID_LOWER {
-            bits |= eq_bits(t, u8x32::splat(val));
+            bits |= eq_bits(t, u8x16::splat(val));
         }
         count += bits.count_ones() as usize;
     }
     count + remainder.iter().filter(|&&b| is_valid_base(b)).count()
 }
 
-/// Lane-wise `a == x` as a 32-bit mask (bit set per matching lane).
+/// Lane-wise `a == x` as a mask (bit set per matching lane; only the low
+/// 16 bits are meaningful for a 16-lane vector).
 #[inline]
-fn eq_bits(a: u8x32, x: u8x32) -> u32 {
+fn eq_bits(a: u8x16, x: u8x16) -> u32 {
     let d = a.saturating_sub(x) | x.saturating_sub(a);
     // d != 0  <=>  bit 7 of (d | -d) is set; -d wraps as (!d + 1).
-    let ne = d | (!d + u8x32::splat(1));
+    let ne = d | (!d + u8x16::splat(1));
     !ne.to_bitmask()
 }
 

@@ -6,8 +6,8 @@
 
 use crate::libs::fmt::maf::MafAli;
 use crate::libs::paf::cigar::{
-    block_identity, cigar_from_alignment, cigar_stats, cs_from_alignment, format_cigar,
-    gap_compressed_identity,
+    block_identity, cigar_stats, classify_alignment, format_cigar, gap_compressed_identity,
+    scan_cigar_ops, scan_cs,
 };
 use crate::libs::paf::record::PafRecord;
 
@@ -26,12 +26,17 @@ pub fn maf_block_to_paf(block: &MafAli) -> anyhow::Result<Option<PafRecord>> {
     let ref_entry = &block.components[0];
     let qry_entry = &block.components[1];
 
-    let cigar_ops = cigar_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes())?;
+    let ref_bytes = ref_entry.text.as_bytes();
+    let qry_bytes = qry_entry.text.as_bytes();
+    // Classify every column once (SIMD), then scan the masks for both the
+    // CIGAR ops and the compact `cs:Z` string.
+    let mask = classify_alignment(ref_bytes, qry_bytes)?;
+    let cigar_ops = scan_cigar_ops(&mask);
     let stats = cigar_stats(&cigar_ops);
     let gi = gap_compressed_identity(&cigar_ops);
     let bi = block_identity(&cigar_ops);
     let cigar_str = format_cigar(&cigar_ops);
-    let cs = cs_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes())?;
+    let cs = scan_cs(&mask, ref_bytes, qry_bytes);
 
     let mut tags = vec![
         format!("gi:f:{gi:.6}"),

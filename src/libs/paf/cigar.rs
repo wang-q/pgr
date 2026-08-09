@@ -318,6 +318,275 @@ pub fn block_identity(ops: &[CigarOp]) -> f64 {
 
 // ── MAF alignment → CIGAR (pgr‑specific) ─────────────────────────
 
+/// Per-column class masks for a pairwise alignment: four `u32` words per
+/// 32 columns (insertion / deletion / match / mismatch). Columns where both
+/// sequences gap (`-` vs `-`) are unset in every mask and skipped by scans.
+pub struct AlignmentMask {
+    pub ins: Vec<u32>,
+    pub del: Vec<u32>,
+    pub m: Vec<u32>,
+    pub x: Vec<u32>,
+}
+
+/// Classifies every column of an alignment into I/D/=/X masks, so callers
+/// that need both CIGAR and `cs:Z` (e.g. `maf_block_to_paf`) scan once.
+pub fn classify_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<AlignmentMask> {
+    if r#ref.len() != qry.len() {
+        anyhow::bail!("alignment vectors must have equal length");
+    }
+    let n_words = r#ref.len().div_ceil(32);
+    let mut mask = AlignmentMask {
+        ins: vec![0; n_words],
+        del: vec![0; n_words],
+        m: vec![0; n_words],
+        x: vec![0; n_words],
+    };
+    let (ref_chunks, ref_rem) = r#ref.as_chunks::<32>();
+    let (qry_chunks, _) = qry.as_chunks::<32>();
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx2") {
+        // SAFETY: gated on runtime AVX2 support.
+        unsafe { avx2::classify_chunks_avx2(&mut mask, ref_chunks, qry_chunks) };
+        classify_remainder(
+            &mut mask,
+            ref_rem,
+            &qry[ref_chunks.len() * 32..],
+            ref_chunks.len(),
+        );
+        return Ok(mask);
+    }
+    for (wi, (rc, qc)) in ref_chunks.iter().zip(qry_chunks).enumerate() {
+        for k in 0..32 {
+            set_class(&mut mask, wi, k, class_of(rc[k], qc[k]));
+        }
+    }
+    classify_remainder(
+        &mut mask,
+        ref_rem,
+        &qry[ref_chunks.len() * 32..],
+        ref_chunks.len(),
+    );
+    Ok(mask)
+}
+
+/// Classifies the final partial chunk (scalar for all paths).
+fn classify_remainder(mask: &mut AlignmentMask, rem: &[u8], qry_rem: &[u8], word: usize) {
+    for (k, (&rc, &qc)) in rem.iter().zip(qry_rem).enumerate() {
+        set_class(mask, word, k, class_of(rc, qc));
+    }
+}
+
+/// Column class as a bit per mask: `0` skip, `1` I, `2` D, `3` =, `4` X.
+#[inline]
+fn class_of(rc: u8, qc: u8) -> u8 {
+    match (rc, qc) {
+        (b'-', b'-') => 0,
+        (b'-', _) => 1,
+        (_, b'-') => 2,
+        _ if rc.eq_ignore_ascii_case(&qc) => 3,
+        _ => 4,
+    }
+}
+
+#[inline]
+fn set_class(mask: &mut AlignmentMask, wi: usize, k: usize, class: u8) {
+    let bit = 1 << k;
+    match class {
+        1 => mask.ins[wi] |= bit,
+        2 => mask.del[wi] |= bit,
+        3 => mask.m[wi] |= bit,
+        4 => mask.x[wi] |= bit,
+        _ => {}
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod avx2 {
+    use super::*;
+    use std::arch::x86_64::*;
+
+    #[inline]
+    unsafe fn load(ptr: *const u8) -> __m256i {
+        _mm256_loadu_si256(ptr as *const __m256i)
+    }
+
+    #[inline]
+    unsafe fn set1(b: u8) -> __m256i {
+        _mm256_set1_epi8(b as i8)
+    }
+
+    #[inline]
+    unsafe fn is_letter(v: __m256i) -> __m256i {
+        // Lowercased ASCII letter check: 'a' <= v <= 'z'.
+        let ge_a = _mm256_cmpeq_epi8(_mm256_max_epu8(v, set1(0x61)), v);
+        let le_z = _mm256_cmpeq_epi8(_mm256_min_epu8(v, set1(0x7A)), v);
+        _mm256_and_si256(ge_a, le_z)
+    }
+
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn classify_chunks_avx2(
+        mask: &mut AlignmentMask,
+        ref_chunks: &[[u8; 32]],
+        qry_chunks: &[[u8; 32]],
+    ) {
+        let dash = set1(b'-');
+        let or20 = set1(0x20);
+        for (wi, (rc, qc)) in ref_chunks.iter().zip(qry_chunks).enumerate() {
+            let r = load(rc.as_ptr());
+            let q = load(qc.as_ptr());
+            let gap_r = _mm256_cmpeq_epi8(r, dash);
+            let gap_q = _mm256_cmpeq_epi8(q, dash);
+            let ins = _mm256_andnot_si256(gap_q, gap_r);
+            let del = _mm256_andnot_si256(gap_r, gap_q);
+            let skip = _mm256_and_si256(gap_r, gap_q);
+            let rl = _mm256_or_si256(r, or20);
+            let ql = _mm256_or_si256(q, or20);
+            let eq_ci = _mm256_and_si256(
+                _mm256_and_si256(_mm256_cmpeq_epi8(rl, ql), is_letter(rl)),
+                is_letter(ql),
+            );
+            let eq_case = _mm256_cmpeq_epi8(r, q);
+            let m = _mm256_andnot_si256(skip, _mm256_or_si256(eq_case, eq_ci));
+            let x = _mm256_andnot_si256(
+                _mm256_or_si256(_mm256_or_si256(skip, ins), _mm256_or_si256(del, m)),
+                _mm256_set1_epi8(-1),
+            );
+            mask.ins[wi] = _mm256_movemask_epi8(ins) as u32;
+            mask.del[wi] = _mm256_movemask_epi8(del) as u32;
+            mask.m[wi] = _mm256_movemask_epi8(m) as u32;
+            mask.x[wi] = _mm256_movemask_epi8(x) as u32;
+        }
+    }
+}
+
+/// Merges consecutive equal-op columns into `CigarOp`s (mask-driven).
+pub fn scan_cigar_ops(mask: &AlignmentMask) -> Vec<CigarOp> {
+    let mut ops: Vec<CigarOp> = Vec::new();
+    for wi in 0..mask.ins.len() {
+        let mut rem = mask.m[wi];
+        let mut col = 0usize;
+        while rem != 0 {
+            let tz = rem.trailing_zeros() as usize;
+            for k in col..col + tz {
+                push_op(&mut ops, mask, wi, k);
+            }
+            let ones = (rem >> tz).trailing_ones() as usize;
+            merge_op(&mut ops, '=', ones as u32);
+            col = col + tz + ones;
+            rem = if tz + ones >= 32 {
+                0
+            } else {
+                rem >> (tz + ones)
+            };
+        }
+        for k in col..32 {
+            push_op(&mut ops, mask, wi, k);
+        }
+    }
+    ops
+}
+
+#[inline]
+fn push_op(ops: &mut Vec<CigarOp>, mask: &AlignmentMask, wi: usize, k: usize) {
+    let bit = 1 << k;
+    let op_char = if mask.ins[wi] & bit != 0 {
+        'I'
+    } else if mask.del[wi] & bit != 0 {
+        'D'
+    } else if mask.x[wi] & bit != 0 {
+        'X'
+    } else {
+        return; // gap-gap column
+    };
+    merge_op(ops, op_char, 1);
+}
+
+#[inline]
+fn merge_op(ops: &mut Vec<CigarOp>, op_char: char, len: u32) {
+    match ops.last_mut() {
+        Some(last) if last.op() == op_char => {
+            let new_len = last.len() + len;
+            *last = CigarOp::new(new_len, op_char);
+        }
+        _ => ops.push(CigarOp::new(len, op_char)),
+    }
+}
+
+/// `cs:Z` compact string from masks plus the original alignment (I/D/X
+/// columns emit their bases).
+pub fn scan_cs(mask: &AlignmentMask, r#ref: &[u8], qry: &[u8]) -> String {
+    let mut cs = String::new();
+    let mut run = 0usize;
+    let n = r#ref.len();
+    let flush = |run: &mut usize, cs: &mut String| {
+        if *run > 0 {
+            cs.push(':');
+            cs.push_str(&run.to_string());
+            *run = 0;
+        }
+    };
+    for (wi, _) in mask.ins.iter().enumerate() {
+        let base = wi * 32;
+        let n_in_word = 32.min(n - base);
+        let word_bits = if n_in_word == 32 {
+            u32::MAX
+        } else {
+            (1u32 << n_in_word) - 1
+        };
+        let mut rem = mask.m[wi] & word_bits;
+        let mut col = 0usize;
+        while rem != 0 {
+            let tz = rem.trailing_zeros() as usize;
+            for k in col..col + tz {
+                cs_push_col(&mut cs, &mut run, &flush, mask, r#ref, qry, base + k);
+            }
+            let ones = (rem >> tz).trailing_ones() as usize;
+            run += ones;
+            col = col + tz + ones;
+            rem = if tz + ones >= 32 {
+                0
+            } else {
+                rem >> (tz + ones)
+            };
+        }
+        for k in col..n_in_word {
+            cs_push_col(&mut cs, &mut run, &flush, mask, r#ref, qry, base + k);
+        }
+    }
+    flush(&mut run, &mut cs);
+    cs
+}
+
+#[inline]
+fn cs_push_col(
+    cs: &mut String,
+    run: &mut usize,
+    flush: &impl Fn(&mut usize, &mut String),
+    mask: &AlignmentMask,
+    r#ref: &[u8],
+    qry: &[u8],
+    i: usize,
+) {
+    let bit = 1 << (i % 32);
+    let rc = r#ref[i];
+    let qc = qry[i];
+    let wi = i / 32;
+    if mask.ins[wi] & bit != 0 {
+        flush(run, cs);
+        cs.push('+');
+        cs.push(qc.to_ascii_uppercase() as char);
+    } else if mask.del[wi] & bit != 0 {
+        flush(run, cs);
+        cs.push('-');
+        cs.push(rc.to_ascii_uppercase() as char);
+    } else if mask.x[wi] & bit != 0 {
+        flush(run, cs);
+        cs.push('*');
+        cs.push(rc.to_ascii_uppercase() as char);
+        cs.push(qc.to_ascii_uppercase() as char);
+    }
+}
+
 /// Build CIGAR from two MAF `s`-line alignment strings (byte slices).
 ///
 /// Each position is compared (case-insensitive, so soft-masked bases count):
@@ -328,73 +597,16 @@ pub fn block_identity(ops: &[CigarOp]) -> f64 {
 ///
 /// Consecutive identical ops are merged.
 pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<Vec<CigarOp>> {
-    if r#ref.len() != qry.len() {
-        anyhow::bail!("alignment vectors must have equal length");
-    }
-
-    let mut ops: Vec<CigarOp> = Vec::new();
-
-    for (&rc, &qc) in r#ref.iter().zip(qry.iter()) {
-        let op_char = match (rc, qc) {
-            (b'-', b'-') => continue, // both gaps — degenerate, skip
-            (b'-', _) => 'I',
-            (_, b'-') => 'D',
-            _ if rc.eq_ignore_ascii_case(&qc) => '=',
-            _ => 'X',
-        };
-
-        match ops.last_mut() {
-            Some(last) if last.op() == op_char => {
-                let new_len = last.len() + 1;
-                *last = CigarOp::new(new_len, op_char);
-            }
-            _ => ops.push(CigarOp::new(1, op_char)),
-        }
-    }
-
-    Ok(ops)
+    let mask = classify_alignment(r#ref, qry)?;
+    Ok(scan_cigar_ops(&mask))
 }
 
 /// Compact reversible CIGAR (`cs:Z`) from an aligned pair, FastGA `-pafs`
 /// style: `:N` match runs, `*<ref><qry>` mismatches, `+<qry>` insertions,
 /// `-<ref>` deletions.
 pub fn cs_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<String> {
-    if r#ref.len() != qry.len() {
-        anyhow::bail!("alignment vectors must have equal length");
-    }
-    let mut cs = String::new();
-    let mut run = 0usize;
-    let flush = |run: &mut usize, cs: &mut String| {
-        if *run > 0 {
-            cs.push(':');
-            cs.push_str(&run.to_string());
-            *run = 0;
-        }
-    };
-    for (&rc, &qc) in r#ref.iter().zip(qry.iter()) {
-        match (rc, qc) {
-            (b'-', b'-') => continue, // both gaps — degenerate, skip
-            (b'-', q) => {
-                flush(&mut run, &mut cs);
-                cs.push('+');
-                cs.push(q.to_ascii_uppercase() as char);
-            }
-            (r, b'-') => {
-                flush(&mut run, &mut cs);
-                cs.push('-');
-                cs.push(r.to_ascii_uppercase() as char);
-            }
-            (r, q) if r.eq_ignore_ascii_case(&q) => run += 1,
-            (r, q) => {
-                flush(&mut run, &mut cs);
-                cs.push('*');
-                cs.push(r.to_ascii_uppercase() as char);
-                cs.push(q.to_ascii_uppercase() as char);
-            }
-        }
-    }
-    flush(&mut run, &mut cs);
-    Ok(cs)
+    let mask = classify_alignment(r#ref, qry)?;
+    Ok(scan_cs(&mask, r#ref, qry))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────
@@ -402,6 +614,42 @@ pub fn cs_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    fn random_aln(rng: &mut StdRng, len: usize) -> Vec<u8> {
+        let alphabet = *b"ACGTacgtNMRWSYKVHDX-*_ 0123456789";
+        (0..len)
+            .map(|_| alphabet[rng.random_range(0..alphabet.len())])
+            .collect()
+    }
+
+    #[test]
+    fn masks_match_scalar_classification() {
+        // Random alignments: the SIMD/scalar classify masks must agree with
+        // the per-column reference at every position and stay disjoint.
+        let mut rng = StdRng::seed_from_u64(20260809);
+        for len in [0usize, 1, 31, 32, 33, 63, 64, 65, 500, 1000] {
+            for _ in 0..20 {
+                let r = random_aln(&mut rng, len);
+                let q = random_aln(&mut rng, len);
+                let mask = classify_alignment(&r, &q).unwrap();
+                for i in 0..len {
+                    let wi = i / 32;
+                    let bit = 1 << (i % 32);
+                    let set = [
+                        (mask.ins[wi] & bit != 0, 1usize),
+                        (mask.del[wi] & bit != 0, 2),
+                        (mask.m[wi] & bit != 0, 3),
+                        (mask.x[wi] & bit != 0, 4),
+                    ];
+                    let n_set = set.iter().filter(|(s, _)| *s).count();
+                    assert_eq!(n_set, usize::from(class_of(r[i], q[i]) != 0), "col {i}");
+                    let class = set.iter().find(|(s, _)| *s).map(|(_, c)| *c).unwrap_or(0);
+                    assert_eq!(class, class_of(r[i], q[i]) as usize, "col {i} len {len}");
+                }
+            }
+        }
+    }
 
     // ── CigarOp bit-packing ───────────────────────────────────
 

@@ -42,6 +42,9 @@ wide 相对标量 ~2.8×（128-bit 拆分 + 判等掩码开销）。
 17 次向量判等 + popcount，故加速比高于 count_n；`wide` 同样有 ~7.4×
 （首版按 count_n 推断"wide 无收益"走标量，实测后纠正为 wide 路径）。
 实现 2026-08-09，`nt_simd::count_bases` + `fasta::stat::count_bases` 转发。
+2026-08-09 晚：wide 路径按设计原则改为 **128-bit `u8x16`**
+（SSE2/NEON 原生、不受编译期 avx2 影响），上表数字不变（256-bit 本来
+即拆两个 128-bit 跑）。
 
 ## 结论
 

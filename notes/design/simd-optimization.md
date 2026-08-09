@@ -83,12 +83,83 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
 - `dist mash` murmur3 SIMD（1.3×，风险大于收益）。
 - HV AVX-512 跳步 RNG（只保留在 `benches/hv_benchmark.rs` 作对照）。
 
-## 5. 建议流程
+## 5. SIMD 优化设计原则（步骤清单，2026-08-09 定稿）
 
-1. 端到端 profile 真实场景（perf / 火焰图），确认 CPU 时间分布。
-2. 若 `.gz` 主导 → 压缩层解压优化优先；若解压后 CPU 主导 →
-   `rev_comp` / `complement` 是套用现有模式最自然、风险最低的下一块。
-3. 每个候选按三步模式走：热点确认 → 双路径实现 → 位一致 + 基准落盘。
+### 阶段 0 · 立项前
+
+1. **约束检查**：fa 路径保持单线程（不引入 rayon）、不引入新依赖、
+   只动该动的地方。
+2. **消费方核实**：全库搜索所有生产调用方与量级（搜索勿用 `head`
+   截断——`cigar_from_alignment` 曾因此误判"无消费方"）；无消费方
+   的函数不做。
+3. **场景 profile**：对真实场景 perf 确认该函数在 CPU 分布中的占比；
+   先排除 I/O 主导（gz 解压、memset）、RNG/哈希主导、依赖链（滚动
+   打包、单调队列）——SIMD 无效或覆盖有限。
+
+### 阶段 1 · 热点与语义
+
+4. **隔离验证**：微基准单独测目标函数确认是热点（`canonical_keys`
+   实测 2.95 ms 后直接证伪，省下实现成本）。
+5. **语义锚定**：写下与标量逐位一致的契约（U→T、X→N、
+   `eq_ignore_ascii_case` 精确行为），作为测试基准。
+
+### 阶段 2 · 实现
+
+6. **数据结构先行**：先检查访问模式再谈向量化——FastK 对照显示
+   "排序合并替代逐窗口查表"（~5×）远大于 SIMD 收益；查表型热点先
+   考虑数据结构。
+7. **三级回退链（2026-08-09 用户定稿）**：
+   1. **AVX2 手写**（`is_x86_feature_detected!` 运行时检测）第一优先；
+   2. 无 AVX2 → **`wide` 固定 128-bit 类型**（`u8x16`/`i32x4`/`f32x4`）：
+      128-bit 在 x86_64 是 SSE2、aarch64 是 NEON，均为平台原生宽度，
+      且 **wide 的 128-bit 分支先匹配 `sse2`，不受编译期 avx2 影响**
+      （反汇编实证：`u8x16` 在 `+avx2` 编译下仍 0 条 ymm；`u8x32`
+      则有 3 条）——老 CPU 因此可兜底。**nt_simd 已改造**
+      （2026-08-09，`u8x16` + `SimdPath::Scalar` 显式兜底，性能与 256-bit
+      时代一致）；**linalg/poa/hv 待改**（见 `todo.md`）。
+   3. 无法检测/无 SIMD 平台 → **纯标量**最终兜底。
+   无 SSE4.1 中间档、无 SIMDe；wide 256-bit 类型（`u8x32` 等）**禁用**。
+8. **wide 必须实测且受编译前提约束**：
+   * 宽/标量收益不能按函数类推：`count_n` wide 慢 42%（回退标量）、
+     `count_bases` wide 7.5×（保留）——同模式结果相反，必须实测。
+   * **历史教训（已由 128-bit 原则取代）**：wide 的 256-bit 类型
+     （`u8x32`）由编译时 `cfg(target_feature="avx2")` 决定，全局开 avx2
+     编译时变真 AVX2，无 AVX2 CPU 上 SIGILL（反汇编实证）。改用 128-bit
+     类型后此问题消失；`nt_simd` 曾用 `#[cfg]` 双轨门控 + 纯标量兜底，
+     128-bit 化后可简化（仍保留纯标量作为第三级）。
+   * **NEON 维度（2026-08-09 验证）**：wide 在 `aarch64 + neon` 下
+     `u8x16 = uint8x16_t`（源码确证），`cargo check --target
+     aarch64-apple-darwin` 通过（x86 特有代码均有 cfg 门控）——**编译与
+     NEON 指令可用可保证**；但① 无手写 NEON 路径，受益上限 128-bit
+     级（~2–4× 预期，非 AVX2 的 10–47×）；② 无 aarch64 硬件/CI，wide
+     在 NEON 上是否正收益未实测；③ 32 位 ARM 不在 wide 支持范围
+     （编译失败）。若 NEON 是发布目标，需加 aarch64 CI + 实测基准。
+   * **必须保留纯标量兜底（2026-08-09 加固）**：每个 SIMD 函数都要有
+     不依赖任何 SIMD 的最终回退。nt_simd 的 `count_valid`/`count_bases`
+     曾删掉标量、wide 是唯一非 AVX2 路径——若编译开 avx2（wide 变真
+     AVX2）则无 AVX2 CPU 上 SIGILL。已加固：标量函数
+     `#[cfg(target_feature = "avx2")]`、wide 函数及 `u8x32` import
+     `#[cfg(not(target_feature = "avx2"))]`，两种编译 + aarch64 均验证。
+     **linalg / hv / poa::simd 仍只有 wide 回退，待加固。**
+9. **量化输出占比**：输出型函数（字符串构建、格式化）先量化——SIMD
+   只覆盖分类/计算部分；输出主导时预期给"百分比"而非"倍数"
+   （cigar：SIMD 分类 7×、函数级 1.57×、端到端 37%）。
+
+### 阶段 3 · 验证
+
+10. **位一致对照**：随机（含边界字符）+ 真实数据，与标量/旧实现逐位
+    对照；`cargo test` 的 debug 模式必须过（能抓到 release 不炸的
+    shift overflow）。
+11. **双口径基准**：函数级 micro-bench（倍数）+ 端到端命令（百分比），
+    两者都记录并说明口径。
+12. **工程门禁**：fmt / clippy `-D warnings` / 全量测试 clean。
+
+### 阶段 4 · 落盘
+
+13. **结果记录**：基准数据、口径、实现位置写入 `notes/benchmarks/`；
+    决策与方法论更新进本文件。
+14. **不做也记录**：证伪/暂缓候选写清原因与触发条件（`rev_comp`、
+    cigar 无消费方、murmur3、gzip），避免重复立项。
 
 ## 6. 全库 SIMD 候选清单（2026-08-09 扫描）
 
@@ -106,13 +177,23 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
    [[../benchmarks/bench-nt-simd.md]]），`fa count` 接入。
 2. `nt::complement` / `rev_comp`（`src/libs/nt.rs`）：NT_COMP 查表，
    pshufb 或 eq_any；消费方 pbit/pgi/paf graph/`fa rc`/chain `to_axt`/loc，
-   需先验证 `fa rc`、`to_axt` 的真实规模。
+   **已评估暂缓（2026-08-09）**：perf 实测 `fa rc` 50 MB 时 rev_comp
+   （内联进 `rc::execute`）仅 ~14%，memset 40% + 读 5% 主导；pbit 为短段、
+   `to_axt` 低频中等规模——当前消费方都不值得 SIMD 化。
 
-### 第二梯队：模式需变体（位图 + 串行 run 扫描），收益中等
+### 第二梯队：模式需变体（位图 + 串行 run 扫描），已确认值得
 
 3. `paf::cigar::cigar_from_alignment` / `cs_from_alignment`
    （`src/libs/paf/cigar.rs`）：逐列 `=`/`X`/`I`/`D` 分类 + run 合并，
-   同 `fa masked` 的"SIMD 位图 + 串行扫描"结构；消费方为 PAF 批量生成。
+   同 `fa masked` 的"SIMD 位图 + 串行扫描"结构。**已确认是热点
+   （2026-08-09）**：`maf_block_to_paf`（`src/libs/paf/maf_import.rs`）对
+   每个 block 调用两者，`pgr maf to-paf` 40 M 列实测占 53.4%
+   （两次逐列扫描 + 格式化 11.8%）；MAF→PAF 是 4 万 cohort 管线核心。
+   **已实现（2026-08-09）**：`classify_alignment`（AVX2 + 标量回退）一次
+   生成 I/D/=/X 四掩码，`maf_block_to_paf` 共享后分别 `scan_cigar_ops` /
+   `scan_cs`；两扫描用 `trailing_zeros/ones` 位运算直接跳 match run。
+   40 M 列 `maf to-paf` 0.55 s → 0.347 s（~37%），输出逐字节一致；
+   剩余瓶颈为 cg:Z 字符串格式化（~13.6%，非 SIMD 范畴）。
 
 ### 第三梯队：可做但 I/O 主导，收益存疑（先 profile）
 

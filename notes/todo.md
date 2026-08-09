@@ -110,10 +110,17 @@ fmt/clippy/test 确认。
       真核（拟南芥/玉米等转座子丰富）与 RepeatMasker masked 输出对比
       recall（E. coli 无转座子无参考价值）；polyA/卫星低复杂度缺口由
       `rept trf` 兜底（来源：`design/repeat-masking.md` §2.4/§2.5）。
-- [ ] **SIMD 第二梯队候选（待评估，来源 `design/simd-optimization.md` §6）**：
-      `nt::rev_comp`/`complement`（先 perf 验证 `fa rc`/chain `to_axt` 规模）
-      与 `paf::cigar` 位图 + run 扫描；`twobit from_dna` 打包 I/O 主导存疑。
-      `count_bases`（第一梯队）已实现（2026-08-09，wide 7.5× / AVX2 47×）。
+- [ ] **wide 128-bit 化：linalg / poa / hv**（原则见
+      `design/simd-optimization.md` §5 第 7 条）：当前 `f32x8`/`i32x8`/
+      `u32x8`（256-bit）在编译开 avx2 时变真 AVX2、无 AVX2 CPU 上 SIGILL；
+      改为 `f32x4`/`i32x4`/`u32x4`（SSE2/NEON 原生，默认编译性能不变）。
+      `nt_simd` 已改（2026-08-09，`u8x16` + `Scalar` 兜底，验证通过）。
+- [x] ~~**SIMD 第二梯队 `paf::cigar`（来源 `design/simd-optimization.md` §6）**~~ →
+      **已实现（2026-08-09）**：`classify_alignment` SIMD 分类掩码一次扫描 +
+      `scan_cigar_ops`/`scan_cs` 共享 + 位运算 run 跳扫；`maf to-paf` 40 M
+      列 0.55 s → 0.347 s（~37%），输出逐字节一致。`rev_comp`/`complement`
+      已评估暂缓（`fa rc` 实测仅 ~14%，memset/IO 主导）。
+      `count_bases`（第一梯队）已实现（wide 7.5× / AVX2 47×）。
 - [ ] **paf 查询层扩展（待实现）**：`--min-tree-coverage`（Caf Tree
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时

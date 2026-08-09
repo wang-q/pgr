@@ -143,6 +143,10 @@ name = "byte_stat_benchmark"
 harness = false
 
 [[bench]]
+name = "cigar_benchmark"
+harness = false
+
+[[bench]]
 name = "hv_vector_rs"
 harness = false
 
