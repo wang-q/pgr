@@ -345,15 +345,8 @@ fn command_fq_trim_q_polyg_right() {
 
 #[test]
 fn command_fq_trim_q_gzipped_input() {
-    use std::io::Read;
-
     let good = "?".repeat(30);
-    let input = format!(
-        "@r1\n{}\n+\n{}{}\n",
-        "A".repeat(40),
-        good,
-        "!".repeat(10)
-    );
+    let input = format!("@r1\n{}\n+\n{}{}\n", "A".repeat(40), good, "!".repeat(10));
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(input.as_bytes()).unwrap();
     let gz = encoder.finish().unwrap();

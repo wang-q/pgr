@@ -399,6 +399,75 @@ noodles_bgzf 引用清零（仅 benches/tests 的 dev 对照保留）；
 - 随机访问（CachedBgzfReader + libdeflater）与写入侧迁移后，
   `cli_fa_index`/`cli_paf_bgzf` 等全部集成测试通过。
 
+### Writer 演进：noodles multithreaded → 自研（2026-08 补）
+
+- **以前（f5faef1 之前）**：`pgr fa gz` 用 noodles-bgzf 的
+  `bgzf::io::multithreaded_writer::Builder`（`-p` worker 数，默认 1）。
+  noodles 内部是 std mpsc 通道 + worker 线程池，压缩后按序写出；
+  命令层手动 64KB 分块写入（注释明确：`std::io::copy` 的 8KB 缓冲会
+  造成频繁小写，放大 channel/lock 开销，抵消并行收益）。
+- **现在（f5faef1 起，自研）**：`writer.rs` 两个 writer：
+  - `BgzfWriter`：单线程，`Write` 实现内同步压缩 + 写块。
+  - `ParallelBgzfWriter`：crossbeam `bounded(worker_count*2)` 任务队列
+    + `unbounded` 结果队列；每 worker 复用 libdeflater `Compressor`
+    （跨块）；BTreeMap 按 seq 重排、按序写出；`finish()` join 全部
+    worker、校验块数、写 EOF。`pgr fa gz` 迁移后仍走它（`-p` 默认 1）。
+- 结论：架构与 noodles 一一对应（worker 池 + 顺序号重排 + 按序写出），
+  后端从 flate2/zlib 换成 libdeflater，通道从 std mpsc 换成 crossbeam；
+  块边界仍是 0xff00（stored 兜底）。
+
+### 内存：libdeflater vs flate2/zlib-ng（2026-08 补）
+
+- **关键差异是调用模型，不是对象大小**：
+  - flate2 流式（miniz_oxide/zlib backend）：32KB 滑窗 + 状态 + 默认
+    8KB BufReader ≈ 40KB 恒定，与流大小无关，可无限流。
+  - libdeflater 整块 API：`decompress_*(in, out)` 需一次给全输入并
+    预分配输出缓冲；对大单流内存 = 输入 + 输出 ≈ 明文大小，随文件
+    线性增长，**不能做无限流**（README 明示流式应用用 flate2）。
+- libdeflate 解压器对象本身约 **12KB**（litlen 表 2342×4B + offset
+  表 402×4B + sorted_syms 288×2B + 字段），**无滑窗**——整块处理
+  不需要跨块引用，反而比 flate2 更小。
+- 本项目分工：流式单/多成员 gzip（`GzReader`）走 zlib-ng raw
+  inflate（恒定小内存，与 flate2 同级）；libdeflater 只用于整块
+  `gzip_decompress` 与 BGZF 块级（≤64KB 输入 + 输出缓冲，worker 复用
+  ~12KB 解压器状态）。
+- 若要用 libdeflater 做普通 gzip 流式读入，须自己解析 deflate 流
+  分块喂（BGZF 能并行 inflate 正因有 64KB 块边界），否则内存=整个文件。
+
+### 写侧端到端基准（2026-08 补）
+
+**criterion（`benches/bgzf_write_benchmark.rs`，50 MB 伪随机 FASTA → sink，
+release，level 6）**
+
+| 配置 | 耗时 | 相对单线程 |
+|---|---:|---:|
+| `BgzfWriter` 单线程 | 1.888 s | 1.00× |
+| `ParallelBgzfWriter` 1 worker | 1.894 s | 1.00× |
+| 2 workers | 0.974 s | 1.94× |
+| 3 workers | 0.653 s | 2.89× |
+| 4 workers | 0.501 s | 3.77× |
+| 6 workers | 0.341 s | 5.54× |
+| 8 workers | 0.260 s | 7.26× |
+
+**CLI 端到端（`pgr fa gz -p N`，49 MB FASTA → `.gz` + `.gzi`，release）**
+
+| `-p` | 耗时 | 相对 `-p 1` |
+|---|---:|---:|
+| 1 | 2.07 s | 1.00× |
+| 2 | 0.99 s | 2.09× |
+| 3 | 0.66 s | 3.14× |
+| 4 | 0.51 s | 4.06× |
+| 6 | 0.34 s | 6.09× |
+| 8 | 0.26 s | 7.96× |
+
+观察：
+- 1-8 worker 接近线性扩展（7.3-8×），瓶颈是 libdeflater 压缩本身；
+  `-p 1` 与真正单线程 `BgzfWriter` 几乎无差（通道开销 <0.5%）。
+- 测试数据为伪随机 DNA（近似不可压缩，最坏情形）；真实基因组 FASTA
+  可压缩性更高、压缩更快，并行收益趋势不变。
+- CLI 端到端含磁盘写与 `.gzi` 索引生成；`-p 1` 的 2.07 s 中约 0.18 s
+  是 sink 基准之外的读盘/写盘/索引开销。
+
 ### 剩余
 
 - dev-deps 的 noodles-bgzf 仅作基准对照（IndexedReader）；正式代码

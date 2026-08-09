@@ -185,6 +185,10 @@ harness = false
 name = "bgzf_inflate_benchmark"
 harness = false
 
+[[bench]]
+name = "bgzf_write_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]
