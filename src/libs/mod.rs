@@ -1,4 +1,5 @@
 pub mod alignment;
+pub mod bgzf;
 pub mod chain;
 pub mod ds;
 pub mod fas_multiz;

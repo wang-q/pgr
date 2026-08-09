@@ -53,6 +53,7 @@ tempfile = "3.14.0"
 rust_xlsxwriter = "0.83.0"
 bio = "0.30.1"
 flate2 = "1.1.8"
+libdeflater = "1.25.2"
 tera = "1.20.1"
 csv = "1.4.0"
 serde = { version = "1", features = ["derive"] }
@@ -180,6 +181,14 @@ harness = false
 name = "hv_vector_rs"
 harness = false
 
+[[bench]]
+name = "bgzf_benchmark"
+harness = false
+
+[[bench]]
+name = "bgzf_inflate_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]
@@ -213,6 +222,11 @@ probminhash = "0.1"
 # when loading a .so; the host also lacks libsqlite3-dev, so bundle SQLite itself.
 sqlite3-ext-vtab = { version = "0.2", features = ["bundled"] }
 sqlite-vector-rs = "0.1"
+linflate = "0.1.11"
+isal-rs = "0.5.3"
+isal-sys = "0.5.3"
+libz-ng-sys = "1.1.29"
+miniz_oxide = "0.8"
 
 [profile.release]
 lto = true

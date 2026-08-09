@@ -1,15 +1,20 @@
+use crate::libs::bgzf::CachedBgzfReader;
 use crate::libs::ds::Range;
 use indexmap::IndexMap;
 use noodles_bgzf as bgzf;
 use noodles_core;
 use noodles_fasta as fasta;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::num::NonZeroUsize;
 
 /// Random-access reader for indexed FASTA files (plain or BGZF-compressed).
 pub enum Input {
     File(std::fs::File),
-    Bgzf(bgzf::io::IndexedReader<std::fs::File>),
+    Bgzf(Box<CachedBgzfReader>),
 }
+
+/// Default number of decompressed BGZF blocks (<= 64 KiB each) to cache.
+const BGZF_BLOCK_CACHE: usize = 16;
 
 pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<()> {
     let mut reader: Box<dyn std::io::BufRead> = if is_bgzf {
@@ -63,9 +68,10 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
 /// Open a FASTA file as `Input` (plain `File` or BGZF `IndexedReader`).
 pub fn open_input(infile: &str, is_bgzf: bool) -> anyhow::Result<Input> {
     if is_bgzf {
-        Ok(Input::Bgzf(
-            bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?,
-        ))
+        let capacity = NonZeroUsize::new(BGZF_BLOCK_CACHE).expect("non-zero cache size");
+        Ok(Input::Bgzf(Box::new(CachedBgzfReader::open(
+            infile, capacity,
+        )?)))
     } else {
         Ok(Input::File(std::fs::File::open(std::path::Path::new(
             infile,

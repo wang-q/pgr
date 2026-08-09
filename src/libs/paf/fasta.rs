@@ -120,9 +120,10 @@ impl FastaStore {
                 loc::create_loc(path, &loc_file, true)?;
             }
             let loc_of = loc::load_loc(&loc_file)?;
-            let reader = loc::Input::Bgzf(
-                noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(path)?,
-            );
+            let reader = loc::Input::Bgzf(Box::new(crate::libs::bgzf::CachedBgzfReader::open(
+                path,
+                NonZeroUsize::new(16).expect("non-zero cache size"),
+            )?));
             let cache = lru::LruCache::new(
                 NonZeroUsize::new(FASTA_LRU_SIZE).expect("FASTA_LRU_SIZE must be non-zero"),
             );

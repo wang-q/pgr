@@ -166,6 +166,178 @@ BGZF 随机访问、`plot/histogram.rs` CSV 外零残留）：
 （`loc.rs`）、GFF、写入路径（`fmt/fa.rs` writer）。顺序读取侧 noodles
 路径已无生产消费方。
 
+## 4. BGZF 随机访问：inflate 瓶颈与方案搜索（2026-08-09）
+
+### 现状基准（50 MB FASTA → 24 MB BGZF）
+
+- 随机 1000 区间：**2.38 s**；perf 分布：inflate 57%、memset 30%、
+  FASTA 解析 <2%；gzi 构建仅 8 ms。
+- 同块密集访问（记录级缓存命中）：**6 ms** —— 证明 inflate 是纯重复
+  劳动，命中缓存可数量级下降。
+- 顺序 FASTA 的 6× 优化空间在 BGZF 上**不存在**：瓶颈是解压固有成本，
+  自研解析无收益。
+
+### noodles-bgzf 0.45.0 既有能力（源码核实）
+
+- 默认后端 `flate2` + `zlib-rs`（`default-features = false`），已是 Rust
+  侧较快的选择。
+- `libdeflate` feature 存在（`["dep:libdeflater"]`）：`src/deflate.rs`
+  `#[cfg]` 编译期切换 decode/encode，**零源码改动**。
+- `MultithreadedReader`（io 线程 + inflate 线程池）实现了
+  `crate::io::Seek`（`seek_to_virtual_position`/`seek_with_index`），但
+  seek 内部 `get_mut()` 会 `pause()`（join 全部线程）+ `resume()`
+  （重建线程池）——**随机 seek 每次重启管线，实际不可用**。
+- `IndexedReader` = `Reader` + `.gzi`，seek = 底层 seek + 读新块 +
+  inflate，**无块缓存**；每块新建 `DeflateDecoder`（窗口缓冲
+  分配+清零，memset 30% 的主要来源）。
+
+### 方案矩阵
+
+| 方案 | 原理 | 单块收益 | 成本 | 适用 |
+|---|---|---:|---|---|
+| A. 块 LRU 缓存 | 同块命中不重复 inflate | 同块数量级；混合看命中率 | 中（pgr 层包一层，~200 行） | **loc 随机访问（热点）** |
+| B. libdeflate feature | 换更快后端 | ~+18%（~650 vs ~550 MB/s） | 低（1 行 feature），但引入 C 依赖（cmake） | 全部 BGZF 读 |
+| C. linflate | 纯 Rust 更快后端 | ~+27%（~700 MB/s） | 高（noodles 无支持，需 fork/自研块解析） | 全部 BGZF 读 |
+| D. MultithreadedReader | 并行 inflate | 顺序读近核数倍 | 低（现成） | 顺序读；与"fa 单线程"约束冲突，且随机 seek 不可用 |
+| E. Intel ISA-L | 最快 C 后端 | ~14×（7.9 GB/s） | 很高（C+cmake） | 大批量解压，单块 64 KB 启动开销吃收益 |
+
+### 结论与建议
+
+- **A 优先**：正好打在 loc 瓶颈（同块重复解压），零新依赖、保持单线程；
+  但 0.45 `IndexedReader` 不可插拔，需 pgr 自研带缓存的 Bgzf 读取层
+  （或 fork noodles-bgzf）。
+- **B 作为低成本可选**：一个 feature 开关 +18%，代价是 C 依赖，需用户
+  批准。
+- C/D/E 记录在案，现阶段不推荐：C 工程量大、D 与单线程约束冲突且随机
+  seek 不可用、E 依赖过重。
+
+## 5. 方案 A 落地：CachedBgzfReader（2026-08-09）
+
+### 实现
+
+- `src/libs/bgzf.rs`：`CachedBgzfReader`，块级 LRU（key = 压缩偏移，
+  value = 解压块 + 块大小），复用单个 `flate2::Decompress`（消掉每块
+  新建解码器的分配/清零），`seek(uncompressed)` 走 `.gzi` 索引转虚拟
+  位置，命中缓存不碰文件；空块（EOF 标记）跳过，文件尾当 EOF。
+- 接入：`Input::Bgzf(CachedBgzfReader)`（默认缓存 16 块 = 1 MB），
+  `paf/fasta.rs` 的 FastaStore 同步切换；`create_loc` 顺序建索引仍用
+  noodles IndexedReader。
+- 块解析复用 `fmt/fa.rs build_gzi_index` 的经验（BC 子字段 bsize）；
+  CRC32 校验保留（flate2::Crc）。
+
+### 基准（50 MB FASTA → BGZF，764 块，criterion）
+
+| 实现 | cold 764 块读取 | warm 同块 1000 读 |
+|---|---:|---:|
+| noodles IndexedReader（现状） | 41.2 ms | 51.2 ms |
+| CachedBgzfReader cap=1 | 37.1 ms | 16.7 ms |
+| CachedBgzfReader cap=4 | 37.3 ms | 149 µs |
+| CachedBgzfReader cap=16 | 37.0 ms | 149 µs |
+
+- **warm 51.2 ms → 149 µs（343×）**：块缓存消除重复 inflate；
+  cap=1 时 warm 只有 16.7 ms——warm 探针有 ~2% 跨块，单块缓存抖动
+  （两块反复驱逐），cap≥4 稳定。
+- **cold 41.2 → 37.0 ms（1.11×）**：缓存无命中收益，纯来自 inflater
+  复用（noodles 每块新建 DeflateDecoder）。
+- 集成测试：`cli_fa_index` 12 个 + `cli_paf_graph`/`cli_paf_stat`
+  全过。
+
+## 6. 候选 inflate 后端清单与系统测试计划（2026-08-09）
+
+用户批准：全部候选装为 **dev-dependencies**（不进主线产物），系统对比
+后再决定是否引入。
+
+安装：`cargo add --dev linflate libdeflater isal-rs libz-ng-sys rust-htslib`
+
+| crate | 版本 | 类型 | 宣称 | 备注 |
+|---|---|---|---|---|
+| linflate | 0.1.x | 纯 Rust | ~700 MB/s | 方案 C；full-buffer 匹配 BGZF 块；原项目已迁 nordisk/znippy |
+| libdeflater | 1.25.x | C | ~650 MB/s | noodles `libdeflate` feature 底层 |
+| isal-rs | 0.5.3 | C | ~7.9 GB/s | 注意 crates.io 另有只做 erasure code 的 `isa-l` |
+| libz-ng-sys | 1.1.x | C | ~1 GB/s+ | zlib-ng SIMD |
+| rust-htslib | 0.50 | C | — | 完整 BGZF 对照（多线程/索引） |
+| flate2/zlib-rs | 1.1.9 | Rust | ~550 MB/s | 现状基线（pgr 在用） |
+| zlib-rs 直接 | 0.6.x | Rust | ~550 MB/s | flate2 底层直调，少一层包装 |
+| miniz_oxide | 0.8 | Rust | 慢 | 对照用（已在树中） |
+
+注意事项：
+
+1. C 后端需构建工具（cc / cmake / htslib vendored）。
+2. **不要**通过 flate2 feature 开 zlib-ng/libz-ng：backend feature 全局
+   合并，会切换整个依赖树（含 noodles 与 CachedBgzfReader）的后端；
+   C 后端一律直接调 C API。
+3. linflate 无 CRC 校验，需 crc32fast 自算（已在树中，正式使用需显式
+   声明）。
+
+测试矩阵（装好后执行）：
+
+1. 微基准：单 64 KB deflate 块解压吞吐（GB/s）各后端对比。
+2. 宏观基准：CachedBgzfReader 换后端 × 随机访问 cold/warm + 顺序读。
+3. rust-htslib 整体方案对照（含并行解压选项）。
+
+## 7. 后端系统测试结果（2026-08-09）
+
+### 环境与实现
+
+- 后端抽象：`src/libs/bgzf.rs` 增加 `BlockInflater` trait + 默认
+  `Flate2Inflater`（flate2/zlib-rs，复用解码器）；`open_with_inflater`
+  供基准注入。产品默认路径不变。
+- dev-deps：linflate 0.1.11、libdeflater 1.25.2、isal-rs 0.5.3
+  （+isal-sys）、libz-ng-sys 1.1.29、miniz_oxide 0.8。
+- rust-htslib 1.0.1 放弃：hts-sys 需要 clang/bindgen 生成绑定，
+  环境不支持；且其代表的是并行解压路线（已排除），价值有限。
+- isal-sys 从源码构建 ISA-L 需要 autotools（autoreconf）与 nasm，
+  本机已补装（apt install autoconf automake libtool nasm）。
+- isal/libz-ng 的基准包装需要少量 unsafe（sys crate 本质），仅限
+  bench；libz-ng 复用 strm（inflateReset）在本项目场景报
+  Z_STREAM_ERROR，改为每次 init/end（结果仍无优势，未深挖）。
+
+### 微基准：单 64 KB deflate 块解压（DNA 数据，criterion）
+
+| 后端 | 时间/块 | 吞吐 |
+|---|---:|---:|
+| **libdeflater** | **32.9 µs** | **1.99 GB/s** |
+| flate2/zlib-rs reuse（现状） | 43.7 µs | 1.50 GB/s |
+| flate2/zlib-rs fresh（noodles） | 44.4 µs | 1.48 GB/s |
+| libz-ng（zlib-ng C） | 43.1 µs | 1.52 GB/s |
+| isal stateless（ISA-L） | 44.2 µs | 1.48 GB/s |
+| linflate | 55.5 µs | 1.18 GB/s |
+| miniz_oxide | 55.5 µs | 1.18 GB/s |
+
+### 宏观基准：CachedBgzfReader 换后端（cap=16，50 MB FASTA → BGZF）
+
+| 后端 | cold 764 块 | warm 同块 1000 读 |
+|---|---:|---:|
+| IndexedReader（noodles 现状） | 40.1 ms | 50.9 ms |
+| **libdeflater** | **28.8 ms** | **125.2 µs** |
+| flate2/zlib-rs（默认） | 36.6 ms | 147.4 µs |
+| isal | 36.1 ms | 148.4 µs |
+| libz-ng（fresh init/end） | 36.5 ms | 157.8 µs |
+| linflate | 45.2 ms | 173.6 µs |
+
+### 结论
+
+- **libdeflater 全面领先**：微基准 +25%、宏观 cold +21%、warm +15%，
+  且 C 后端复用轻量。**方案 B 验证通过，是唯一值得产品化的后端**。
+- **linflate（方案 C）证伪**：本机/本数据比 zlib-rs 慢 27%（宣传
+  ~700 MB/s 未兑现，可能与数据形态/无 AVX512 有关）；宏观 cold 甚至
+  比 noodles IndexedReader 还慢。不再考虑。
+- isal / libz-ng 与 zlib-rs 持平：宣传的 7.9 GB/s（ISA-L）在单块
+  64 KB 场景被启动开销吃掉，无引入价值。
+
+### 落地（2026-08-09，用户批准）
+
+- libdeflater 1.25.2 提升为正式依赖（C 编译，cc 即可）。
+- **不引入 feature 开关**（用户裁定：不要开 features，直接切换）：
+  `CachedBgzfReader::open` 默认后端 = `LibdeflaterInflater`；
+  `Flate2Inflater` 保留供基准对比（`open_with_inflater` 注入）。
+- 切换后宏观：cold 33.6 → 29.0 ms、warm 142 → 136 µs
+  （与 flate2 变体同轮对比；数据有系统波动，libdeflater 稳定领先）。
+- 集成测试 `cli_fa_index`（12）/`cli_paf_graph`/`cli_paf_stat` 全过；
+  fmt/clippy clean。
+- 其余 dev-deps（linflate/isal/libz-ng/miniz_oxide）保留，仅用于
+  基准复现；rust-htslib 已从 dev-deps 移除。
+
 解读：
 
 - **多行拼接是 noodles 慢的主因**：FASTA 80 bp 多行时每记录逐行 append
