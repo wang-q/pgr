@@ -347,3 +347,55 @@ key（并行）→ `radix_sort_u128_par` 排序 → 与 `table.keys` 线性归�
    恒定值 run 的切分（§2.2），因此表内 count 的具体值影响 run 边界——原生
    实现必须生成真实表内 count，不能退化成 0/1 存在性标记（与 FastK/Profex
    语义一致，也解释了 §2.1 的相对 profile 定义）。
+
+## 9. FASTK 功能对照与缺口（2026-08 补充）
+
+> 配套算法机制分析（Super-mer/Minimizer/分桶）见 [fastk.md](../references/fastk.md)。
+> 下表是"FASTK 能提供的能力" vs "pgr `libs/kmer` 现状"的功能对照。
+
+| FASTK 能力 | pgr 现状 | 说明 |
+|---|---|---|
+| `-p` profile | ✅ `profile.rs self_profiles` | rept s-kmer 用 |
+| `-t` k-mer 表 | ✅ `count.rs KmerTable`（.pgrk 缓存） | 内存版；不做 .ktab 磁盘分桶 |
+| `-p:<table>` 相对 profile | ✅ `relative_profiles` | rept e-kmer 用 |
+| Profex `-z` run 提取 | ✅ `extract.rs write_rg` | 已实现（修复尾 run quirk） |
+| **直方图 `.hist` + Histex（含 `-G` 基因组大小格式）** | ❌ **无** | **最大缺口**：`KmerTable.counts` 已具备，只差直方图聚合 + 峰值/基因组大小估计；对应 anchr 的 `jellyfish histo` / BBTools `kmercountexact` |
+| `-c` homopolymer 压缩 | ❌ 无 | PacBio/HiFi 专用（homopolymer 错误率高），低成本 |
+| Logex（表逻辑运算 + 计数阈值过滤） | ❌ 无 | 两个 k-mer 库的 AND/OR/NOT 集合运算 |
+| KmerMap（k-mer → .bed 区域） | ❌ 无 | k-mer 在目标序列上的覆盖区域 |
+| Tabex / Symmex | ❌ 无 | 表查看/导出、canonical → 对称表 |
+| Fastmerge/Fastcat/Fastrm 等 | ❌ 不做 | TB 级磁盘分桶/分布式设计，pgr 场景用不上（§8.2 已声明） |
+
+**结论**：`libs/kmer` 目前只覆盖 FASTK 的 **rept 用途**（profile/相对 profile/
+run），能用于 FQ reads 的功能尚未搬完——**最大缺口是 k-mer 直方图 + 峰值/
+基因组大小估计**（KmerTable 内部 count 已是 u32，直方图可直接聚合，成本低）。
+补齐优先级建议：
+1. 直方图 + 峰值/基因组大小估计（对齐 Histex `-G` / kmercountexact 语义）；
+2. homopolymer 压缩（PacBio/HiFi 场景）；
+3. Logex / KmerMap（按需求再议）。
+
+### 9.1 anchr 2_fastk 的实际用法（2026-08 补充）
+
+anchr `templates/2_fastk.tera.sh`（对 R/S/T 三个样本，各自单端或双端 fq.gz）：
+
+```bash
+FastK -v -T<threads> -t1 -k<21|51|81> <S>1.fq.gz [<S>2.fq.gz] -NTable-<k>
+Histex -G Table-<k> | Rscript ../../0_script/genescopefk.R -k <k> -p 1 ...
+KatGC -T<threads> -x1.9 -s Table-<k> <P>-Merqury-KatGC-<k>
+Fastrm Table-<k>
+```
+
+- **只用 FASTK 的 k-mer 表（`-t1`，cutoff=1 全量）+ 默认直方图（`.hist`）+
+  `Histex -G`**（GenomeScope 2.0 ASCII 格式）；**没用 profile/相对 profile**
+  （那是 rept 的活，pgr 已实现）。
+- 下游 `genescopefk.R`（R 脚本，anchr 模板 `templates/genescopefk.R.gz`）做
+  GenomeScope 模型拟合，输出 `summary.txt`/`model.txt`（2_fastk 解析
+  `model.txt` 的 `kmercov` 字段并汇总成 statFastK.tsv/md）。KatGC 是
+  Merqury 家族的外部工具（k-mer 覆盖度 vs GC），不在 FASTK 范围内。
+- **结论**：直方图 + `Histex -G` 格式正是 §9 标注的最大缺口，且是
+  anchr 2_fastk 的直接消费者。
+- **范围提示**：直方图聚合（`.hist` 文本输出）成本低；GenomeScope 的
+  基因组大小/杂合度估计是**模型拟合**（由 R 脚本承担），pgr 若完整替代
+  需原生实现拟合（k-mer 谱 → 泊松/负二项模型 → kmercov/基因组大小），属
+  第二步、成本更高。可先做直方图 + ASCII 输出（对齐 `Histex -A/-G` 格式），
+  拟合后续再议。

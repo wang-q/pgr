@@ -1,7 +1,7 @@
 # pgr fq index：按 read name 的随机访问（设计稿）
 
-> 状态：**设计稿（未实现）**。核心问题是"是否与 `fa range` 的 API 完全对齐
-> （支持按 read 取子段）"，待用户确认后定稿。
+> 状态：**一期已实现（2026-08）**——单文件 `pgr fq range`（API 与 `fa range`
+> 对齐，含 name 归一化与交错 `#n` 消歧）；双端 S2 待二期。
 >
 > 配套：[seq-reader.md](seq-reader.md)（FAFQ 读取与 BGZF 基础设施）、
 > [fq-trim-q.md](fq-trim-q.md)（fq 命令组现状）。
@@ -79,26 +79,102 @@ Options（与 fa range 一致）：
 |---|---|---|---|
 | 索引格式 | `name\t偏移\tsize` | 完全一致 | 定稿 |
 | 子段语法 | `chr1:1-1000` | 复用 `ds::Range`，`read1:10-200` | 方案 A 定稿 |
-| 负链 `(-)` | 反向互补 | 不支持 | 待用户确认 |
-| 子段输出 `+` 行 | — | 建议保持原 `+` 行内容（切段后质量对齐 seq） | 待定 |
-| 重复 name | IndexMap 后者覆盖 | 同（默认覆盖，必要时警告） | 待定 |
+| 负链 `(-)` | 反向互补 | 不支持（切片时忽略 strand） | 已定 |
+| 子段输出 `+` 行 | — | 输出单个 `+`（与 trim-q 一致） | 已定 |
+| 重复 name | IndexMap 后者覆盖 | 归一化 key + `#n` 消歧（不丢数据） | 已定 |
 | 索引重建 | mtime 判断（`loc_is_fresh`） | 同 | 定稿 |
-| 缓存 | LRU<FastaRecord> | LRU<FqRecord（4 行）> | 定稿 |
+| 缓存 | LRU<FastaRecord> | LRU<原始记录字节 Vec<u8>> | 定稿 |
+| 普通 gzip | 不支持（需 BGZF） | 明确报错"only plain text and BGZF" | 已定 |
 
-## 5. 测试计划（实现阶段）
+## 5. 双端与交错（重点，易错区）
+
+### 5.1 命名模式与索引冲突
+
+FASTQ 双端数据的 name 有三种常见模式：
+
+| 模式 | R1 记录名 | R2 记录名 | 单文件 `.loc` 的 name key |
+|---|---|---|---|
+| CASAVA 老式（`/1` `/2`） | `read1/1` | `read1/2` | 不同 key，无冲突 |
+| CASAVA 1.8+（description 区分） | `read1 1:N:...` | `read1 2:N:...` | 都是 `read1`（name 取首段） |
+| 无后缀同名 | `read1` | `read1` | 都是 `read1` |
+
+- **分离文件（R1.fq / R2.fq）**：各自建 `.loc`，单文件内 name 唯一，无冲突。
+- **交错文件**：相邻 pair 的 name 规范化后相同 → 同一文件内同名多条，
+  `IndexMap` 后者覆盖 → **静默丢一条**。必须消歧。
+
+### 5.2 用户视角的核心问题
+
+"取 read1，那 read1 的另一端（R2）怎么办？"——三个层面：
+
+1. **分离文件**：用户要么在 R1.fq、R2.fq 各跑一次（相同 name 列表），要么
+   命令层同时接受两个文件、一次取 pair；
+2. **name 归一化**：`read1/1` / `read1/2` 应归一为 pair name `read1`
+   （strip `/1` `/2`）；CASAVA 1.8+ 的 name 首段已一致，无需额外处理；
+3. **交错文件**：一次查询应同时返回 pair 的两条（保持交错顺序）。
+
+### 5.3 API 方案
+
+| 方案 | CLI 形态 | 说明 |
+|---|---|---|
+| **S1 单文件（fa 对齐，最小）** | `fq range R1.fq "read1/1"` | 一次一个文件；配对由用户自行在 R2.fq 重复；交错文件需消歧 |
+| **S2 双端感知** | `fq range R1.fq R2.fq "read1" -o r1.fq --outfile-2 r2.fq`；交错输入单文件 → 交错输出 | pair name 归一化；对齐 `fq trim-q` 的双端输出形态 |
+
+推荐 **S2**（符合"取 pair"直觉），分两期落地：
+
+- **一期**：单文件 + 交错消歧。`fq range in.fq "read1"` 只作用于一个文件；
+  双端用户用脚本对两个文件跑同一条命令。
+- **二期**：双端感知。两个输入文件 + `-o/--outfile-2` 分离输出；交错输入
+  单文件输出保持交错。
+
+### 5.4 交错文件索引消歧
+
+同 key 多条时，索引 key 追加序号：`read1#0`、`read1#1`（保持出现顺序）。
+查询 `read1` 时返回精确 key + 全部 `#n` 变体（`read1`、`read1#1`）。效果：
+
+- 不丢数据；
+- 交错文件按名提取返回 pair 两条、顺序保持；
+- 分离文件无影响（key 唯一，`#n` 不出现）。
+
+`#n` 是内部消歧后缀（第一条不带 `#`，后续为 `#1`、`#2`...），用户查询时
+无需写。CASAVA 1.8+ 的 `1:N:`/`2:N:` 不专门
+识别（name 首段已一致，消歧兜底）。
+
+### 5.5 决策点
+
+1. ~~一期做 S1 还是 S2~~ → 已按 S1 实现（一期），S2 待二期。
+2. ~~`#n` 消歧是否可接受~~ → 已按 `#n` 实现并验证。
+3. 双端输出（二期）是否严格对齐 `fq trim-q` 的 `-o/--outfile-2` 形态？
+
+## 6. 测试计划（实现阶段）
 
 - 单元：FASTQ 记录边界扫描（普通/折行/质量行含 `@`）、offset/size 累计、
-  子段切分 seq+qual。
+  子段切分 seq+qual、pair name 归一化（strip `/1` `/2`）、交错同名消歧。
 - 集成 `tests/cli_fq_range.rs`：明文/gzip/BGZF 建索引与提取、`name` 与
-  `name:start-end`、`-r`/`-u`、不存在 name 报错、重复 name、索引自动重建。
+  `name:start-end`、`-r`/`-u`、不存在 name 报错、重复 name、索引自动重建、
+  交错文件 pair 提取（两条同时返回）、双端分离提取（S2 时）。
 - 吞吐 sanity：50 MB FASTQ 建索引耗时 + 按名提取小集合的耗时（记录到笔记，
   不建 criterion 基准）。
 
-## 6. 实施步骤（定稿后）
+## 7. 二期（未做）
 
-1. `loc.rs` 泛化：抽取"记录扫描建索引"骨架，新增 FASTQ 版（4 行结构解析）；
-2. `fq range` 命令（对齐 `fa range` 参数）；
-3. 测试 + sanity；4. 更新 [fq-trim-q.md](fq-trim-q.md) 或本文档为已实现。
+双端感知 S2：两个输入文件 + `-o/--outfile-2` 分离输出；交错输入单文件
+输出保持交错。索引层已就绪（每文件独立 `.loc`、name 归一化），增量在命令层。
+
+## 8. 一期实现记录（2026-08）
+
+- 代码：`src/libs/loc.rs`（`normalize_pair_name`/`create_fq_loc`/
+  `open_fq_indexed`/`query_fq_locs`）、`src/cmd_pgr/fq/range.rs`（参数与
+  `fa range` 一致：infile + ranges + `-r`/`-c`/`-u`/`-o`）。
+- 行为：4 行结构扫描建 `.loc`；name 归一化（strip `/1` `/2`），同 key 多条
+  追加 `#n`；查询返回精确 key + 全部 `#n` 变体（交错/合并文件 pair 两条
+  同时返回、保持顺序）；`name:start-end` 同时切 seq 与 qual，`+` 行输出
+  单个 `+`；BGZF 复用 `.gzi`；普通 gzip 明确报错。
+- 验证：lib 单元 4 个 + 集成 9 个（明文/子段/BGZF/交错 pair/`/1` `/2`
+  归一化/缺失名警告/输出同名拒绝/FASTA 输入报错/普通 gzip 报错）；
+  clippy clean；全量 lib 688 + 集成套件全绿。
+- 吞吐 sanity（release，103 MB / 50 万条 100 bp 明文 FASTQ）：
+  - 建索引 + 提取 1 条：0.43 s；`.loc` 12 MB（50 万行 × ~24 B）；
+  - 索引已存在时 `-r` 提取 100 条（分散位置）：0.14 s。
 
 ---
 

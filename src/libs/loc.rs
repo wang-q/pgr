@@ -345,6 +345,135 @@ pub fn split_loc_file(
     Ok(chunks)
 }
 
+/// Strips the CASAVA `/1` `/2` pair suffix from a read name.
+pub fn normalize_pair_name(name: &str) -> &str {
+    name.strip_suffix("/1")
+        .or_else(|| name.strip_suffix("/2"))
+        .unwrap_or(name)
+}
+
+/// Builds a FASTQ `.loc` index (`name\tplain_offset\trecord_size`) by scanning
+/// the 4-line record structure. Names are normalized to their pair name, and
+/// duplicate keys (e.g. interleaved reads with identical names) get a `#n`
+/// suffix so no record is dropped.
+pub fn create_fq_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<()> {
+    let mut reader: Box<dyn std::io::BufRead> = if is_bgzf {
+        Box::new(BufReader::new(crate::libs::bgzf::GzReader::new(
+            std::fs::File::open(infile)?,
+        )?))
+    } else {
+        crate::libs::io::reader(infile)?
+    };
+
+    let mut writer = crate::libs::io::writer(locfile)?;
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    // Stage 0: awaiting an `@` header; 1: reading sequence lines; 2: reading
+    // quality lines until their length reaches the sequence length.
+    let mut stage = 0u8;
+    let mut offset: u64 = 0;
+    let mut record_start: u64 = 0;
+    let mut seq_len = 0usize;
+    let mut qual_len = 0usize;
+    let mut line = String::new();
+    loop {
+        let num = reader.read_line(&mut line)?;
+        if num == 0 {
+            break;
+        }
+        match stage {
+            0 => {
+                if let Some(stripped) = line.strip_prefix('@') {
+                    record_start = offset;
+                    let name = stripped
+                        .split(|c: char| c.is_ascii_whitespace())
+                        .next()
+                        .unwrap_or("");
+                    let key = normalize_pair_name(name);
+                    let count = seen.entry(key.to_string()).or_insert(0);
+                    if *count == 0 {
+                        writer.write_fmt(format_args!("{}\t{}\t", key, record_start))?;
+                    } else {
+                        writer.write_fmt(format_args!("{}#{}\t{}\t", key, count, record_start))?;
+                    }
+                    *count += 1;
+                    seq_len = 0;
+                    qual_len = 0;
+                    stage = 1;
+                } else if line.starts_with('>') {
+                    anyhow::bail!("input is not FASTQ (record {})", line.trim());
+                }
+            }
+            1 => {
+                if line.starts_with('+') {
+                    stage = 2;
+                } else {
+                    seq_len += line.trim_end_matches(['\r', '\n']).len();
+                }
+            }
+            _ => {
+                qual_len += line.trim_end_matches(['\r', '\n']).len();
+                if qual_len >= seq_len {
+                    writer.write_fmt(format_args!("{}\n", offset + num as u64 - record_start))?;
+                    stage = 0;
+                }
+            }
+        }
+        offset += num as u64;
+        line.clear();
+    }
+    if stage != 0 {
+        anyhow::bail!("truncated FASTQ record in {}", infile);
+    }
+    Ok(())
+}
+
+/// Opens a FASTQ file with its `.loc` index, building/rebuilding the index
+/// when missing, stale, or forced.
+#[allow(clippy::type_complexity)]
+pub fn open_fq_indexed(
+    infile: &str,
+    force_update: bool,
+) -> anyhow::Result<(Input, IndexMap<String, (u64, usize)>)> {
+    let is_bgzf = crate::is_bgzf(infile);
+    if !is_bgzf && infile.ends_with(".gz") {
+        anyhow::bail!(
+            "only plain text and BGZF (.gz) files support range extraction: {}",
+            infile
+        );
+    }
+    let loc_file = format!("{}.loc", infile);
+    if !std::path::Path::new(&loc_file).is_file()
+        || force_update
+        || !loc_is_fresh(infile, &loc_file)
+    {
+        create_fq_loc(infile, &loc_file, is_bgzf)?;
+    }
+    let loc_of = load_loc(&loc_file)?;
+    let reader = open_input(infile, is_bgzf)?;
+    Ok((reader, loc_of))
+}
+
+/// Returns all `.loc` entries matching a (possibly `/1` `/2`-suffixed) read
+/// name: the exact normalized key, or every `#n`-disambiguated variant.
+pub fn query_fq_locs<'a>(
+    loc_of: &'a IndexMap<String, (u64, usize)>,
+    name: &'a str,
+) -> Vec<(&'a str, u64, usize)> {
+    let key = normalize_pair_name(name);
+    let mut hits = Vec::new();
+    if let Some(&(offset, size)) = loc_of.get(key) {
+        hits.push((key, offset, size));
+    }
+    let prefix = format!("{}#", key);
+    for (k, &(offset, size)) in loc_of.iter() {
+        if k.starts_with(&prefix) {
+            hits.push((k.as_str(), offset, size));
+        }
+    }
+    hits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,5 +504,46 @@ mod tests {
         let (mut reader, loc_of) = open_indexed(fa.to_str().unwrap(), false).unwrap();
         let seq = fetch_range_seq(&mut reader, &loc_of, &Range::from("chr1", 1, 100)).unwrap();
         assert_eq!(seq, "TGCA".repeat(25));
+    }
+
+    #[test]
+    fn fq_loc_plain_builds_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let fq = dir.path().join("r.fq");
+        std::fs::write(&fq, "@r1\nACGT\n+\n!!!!\n@r2\nACGTACGT\n+\n!!!!!!!!\n").unwrap();
+        let loc = format!("{}.loc", fq.to_str().unwrap());
+        create_fq_loc(fq.to_str().unwrap(), &loc, false).unwrap();
+        let loc_of = load_loc(&loc).unwrap();
+        assert_eq!(loc_of.get("r1"), Some(&(0u64, 16usize)));
+        assert_eq!(loc_of.get("r2"), Some(&(16u64, 24usize)));
+    }
+
+    #[test]
+    fn fq_loc_normalizes_pair_suffixes() {
+        let dir = tempfile::tempdir().unwrap();
+        let fq = dir.path().join("r.fq");
+        std::fs::write(&fq, "@read1/1\nACGT\n+\n!!!!\n@read1/2\nTGCA\n+\n!!!!\n").unwrap();
+        let loc = format!("{}.loc", fq.to_str().unwrap());
+        create_fq_loc(fq.to_str().unwrap(), &loc, false).unwrap();
+        let loc_of = load_loc(&loc).unwrap();
+        assert!(loc_of.contains_key("read1"));
+        assert!(loc_of.contains_key("read1#1"));
+        // Both the pair name and the suffixed name match both records.
+        assert_eq!(query_fq_locs(&loc_of, "read1").len(), 2);
+        assert_eq!(query_fq_locs(&loc_of, "read1/1").len(), 2);
+    }
+
+    #[test]
+    fn fq_loc_interleaved_duplicate_names_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let fq = dir.path().join("r.fq");
+        std::fs::write(&fq, "@read1\nACGT\n+\n!!!!\n@read1\nTGCA\n+\n!!!!\n").unwrap();
+        let loc = format!("{}.loc", fq.to_str().unwrap());
+        create_fq_loc(fq.to_str().unwrap(), &loc, false).unwrap();
+        let loc_of = load_loc(&loc).unwrap();
+        let hits = query_fq_locs(&loc_of, "read1");
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].1, 0);
+        assert_eq!(hits[1].1, 19);
     }
 }
