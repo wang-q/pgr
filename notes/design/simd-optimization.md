@@ -100,15 +100,19 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
 
 4. **隔离验证**：微基准单独测目标函数确认是热点（`canonical_keys`
    实测 2.95 ms 后直接证伪，省下实现成本）。
-5. **语义锚定**：写下与标量逐位一致的契约（U→T、X→N、
+5. **先基准后修改（2026-08-09 twobit 教训）**：改动前先用 criterion 为
+   现状实现建立基线（可复现、存档），确认后再开始实现；实现后在同一
+   基准上 A/B。**禁止先改后补基准**——twobit `from_dna` 直接实现、事后
+   才补 `twobit_benchmark.rs`，函数级加速比只能事后补测，缺干净基线。
+6. **语义锚定**：写下与标量逐位一致的契约（U→T、X→N、
    `eq_ignore_ascii_case` 精确行为），作为测试基准。
 
 ### 阶段 2 · 实现
 
-6. **数据结构先行**：先检查访问模式再谈向量化——FastK 对照显示
+7. **数据结构先行**：先检查访问模式再谈向量化——FastK 对照显示
    "排序合并替代逐窗口查表"（~5×）远大于 SIMD 收益；查表型热点先
    考虑数据结构。
-7. **三级回退链（2026-08-09 用户定稿）**：
+8. **三级回退链（2026-08-09 用户定稿）**：
    1. **AVX2 手写**（`is_x86_feature_detected!` 运行时检测）第一优先；
    2. 无 AVX2 → **`wide` 固定 128-bit 类型**（`u8x16`/`i32x4`/`f32x4`）：
       128-bit 在 x86_64 是 SSE2、aarch64 是 NEON，均为平台原生宽度，
@@ -123,7 +127,7 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
       的函数（nt_simd 统计）无此问题。
    3. 无法检测/无 SIMD 平台 → **纯标量**最终兜底。
    无 SSE4.1 中间档、无 SIMDe；wide 256-bit 类型（`u8x32` 等）**禁用**。
-8. **wide 必须实测且受编译前提约束**：
+9. **wide 必须实测且受编译前提约束**：
    * 宽/标量收益不能按函数类推：`count_n` wide 慢 42%（回退标量）、
      `count_bases` wide 7.5×（保留）——同模式结果相反，必须实测。
    * **历史教训（已由 128-bit 原则取代）**：wide 的 256-bit 类型
@@ -145,24 +149,24 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
      `#[cfg(target_feature = "avx2")]`、wide 函数及 `u8x32` import
      `#[cfg(not(target_feature = "avx2"))]`，两种编译 + aarch64 均验证。
      **linalg / hv / poa::simd 仍只有 wide 回退，待加固。**
-9. **量化输出占比**：输出型函数（字符串构建、格式化）先量化——SIMD
+10. **量化输出占比**：输出型函数（字符串构建、格式化）先量化——SIMD
    只覆盖分类/计算部分；输出主导时预期给"百分比"而非"倍数"
    （cigar：SIMD 分类 7×、函数级 1.57×、端到端 37%）。
 
 ### 阶段 3 · 验证
 
-10. **位一致对照**：随机（含边界字符）+ 真实数据，与标量/旧实现逐位
+11. **位一致对照**：随机（含边界字符）+ 真实数据，与标量/旧实现逐位
     对照；`cargo test` 的 debug 模式必须过（能抓到 release 不炸的
     shift overflow）。
-11. **双口径基准**：函数级 micro-bench（倍数）+ 端到端命令（百分比），
+12. **双口径基准**：函数级 micro-bench（倍数）+ 端到端命令（百分比），
     两者都记录并说明口径。
-12. **工程门禁**：fmt / clippy `-D warnings` / 全量测试 clean。
+13. **工程门禁**：fmt / clippy `-D warnings` / 全量测试 clean。
 
 ### 阶段 4 · 落盘
 
-13. **结果记录**：基准数据、口径、实现位置写入 `notes/benchmarks/`；
+14. **结果记录**：基准数据、口径、实现位置写入 `notes/benchmarks/`；
     决策与方法论更新进本文件。
-14. **不做也记录**：证伪/暂缓候选写清原因与触发条件（`rev_comp`、
+15. **不做也记录**：证伪/暂缓候选写清原因与触发条件（`rev_comp`、
     cigar 无消费方、murmur3、gzip），避免重复立项。
 
 ## 6. 全库 SIMD 候选清单（2026-08-09 扫描）
@@ -199,10 +203,17 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
    40 M 列 `maf to-paf` 0.55 s → 0.347 s（~37%），输出逐字节一致；
    剩余瓶颈为 cg:Z 字符串格式化（~13.6%，非 SIMD 范畴）。
 
-### 第三梯队：可做但 I/O 主导，收益存疑（先 profile）
+### 第三梯队：曾判 I/O 主导，profiling 翻案后已完成（2026-08-09 晚）
 
 4. `twobit::from_dna` 位打包（`src/libs/fmt/twobit.rs`）：4 碱基→1 字节
-   SIMD + 位图追踪 N/小写块；2bit 命令 I/O 主导，单次收益可能被淹没。
+   SIMD + 位图追踪 N/小写块。**新证据：`pbit create`（mg1655 自压缩）
+   perf 实测 `Blocks::from_dna` 占 40.6%**（其次 LZ 索引 18.5%、inflate
+   15.3%）——pbit 编码路径的核心热点，不是 I/O 主导。**已实现
+   （2026-08-09）**：`classify_dna` 三级（AVX2 / 128-bit `wide` / 标量测试
+   参考）生成 N/小写位图 + 2bit 码向量，`blocks_from_mask` 位运算合并块，
+   `pack_codes` 标量打包；`pbit create` 83 ms → 58 ms（~30%），from_dna
+   占比 40.6% → 不在前列（LZ 索引成为新主导 40%）。三级 + avx2/aarch64
+   配置验证通过；pbit 输出含 HashMap 随机种子导致非确定（既有行为，未改）。
 
 ### 明确排除（有据可依）
 

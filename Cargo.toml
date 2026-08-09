@@ -147,6 +147,10 @@ name = "byte_stat_benchmark"
 harness = false
 
 [[bench]]
+name = "twobit_benchmark"
+harness = false
+
+[[bench]]
 name = "cigar_benchmark"
 harness = false
 

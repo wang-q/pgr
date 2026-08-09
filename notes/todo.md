@@ -128,6 +128,15 @@ fmt/clippy/test 确认。
       （全跑 ~2.5 min）；历史对照（AVX-512 ref、RNG 候选、i16/pshufb、
       encode 变体、哈希吞吐）移入 `benches/hv_benchmark_ref.rs`（按需
       filter 跑）。原 54 组全跑 10–20 min 的根因是组数多，非单组数据量。
+- [x] ~~**第三梯队 `twobit::from_dna`（profiling 翻案后实施）**~~ →
+      **已完成（2026-08-09）**：`classify_dna` 三级（AVX2/wide128/标量）+
+      位图块合并 + 标量打包；`pbit create` 83→58 ms（~30%）。见
+      `design/simd-optimization.md` §6 第 4 条。
+- [x] ~~**pbit 文件非确定性排查**~~ → **虚惊（2026-08-09）**：`pbit` 输出
+      是确定性的（同参数同 `-o` 两次运行 md5 一致）。此前"两次不同"源于
+      collection 元数据嵌入**完整命令行（含 `-o` 文件名）**（`collection.rs`
+      `cmd_line` 字段，审计设计特性），测试时每次换输出文件名导致字节差。
+      序列化用有序 Vec、gzip mtime=0，无 HashMap 顺序依赖。
 - [ ] **paf 查询层扩展（待实现）**：`--min-tree-coverage`（Caf Tree
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
