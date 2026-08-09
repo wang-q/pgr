@@ -4,44 +4,44 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-09，pbit v1007–v1010 + 主链/碎链判定）
+## 0. 会话交接（2026-08-09 晚：fq 系列 / BGZF 写侧 / BBTools 替换 / kmer 参考）
 
-**已完成（本会话）**：
+**已完成（本会话，lib 688 + 集成套件全绿，clippy clean）**：
 
-- pbit 编码演进 v1006–v1010：LZ 内容匹配化 → 跨相位 CIGAR（段级混合）→
-  `to-paf` 无损还原输入 PAF（809/809 逐字段一致）→ Identity 零载荷，
-  详见 `design/pbit.md` §PAF 驱动编码的演进 + `benchmarks/bench-scale-and-pbit.md`
-  #14f/#14i–l；
-- **主链/碎链判定（定稿 + 落地）**：链级贪心（query 覆盖段数 → 相似度 →
-  输入序，`BIG_CHAIN_MIN_LEN` 退役）；碎链也可编码其覆盖的段；无 `cg:Z`
-  记录存行还原；真实数据还原 100%、编码分布与旧行为一致（详见
-  `design/pbit.md` §大链与碎链）；
-- **`--paf` 强制（A）**：CLI 校验已实现（`collect_samples_from_args` 拒绝
-  无 PAF 样本，空 PAF 可禁用 CIGAR）；无 PAF 独立路径退役；
-- **设计基础 7 条定稿**（样本复用参考 / 参考坐标系 / 无损 / PAF 存储 /
-  可计算的不存储 / PAF 路由载体 / 匹配区间可访问性），见 `design/pbit.md`
-  顶部。
-- **POA SIMD 加速（2026-08-09）**：`libs/poa/simd.rs` 垂直并行（lane = 序列
-  位置），分派沿用 HV 式（AVX2 手写 + `wide` 回退，无 SSE4.1 中间档/SIMDe）；
-  `Poa` 默认引擎切换，标量保留测试对照；基准 120 bp ~8.7× / 600 bp ~12.3×
-  （`benches/poa_benchmark.rs`）；参考分析见 `references/spoa.md`（新增）。
-- **fa 逐字节统计矢量化（2026-08-09）**：`libs/nt_simd.rs` 新增
-  `count_valid`（`fa size --no-ns`）/ `count_n`（N 家族含 IUPAC）/
-  `masked_bitmap`（`fa masked` 位图，区域合并扫描在 `fmt/fa.rs`），分派沿用
-  HV 式（AVX2 手写 + `wide` 回退，N 家族非 AVX2 回退标量）；基准
-  count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×
-  （`benches/byte_stat_benchmark.rs`，详见 `benchmarks/bench-nt-simd.md`）。
+- **`fq trim-q`（sickle 替代，已实现）**：`libs/fq/trim.rs` +
+  `cmd_pgr/fq/trim_q.rs`；滑窗/Mott、质量编码 auto（BBDuk 算法）、双端 +
+  singles + interleaved、`--polyg-right`；设计 =
+  `design/fq-trim-q.md`（已实现）。
+- **`fq range`（一期，FASTA `.loc` 模式）**：`libs/loc.rs`
+  （`create_fq_loc`/`open_fq_indexed`/`query_fq_locs`/
+  `normalize_pair_name`）+ `cmd_pgr/fq/range.rs`；name 归一化（strip
+  `/1` `/2`）、交错同名 `#n` 消歧、`name:start-end` 子段、BGZF 复用
+  `.gzi`、普通 gzip 明确不支持；设计 = `design/fq-index.md`
+  （一期实现，二期 = 双端 S2）。
+- **BGZF 写侧基准**：`benches/bgzf_write_benchmark.rs`（单线程
+  `BgzfWriter` + `ParallelBgzfWriter` 1/2/3/4/6/8，50 MB 伪随机 ~7.3×），
+  Cargo.toml 注册 `harness=false`。
+- **AGENTS.md 基准测试条款细化**：性能优化先写基准；功能性新功能只需
+  正确性测试 + 吞吐 sanity。
+- **笔记**：`seq-reader.md`（writer 演进 + libdeflater 内存对比 + 写侧
+  基准）、`design/anchr-trim-replace.md`（BBTools 8 步替换路线）、
+  `references/quorum.md`（源码分析；§6.1 = 错误 read 直接丢弃，不做
+  修正）、`design/kmer.md` §9（FASTK 功能对照：**最大缺口 = 直方图 +
+  峰值/GenomeScope**，§9.1 = anchr 2_fastk 实际用法）、
+  `references/merqury-fk.md`（MerquryFK；README 2021 编写 ≠ 停更）。
 
-**未提交**：pbit 相关代码、测试与文档（本会话改动，含 v1010 判定 + 强制
-PAF）；并行审计另有 6 文件（fas_xlsx.rs、fas/subset.rs、cli_fas_vars.rs、
-paf-pangenome.md、project-understanding.md、impg.md），**勿碰**。提交前跑
-fmt/clippy/test 确认。
+**未提交（本会话改动，勿覆盖）**：fq trim-q/range 代码与测试、
+`bgzf_write_benchmark`、`loc.rs` FASTQ 部分、Cargo.toml、AGENTS.md、
+上述笔记。提交前跑 fmt/clippy/test。
 
 **挂账/待决**：
 
-1. **碎链 cg 位打包**——暂缓（用户明确：别纠结碎链，整行压缩量可接受）。
-2. ~~`--paf` 强制 / Identity 优化 / AGC 分析文档化 / 大链碎链判定~~ →
-   已完成（见上；cg:Z 生产者明确不做，todo §4）。
+1. **kmer 直方图 + 峰值/基因组大小估计**（`KmerTable.counts` 现成；对齐
+   `Histex -A/-G`；GenomeScope 模型拟合是第二步）——用户未拍板是否开工。
+2. **anchr BBTools 替换**三决策点：一期 `fq split`/`fq sample` 是否先做；
+   接头修剪完全复刻 bbduk（tbo/tpe）vs 简化；流水线管道串联是否可接受。
+3. **`fq range` 二期**：双端 S2（`R1.fq R2.fq` + `--outfile-2`）。
+4. 参考项目笔记待续（用户会继续给新项目）。
 
 ## 1. 等数据/场景到位再启动
 
@@ -92,6 +92,8 @@ fmt/clippy/test 确认。
 - **链级 `cg:Z` 生产者：明确不做**（2026-08-09 用户裁定——推荐链路
   `chainnet → maf to-paf` 自带 cg:Z；`psl to-paf` 无 cg:Z 记录走
   "跳过编码、存行还原"）。
+- **碎链 cg 位打包：暂缓/不做**（2026-08-09 用户明确——别纠结碎链，
+  整行压缩量可接受，见 `design/pbit.md` §大链与碎链）。
 - **pgi 长链链化（pbit 路线 3）：明确不做**（2026-08-09 用户裁定——项目
   优势 = 引入 UCSC chainnet 经典链化管线，自研 chain 效果始终不如它；
   链化依赖由 chainnet 承担，见 `design/pbit.md` §PAF 驱动编码的演进）。
