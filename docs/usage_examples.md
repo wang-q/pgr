@@ -231,13 +231,18 @@ Histex -G reads.hist
 # GC-content x coverage matrix (KatGC .kgc format) or its LaTeX heatmap
 pgr kmer gc -t reads.pkt -o reads.kgc
 pgr kmer gc -t reads.pkt --tex -o reads.tex
+pgr plot heat reads.kgc -o heat.tex
 
 # Quality-weighted histogram and error-read filtering (quorum semantics)
 pgr kmer qhist reads.fq.gz -k 21 -o reads.qhist
 pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
 
 # Coverage peak and genome-size estimate
-pgr kmer gsize reads.fq.gz -k 21
+pgr kmer gsize reads.fq.gz -k 21 --model --plot -o gs_out
+pgr plot spectra reads.hist gs_out/model.txt -o spectra.tex
+
+# Compile the figures with tectonic
+tectonic heat.tex spectra.tex
 ```
 
 ### Alignment pipelines (lastz, UCSC, multiz)

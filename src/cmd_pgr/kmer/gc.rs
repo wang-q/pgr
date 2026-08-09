@@ -87,19 +87,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut w = pgr::writer(outfile)?;
     if args.get_flag("tex") {
-        let hm = pgr::libs::kmer::gc::heatmap(&plot, xmax, peak.zmax);
-        let mut context = tera::Context::new();
-        context.insert("table", &hm.table);
-        context.insert("xlabel", "k-mer coverage");
-        context.insert("ylabel", "GC content");
-        context.insert("width", &hm.width);
-        context.insert("height", &hm.height);
-        context.insert("xticks", &hm.xticks);
-        context.insert("xtick_labels", &hm.xtick_labels);
-        context.insert("ygroups", &hm.ygroups);
-        context.insert("yticks", &hm.yticks);
-        context.insert("label_len", &hm.label_len);
-        pgr::libs::plot::histogram::render_hh_tex(&context, &mut w)?;
+        let hm = pgr::libs::plot::heat::heatmap(&plot, xmax, peak.zmax);
+        pgr::libs::plot::heat::render_heat(&mut w, &hm)?;
     } else {
         pgr::libs::kmer::gc::write_kgc(&mut w, &plot, xmax, peak.zmax)?;
     }

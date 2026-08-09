@@ -1,7 +1,6 @@
 //! GC-content vs k-mer frequency matrix (MerquryFK KatGC equivalent).
 
 use super::KmerTable;
-use indexmap::IndexMap;
 use std::io::Write;
 
 /// Per-byte GC counts: 4 packed 2-bit bases per byte (C/G are GC).
@@ -116,80 +115,6 @@ pub fn write_kgc(
         }
     }
     Ok(())
-}
-
-/// Render-ready data for the LaTeX heatmap (KatGC heat plot equivalent).
-#[derive(Debug, Clone)]
-pub struct GcHeatmap {
-    /// `x y density` table rows (density = count / zmax, 0..1).
-    pub table: String,
-    /// X tick positions (count bins).
-    pub xticks: Vec<f64>,
-    /// X tick labels (coverage values).
-    pub xtick_labels: Vec<String>,
-    /// Y group labels (GC counts).
-    pub ygroups: Vec<String>,
-    /// Y tick positions.
-    pub yticks: Vec<f64>,
-    /// Figure width in cm.
-    pub width: f64,
-    /// Figure height in cm.
-    pub height: f64,
-    /// Longest y label width in ex.
-    pub label_len: usize,
-}
-
-/// Build heatmap data from the raw matrix: 2x2 neighbor average, normalized
-/// by the peak, with adaptive axis ticks.
-pub fn heatmap(plot: &[Vec<u64>], xmax: usize, zmax: u64) -> GcHeatmap {
-    let n_rows = plot.len().saturating_sub(1);
-    let mut density = IndexMap::new();
-    for i in 0..n_rows {
-        let row0 = &plot[i];
-        let row1 = &plot[i + 1];
-        let values: Vec<f64> = (0..xmax)
-            .map(|a| {
-                let val = (row0[a] + row0[a + 1] + row1[a] + row1[a + 1]) / 4;
-                (val.min(zmax) as f64) / (zmax.max(1) as f64)
-            })
-            .collect();
-        density.insert(format!("GC {i}"), values);
-    }
-
-    let table = crate::libs::plot::histogram::create_table(&density);
-    let n_groups = density.len().max(2);
-    let ygroups: Vec<String> = density.keys().cloned().collect();
-    let label_len = ygroups.iter().map(|s| s.len()).max().unwrap_or(3);
-
-    // Adaptive ticks: ~8 ticks per axis, avoiding overcrowding.
-    let xtick_step = (xmax.div_ceil(8)).max(1);
-    let xticks: Vec<f64> = (0..xmax)
-        .step_by(xtick_step)
-        .map(|a| a as f64 - 0.5)
-        .collect();
-    let xtick_labels: Vec<String> = (0..xmax)
-        .step_by(xtick_step)
-        .map(|a| a.to_string())
-        .collect();
-    let ytick_step = (n_rows.div_ceil(8)).max(1);
-    let yticks: Vec<f64> = (0..=n_groups)
-        .step_by(ytick_step)
-        .map(|i| i as f64 - 0.5)
-        .collect();
-
-    // Cap the figure so wide matrices stay printable: cell 0.5 x 1.5 cm.
-    let width = ((xmax as f64) * 0.5).min(25.0);
-    let height = (n_groups as f64) * 1.5;
-    GcHeatmap {
-        table,
-        xticks,
-        xtick_labels,
-        ygroups,
-        yticks,
-        width,
-        height,
-        label_len,
-    }
 }
 
 #[cfg(test)]

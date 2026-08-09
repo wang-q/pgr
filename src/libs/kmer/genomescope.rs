@@ -98,7 +98,7 @@ pub struct FittedModel {
 /// Model mixture prediction `predict_p_top(...)`: the negative-binomial
 /// mixture without the `x * length` scale factor (the formula layer applies
 /// `x^transform_exp * length * predict(...)`, matching R).
-fn predict(p: usize, top: usize, params: &ModelParams, k: usize, x: f64) -> f64 {
+pub(crate) fn predict(p: usize, top: usize, params: &ModelParams, k: usize, x: f64) -> f64 {
     match (p, top) {
         (1, 1) | (1, 0) => {
             // r0 = 1, t0 = s0 = 1

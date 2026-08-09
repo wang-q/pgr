@@ -37,6 +37,12 @@
   Exact on noiseless synthetic spectra; real-read coverage heterogeneity
   is handled by the negative-binomial dispersion, with the p>2/error
   components documented as out of scope.
+* **`pgr plot heat` / `pgr plot spectra`** - LaTeX rendering split out of
+  the kmer commands: `heat` draws the GC-content × coverage heatmap from a
+  `.kgc` matrix (KatGC equivalent), `spectra` draws the four-view k-mer
+  spectra from a `.hist` + `model.txt` (GenomeScope equivalent, observed /
+  full model / error region / k-mer peaks). `gc --tex` and
+  `gsize --model --plot` are quick entries into the shared renderers.
 
 ### Repeat Detection (`rept`)
 

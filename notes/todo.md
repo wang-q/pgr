@@ -45,6 +45,15 @@
   `grep ^kmercov` 解析）。**R 端到端对照（2026-08-10，本机 R + minpack.lm）：
   kmercov/bias/d/length/SE 高度一致**（55.7 vs 55.73 等）；Model Fit
   62% vs 64%（2% 已知偏差）；p>2 多拓扑/错误分量明确不做。
+- **`pgr plot heat` / `pgr plot spectra`（绘图拆分，已实现）**：计算与
+  绘图分开（CLI 统一：单文件 `-o <file>`、多文件套件 `-o <dir>` 固定名）。
+  `heat` 读 `.kgc` 画 GC×覆盖度热图（KatGC 等价）；`spectra` 读 `.hist` +
+  `model.txt` 画四视图谱图（linear/transformed/log/transformed-log，
+  observed/model/errors/峰值/图例/摘要，内容对齐 genescopefk.R、渲染
+  pgfplots 原生）；模板 = `src/assets/spectra.tex`（独立可编译示例，
+  样式验证用，惯例同 venn/heatmap）；`gc --tex` / `gsize --model --plot`
+  为共享渲染的快捷
+  入口（`gsize --model --plot -o dir` → dir 内 summary/model/spectra.tex）。
 - **三种 kmer 格式定稿**：`.pkt`（表，原 `.pgrk` 改名，magic `PKTT`）、
   `.pkp`（profile，magic `PKPP`，header + raw u16）、`.hist`（直方图，
   **FASTK 字节兼容**：固定 low=1/high=32767，28B 头 + 32767×8B；实测

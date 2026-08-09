@@ -125,3 +125,177 @@ fn command_plot_nrps() {
     assert!(stdout.contains("     draw=black,"));
     assert!(stdout.contains("\\textbf{M}ethyltransferase"));
 }
+
+/// Deterministic pseudo-random DNA (LCG).
+fn random_dna(len: usize, seed: u64) -> Vec<u8> {
+    let bases = *b"ACGT";
+    let mut x = seed;
+    (0..len)
+        .map(|_| {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            bases[(x >> 33) as usize & 3]
+        })
+        .collect()
+}
+
+#[test]
+fn command_plot_heat_end_to_end() -> anyhow::Result<()> {
+    let temp = tempfile::TempDir::new()?;
+    let fa = temp.path().join("in.fa");
+    std::fs::write(
+        &fa,
+        ">g\nGGGGCCCCGGGGCCCCGGGGCCCCGGGGCCCCGGGGCCCCGGGGCCCC\n>a\nAAAATTTTAAAATTTTAAAATTTTAAAATTTTAAAATTTTAAAATTTT\n",
+    )?;
+    let kgc = temp.path().join("g.kgc");
+    PgrCmd::new()
+        .args(&[
+            "kmer",
+            "gc",
+            fa.to_str().unwrap(),
+            "-k",
+            "8",
+            "-o",
+            kgc.to_str().unwrap(),
+        ])
+        .run();
+    let tex = temp.path().join("h.tex");
+    PgrCmd::new()
+        .args(&[
+            "plot",
+            "heat",
+            kgc.to_str().unwrap(),
+            "-o",
+            tex.to_str().unwrap(),
+        ])
+        .run();
+    let text = std::fs::read_to_string(&tex)?;
+    assert!(text.contains("addplot"));
+    assert!(text.contains("k-mer coverage"));
+    Ok(())
+}
+
+#[test]
+fn command_plot_spectra_end_to_end() -> anyhow::Result<()> {
+    let temp = tempfile::TempDir::new()?;
+    let fq = temp.path().join("reads.fq");
+    let genome = random_dna(1000, 42);
+    let mut fastq = String::new();
+    for i in 1..=600 {
+        let start = ((i as u64 * 2654435761) % 901) as usize;
+        let read: String = genome[start..start + 100]
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        fastq.push_str(&format!("@r{i}\n{read}\n+\n{}\n", "I".repeat(100)));
+    }
+    std::fs::write(&fq, fastq)?;
+
+    let pkt = temp.path().join("t.pkt");
+    PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            fq.to_str().unwrap(),
+            "-k",
+            "17",
+            "-o",
+            pkt.to_str().unwrap(),
+        ])
+        .run();
+    let hist = temp.path().join("t.hist");
+    PgrCmd::new()
+        .args(&[
+            "kmer",
+            "hist",
+            "-t",
+            pkt.to_str().unwrap(),
+            "-o",
+            hist.to_str().unwrap(),
+        ])
+        .run();
+    let gs_out = temp.path().join("gs");
+    PgrCmd::new()
+        .args(&[
+            "kmer",
+            "gsize",
+            "-t",
+            pkt.to_str().unwrap(),
+            "--model",
+            "-o",
+            gs_out.to_str().unwrap(),
+        ])
+        .run();
+    let tex = temp.path().join("s.tex");
+    PgrCmd::new()
+        .args(&[
+            "plot",
+            "spectra",
+            hist.to_str().unwrap(),
+            gs_out.join("model.txt").to_str().unwrap(),
+            "-o",
+            tex.to_str().unwrap(),
+        ])
+        .run();
+    let text = std::fs::read_to_string(&tex)?;
+    assert!(text.contains("addplot"));
+    assert!(text.contains("observed"));
+    assert!(text.contains("kcov"));
+    // Single standard view with correct percent escaping.
+    assert_eq!(text.matches("\\begin{tikzpicture}").count(), 1);
+    assert!(text.contains("\\%"), "percent must be escaped in the title");
+    assert!(text.contains("full model"));
+    Ok(())
+}
+
+#[test]
+fn command_plot_heat_rejects_empty_matrix() -> anyhow::Result<()> {
+    let temp = tempfile::TempDir::new()?;
+    let kgc = temp.path().join("empty.kgc");
+    std::fs::write(&kgc, "GCP\tKF\tCount\n")?;
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "plot",
+            "heat",
+            kgc.to_str().unwrap(),
+            "-o",
+            temp.path().join("h.tex").to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(stderr.contains("no matrix rows"), "stderr: {stderr}");
+    Ok(())
+}
+
+#[test]
+fn command_plot_spectra_rejects_model_without_kmercov() -> anyhow::Result<()> {
+    let temp = tempfile::TempDir::new()?;
+    let fa = temp.path().join("in.fa");
+    std::fs::write(&fa, ">s\nACGTACGTACGTACGTACGT\n")?;
+    let hist = temp.path().join("t.hist");
+    PgrCmd::new()
+        .args(&[
+            "kmer",
+            "hist",
+            fa.to_str().unwrap(),
+            "-k",
+            "8",
+            "-o",
+            hist.to_str().unwrap(),
+        ])
+        .run();
+    let bad_model = temp.path().join("bad_model.txt");
+    std::fs::write(&bad_model, "d 0.1\nbias 0.5\n")?;
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "plot",
+            "spectra",
+            hist.to_str().unwrap(),
+            bad_model.to_str().unwrap(),
+            "-o",
+            temp.path().join("s.tex").to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(stderr.contains("kmercov"), "stderr: {stderr}");
+    Ok(())
+}

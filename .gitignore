@@ -111,3 +111,7 @@ Cargo.lock
 
 # Temporary git log and diff files
 git*.txt
+
+# Plots
+*.pdf
+*.png

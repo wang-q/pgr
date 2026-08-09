@@ -13,8 +13,10 @@ Plotting tools for various biological data visualizations.
 | Subcommand | Description |
 | :--- | :--- |
 | `dot` | Dot plot (collinear plot) of PAF alignments, output as SVG |
+| `heat` | GC-content × coverage heatmap from a `.kgc` matrix, output as LaTeX |
 | `hh` | Histo-heatmap showing distribution of values across groups |
 | `nrps` | NRPS (Non-Ribosomal Peptide Synthetase) structure diagram |
+| `spectra` | K-mer spectra (standard distribution view), output as LaTeX |
 | `venn` | Venn diagram for 2-4 sets |
 
 ---
@@ -86,6 +88,106 @@ pgr plot dot input.paf --range chr1:100000-200000 -o zoom.svg
 ---
 
 ## hh
+
+Histo-heatmap. This visualization combines a histogram and a heatmap to show the distribution of a numeric variable (X) across different groups (Y).
+
+### Usage
+
+```bash
+pgr plot hh [OPTIONS] <infile>
+```
+
+### Arguments
+
+| Argument | Short | Long | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `infile` | | | File | Input filename ("stdin" for standard input) |
+| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
+| `column` | `-c` | `--column` | Int | Column index to count (1-based, default: 1) |
+| `group` | `-g` | `--group` | Int | Group column index (1-based) |
+| `bins` | | `--bins` | Int | Number of bins (default: 40) |
+| `xl` | | `--xlabel` | String | X axis label (default: column name) |
+| `yl` | | `--ylabel` | String | Y axis label (default: group column name) |
+| `xmm` | | `--xmin-max` | F,F | X axis range min,max (e.g., "0,100") |
+| `unit` | | `--unit` | F,F | Cell width,height (default: "0.5,1.5") |
+
+### Input Format
+
+A tab-separated file with a header line.
+*   **Column 1 (or specified by `--column`)**: Numeric values.
+*   **Column 2 (or specified by `--group`)**: Group names (optional).
+
+### Examples
+
+```bash
+# Basic usage
+pgr plot hh input.tsv -o output.tex
+
+# Compile directly with tectonic
+pgr plot hh input.tsv | tectonic - && mv texput.pdf hh.pdf
+
+# Specify columns and labels
+pgr plot hh data.tsv -c 2 -g 1 --xlabel "Length" --ylabel "Species" -o plot.tex
+```
+
+## heat
+
+GC-content × k-mer coverage heatmap from a `.kgc` matrix
+(`pgr kmer gc`), rendered as a standalone LaTeX document (pgfplots;
+compile with tectonic). This is the KatGC heat plot equivalent.
+
+### Usage
+
+```bash
+pgr plot heat [OPTIONS] <infile>
+```
+
+### Arguments
+
+| Argument | Description |
+| :--- | :--- |
+| `infile` | Input `.kgc` GC matrix file |
+| `-o`, `--outfile` | Output filename (default: stdout) |
+
+### Examples
+
+```bash
+pgr kmer gc reads.fq.gz -k 21 -o reads.kgc
+pgr plot heat reads.kgc -o heat.tex
+tectonic heat.tex
+```
+
+## spectra
+
+K-mer coverage spectra (standard distribution view) rendered as a standalone
+LaTeX document: observed histogram, fitted full model, error region, and
+k-mer peak markers, with the model summary in the title.
+
+The histogram is a `.hist` file (`pgr kmer hist`); the model is a
+`model.txt` written by `pgr kmer gsize --model`.
+
+### Usage
+
+```bash
+pgr plot spectra [OPTIONS] <infile> <model>
+```
+
+### Arguments
+
+| Argument | Description |
+| :--- | :--- |
+| `infile` | Input `.hist` histogram file |
+| `model` | Model.txt from `pgr kmer gsize --model` |
+| `-o`, `--outfile` | Output filename (default: stdout) |
+
+### Examples
+
+```bash
+pgr kmer hist reads.fq.gz -k 21 -o reads.hist
+pgr kmer gsize reads.fq.gz -k 21 --model -o gs_out
+pgr plot spectra reads.hist gs_out/model.txt -o spectra.tex
+tectonic spectra.tex
+```
 
 Histo-heatmap. This visualization combines a histogram and a heatmap to show the distribution of a numeric variable (X) across different groups (Y).
 

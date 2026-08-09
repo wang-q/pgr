@@ -41,6 +41,12 @@ Examples:
                 .help("Fit the GenomeScope model (kmercov/het/genome size)"),
         )
         .arg(
+            Arg::new("plot")
+                .long("plot")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also render the spectra plot (spectra.tex) with --model"),
+        )
+        .arg(
             Arg::new("ploidy")
                 .long("ploidy")
                 .short('p')
@@ -76,6 +82,44 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // goes to stdout.
         let outdir = if outfile == "stdout" { "." } else { outfile };
         pgr::libs::kmer::genomescope::write_outputs(std::path::Path::new(outdir), &model)?;
+        if args.get_flag("plot") {
+            let pairs: Vec<(f64, f64)> = hist
+                .hist
+                .iter()
+                .enumerate()
+                .filter(|(_, &c)| c > 0)
+                .map(|(i, &c)| ((i + 1) as f64, c as f64))
+                .collect();
+            let se_kmercov = model.se[if p == 1 { 1 } else { 2 }];
+            let total: f64 = pairs.iter().map(|&(_, c)| c).sum();
+            let kcovfloor = ((model.kmercov - 2.0 * se_kmercov).floor().max(1.0)) as usize;
+            let err: f64 = pairs
+                .iter()
+                .filter(|&&(x, _)| x <= kcovfloor as f64)
+                .map(|&(_, c)| c)
+                .sum::<f64>()
+                / total.max(1.0);
+            let params = pgr::libs::kmer::genomescope::ModelParams {
+                d: model.d,
+                kmercov: model.kmercov,
+                bias: model.bias,
+                length: model.length,
+                r1: model.het,
+            };
+            let summary = pgr::libs::plot::spectra::SpectraSummary {
+                k,
+                p,
+                params,
+                se_kmercov,
+                len: model.length,
+                unique: 1.0 - model.d,
+                error_rate: err,
+            };
+            let spectra_path = std::path::Path::new(outdir).join("spectra.tex");
+            let mut sw = pgr::writer(spectra_path.to_str().unwrap())?;
+            pgr::libs::plot::spectra::render_spectra(&mut sw, &pairs, &summary)?;
+            sw.flush()?;
+        }
         let mut w = std::io::stdout();
         writeln!(w, "k\t{k}")?;
         writeln!(w, "kmercov\t{:.1}", model.kmercov)?;

@@ -132,7 +132,8 @@ pgr kmer gc reads.fq.gz -k 21 --tex -o reads.tex
 The matrix is byte-identical to MerquryFK KatGC output on the same input
 (verified against a locally compiled KatGC). `--tex` renders the KatGC
 heat-map equivalent as a LaTeX figure (pgfplots; compile with tectonic),
-reusing the `plot hh` renderer with adaptive axis ticks.
+via the shared `pgr plot heat` renderer (`pgr plot heat reads.kgc -o reads.tex`
+is equivalent).
 
 ### qhist
 
@@ -215,6 +216,7 @@ an existing `.pkt` table.
 | `-t`, `--table` | Reuse a k-mer table (`.pkt`); k is read from the table |
 | `-k`, `--kmer` | K-mer size (required unless `--table` is given) |
 | `--model` | Fit the GenomeScope model (kmercov/het/genome size) |
+| `--plot` | With `--model`, also write `spectra.tex` to the output directory |
 | `-p`, `--ploidy` | Ploidy for the model (1 or 2; default 1) |
 | `-o`, `--outfile` | Output statistics (default: stdout) |
 
@@ -235,6 +237,8 @@ across four trimming rounds, with model scoring and the best-round
 selection. `-o` is then an output directory holding `summary.txt` and
 `model.txt` in the GenomeScope formats consumed by anchr's `2_fastk`
 (`grep '^kmercov' model.txt`), and the summary is printed to stdout.
+With `--plot`, the spectra figure is also written to
+`spectra.tex` in that directory (equivalent to `pgr plot spectra`).
 
 The fit recovers known parameters exactly on noiseless synthetic spectra
 (p=1: kmercov, bias, d, length all within rounding of the truth). Real
