@@ -89,43 +89,55 @@ fn closed_syncmers_stream<E: Copy>(
     if window == 0 {
         return out;
     }
-    // Monotonic deque of positions with non-decreasing hashes; front is the
-    // current window minimum. Ring buffer holds the last `window` raw entries
-    // so the window-start hash/extra can be recovered for endpoint checks.
-    let mut dq: VecDeque<(usize, u64)> = VecDeque::new();
+    // Chunked prefix/suffix minima (simd-minimizers' sliding-window-min
+    // scheme, scalar): block size = window; `ring_vals[i]` holds the suffix
+    // minimum of the *previous* block from position `i`, `prefix_min` the
+    // current block's prefix minimum. Window min = min(prefix_min,
+    // ring_vals[idx]); no monotonic deque needed. A ring of raw entries still
+    // keeps the window-start hash/extra for the closed-syncmer endpoint check.
+    let mut block_hashes = vec![0u64; window];
+    let mut ring_vals = vec![u64::MAX; window];
     let mut ring: VecDeque<(u64, E)> = VecDeque::new();
+    let mut idx = 0usize;
+    let mut prefix_min = u64::MAX;
     for (j, (h, e)) in hashes.into_iter().enumerate() {
-        while let Some(&(_, bh)) = dq.back() {
-            if bh <= h {
-                break;
-            }
-            dq.pop_back();
-        }
-        dq.push_back((j, h));
+        block_hashes[idx] = h;
+        prefix_min = prefix_min.min(h);
         ring.push_back((h, e));
         if ring.len() > window {
             ring.pop_front();
         }
 
         if j >= window - 1 {
-            let start = j + 1 - window;
-            while let Some(&(fp, _)) = dq.front() {
-                if fp < start {
-                    dq.pop_front();
-                } else {
-                    break;
-                }
-            }
-            let min_val = dq.front().expect("deque non-empty within full window").1;
+            // Window = previous block's tail + current block's head, except
+            // when `idx == window-1` where it is exactly the current block.
+            let min_val = if idx == window - 1 {
+                prefix_min
+            } else {
+                prefix_min.min(ring_vals[(j + 1) % window])
+            };
             // Closed syncmer: the minimum appears at the first or last s-mer.
             // Check value (not argmin position) so ties are symmetric under
             // reversal; prefer the window start on ties.
             let (sh, se) = *ring.front().expect("ring holds a full window");
             if sh == min_val {
-                out.push((start, sh, se));
+                out.push((j + 1 - window, sh, se));
             } else if h == min_val {
                 out.push((j, h, e));
             }
+        }
+
+        idx += 1;
+        if idx == window {
+            // Block complete: suffix minima of this block become the "previous
+            // block" values for the next window.
+            let mut m = u64::MAX;
+            for i in (0..window).rev() {
+                m = m.min(block_hashes[i]);
+                ring_vals[i] = m;
+            }
+            prefix_min = u64::MAX;
+            idx = 0;
         }
     }
     out

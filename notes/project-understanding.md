@@ -663,3 +663,4 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-nt-simd.md]] | fa 逐字节统计 SIMD 基准（nt_simd）：count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，wide 回退 ~2.8×；单基因组 CLI 上 I/O 主导（2026-08-09） |
 | [[benchmarks/bench-profile-hotspots.md]] | 热点 profiling 实测（2026-08-09，perf）：fa size gz 中 inflate 43%+memset 35%；rept s-kmer 中 table_profiles 79%（partition_point cache miss 41%）→ 排序合并优化 ~5.2–5.4×、整命令 3.4×；pgi build 无单一主导；gzip 并行解压已裁定不做 |
 | [[benchmarks/bench-simd-tiers.md]] | SIMD 三级回退速度对比（AVX2 / wide128 / 标量，2026-08-09 汇总）：统计类 AVX2 超 wide 5–6×、DP/打包类仅 1.2–1.8×；count_n/masked 无 wide、norm 无 AVX2 手写、cigar 无 wide 的设计取舍与依据 |
+| [[benchmarks/bench-kmer-consumers.md]] | Kmer 采样消费方分析（2026-08-09）：pgi build/align rest/dist mini/frac/mash/hv 的采样占比与借鉴价值；窗口最小型仅 pgi build 值得（已优化），哈希草图型 frac 43% 最高（8 路并行哈希方向） |

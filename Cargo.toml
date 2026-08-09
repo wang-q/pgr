@@ -151,6 +151,18 @@ name = "twobit_benchmark"
 harness = false
 
 [[bench]]
+name = "syncmer_benchmark"
+harness = false
+
+[[bench]]
+name = "fracminhash_benchmark"
+harness = false
+
+[[bench]]
+name = "minimizer_benchmark"
+harness = false
+
+[[bench]]
 name = "cigar_benchmark"
 harness = false
 
