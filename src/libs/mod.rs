@@ -6,6 +6,7 @@ pub mod fas_multiz;
 pub mod fas_xlsx;
 pub mod fasta;
 pub mod fmt;
+pub mod fq;
 pub mod hash;
 pub mod hv;
 pub mod io;
@@ -31,7 +32,6 @@ pub mod translate;
 
 pub use fmt::axt;
 pub use fmt::fas;
-pub use fmt::fq;
 pub use fmt::lav;
 pub use fmt::maf;
 pub use fmt::twobit;

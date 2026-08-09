@@ -11,7 +11,7 @@ use memchr::{memchr, memchr2};
 use std::io::BufRead;
 
 /// A FAFQ record with reused buffers (capacity kept across reads).
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SeqRecord {
     name: BString,
     comment: BString,

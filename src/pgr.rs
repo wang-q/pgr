@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     * 2bit - 2bit query and extraction
     * fa   - FASTA operations: info, records, transform, indexing
     * fas  - Block FA operations: info, subset, transform, file, variation
-    * fq   - FASTQ interleaving and conversion
+    * fq   - FASTQ interleaving, conversion, and trimming
     * gff  - GFF operations: rg, runlist
     * pbit - Population 2bit + delta: create, append, append-ref, stat, range, some, to-fa
 
