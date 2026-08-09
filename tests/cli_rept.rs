@@ -261,7 +261,7 @@ fn command_rept_e_kmer_end_to_end() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// e-kmer `--keep-index` writes a `.pgrk` table next to the library and
+/// e-kmer `--keep-index` writes a `.pkt` table next to the library and
 /// reuses it on the next run instead of rebuilding.
 #[test]
 fn command_rept_e_kmer_keep_index_cache() -> anyhow::Result<()> {
@@ -273,7 +273,7 @@ fn command_rept_e_kmer_keep_index_cache() -> anyhow::Result<()> {
     std::fs::write(&lib, format!(">rep\n{}\n", seq))?;
     std::fs::write(&genome_fa, format!(">chr1\n{}{}\n", seq, seq))?;
 
-    let cache = temp.path().join("lib.pgrk");
+    let cache = temp.path().join("lib.pkt");
     assert!(!cache.exists());
 
     let (_, stderr) = common::PgrCmd::new()
@@ -288,7 +288,7 @@ fn command_rept_e_kmer_keep_index_cache() -> anyhow::Result<()> {
         ])
         .run();
     assert!(stderr.contains("==> Outputs"), "pipeline failed: {stderr}");
-    assert!(cache.exists(), ".pgrk cache must be written");
+    assert!(cache.exists(), ".pkt cache must be written");
 
     let (_, stderr) = common::PgrCmd::new()
         .args(&[

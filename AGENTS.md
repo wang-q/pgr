@@ -145,7 +145,7 @@ cargo test
 - **`src/cmd_pgr/`** - 命令实现模块。按功能/格式分组：
     - **Sequences**: `fa` (FASTA), `fq` (FASTQ), `fas` (Block FA), `twobit` (命令 `2bit`), `gff`.
     - **Alignments**: `axt`, `chain`, `net`, `maf`, `paf`, `psl`, `lav`.
-    - **Analysis**: `dist` (Distance), `plot`.
+    - **Analysis**: `dist` (Distance), `kmer` (K-mer 分析), `plot`.
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.

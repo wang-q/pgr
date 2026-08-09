@@ -37,6 +37,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::fas::make_subcommand())
         .subcommand(cmd_pgr::fq::make_subcommand())
         .subcommand(cmd_pgr::gff::make_subcommand())
+        .subcommand(cmd_pgr::kmer::make_subcommand())
         .after_help(
             r###"Subcommand groups:
 
@@ -63,6 +64,7 @@ fn main() -> anyhow::Result<()> {
     * pgi   - Genome index (.pgi): build, stat, to-hv
 
 * Analysis:
+    * kmer  - K-mer table (.pkt), profile (.pkp), and histogram (.hist)
     * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
     * rept  - Repeat detection: e-kmer, e-align, s-kmer, s-align, trf
     * rg    - Range (.rg) line operations: cover, coverage, count, merge, prop, runlist, sort, span
@@ -105,6 +107,7 @@ fn main() -> anyhow::Result<()> {
         Some(("fas", sub_matches)) => cmd_pgr::fas::execute(sub_matches),
         Some(("fq", sub_matches)) => cmd_pgr::fq::execute(sub_matches),
         Some(("gff", sub_matches)) => cmd_pgr::gff::execute(sub_matches),
+        Some(("kmer", sub_matches)) => cmd_pgr::kmer::execute(sub_matches),
         _ => anyhow::bail!("unknown subcommand"),
     }?;
 

@@ -130,7 +130,7 @@ reads 的错误 k-mer 不会膨胀计数。这是 quorum 与朴素计数最大�
      纠错的两个关键机制；
   4. 纠错日志输出格式（`pos:sub:X-Y`/`pos:N_trunc`）便于审计。
 - **pgr 的差异优势**：精确计数（无哈希碰撞）、SIMD 能力（canonical_keys
-  是滚动 2-bit 编码）、`.pgrk` 缓存；quorum 的哈希自动扩容/近似计数在
+  是滚动 2-bit 编码）、`.pkt` 缓存；quorum 的哈希自动扩容/近似计数在
   大内存场景值得对照。
 
 ## 6.1 应用解读：anchr 用法 = 错误 read 直接丢弃（2026-08 补充）

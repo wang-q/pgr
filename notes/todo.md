@@ -4,9 +4,27 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-09 晚：fq 系列 / BGZF 写侧 / BBTools 替换 / kmer 参考）
+## 0. 会话交接（2026-08-09 深夜：`pgr kmer` 命令组 / 三种格式 / FASTK 兼容）
 
 **已完成（本会话，lib 688 + 集成套件全绿，clippy clean）**：
+
+- **`pgr kmer` 命令组（新顶级命令）**：`table`（FASTA/FASTQ → `.pkt`，
+  多输入合并，`-t1` 语义）/ `profile`（self 或缺省 `-t` relative → `.pkp`）/
+  `hist`（序列直算或 `-t` 表 → `.hist`）；k 解析 = 有表用表 k（
+  `count::k_of`），命令行给 k 则校验。`rept s-kmer`/`e-kmer` 保留不动。
+- **三种 kmer 格式定稿**：`.pkt`（表，原 `.pgrk` 改名，magic `PKTT`）、
+  `.pkp`（profile，magic `PKPP`，header + raw u16）、`.hist`（直方图，
+  **FASTK 字节兼容**：固定 low=1/high=32767，28B 头 + 32767×8B；实测
+  Histex 读 pgr 输出与 FastK 自产 **diff 为空**）。
+- **兼容性决策**：`.hist` 兼容（单文件 ~50 行，做）；`.prof` **不做**
+  （stub + `.pidx.N`/`.prof.N` 分片 + RLE，用户拍板：不喜欢分片）；
+  `.ktab` 维持不做。设计 = `design/kmer.md` §10（命令归属 + 输入形态 +
+  格式布局）。
+- 测试：kmer lib 单测（hist/pkp roundtrip、FASTK 布局字节核对）+
+  `tests/cli_kmer.rs`（5 例：help/table+hist 一致性/profile self+relative/
+  FASTQ+stdin/参数校验）。
+
+**上一会话（fq 系列）已完成**：
 
 - **`fq trim-q`（sickle 替代，已实现）**：`libs/fq/trim.rs` +
   `cmd_pgr/fq/trim_q.rs`；滑窗/Mott、质量编码 auto（BBDuk 算法）、双端 +
@@ -29,15 +47,20 @@
   修正）、`design/kmer.md` §9（FASTK 功能对照：**最大缺口 = 直方图 +
   峰值/GenomeScope**，§9.1 = anchr 2_fastk 实际用法）、
   `references/merqury-fk.md`（MerquryFK；README 2021 编写 ≠ 停更）。
+  （这些已提交：`2081dca`/`c536898`/`1bed636`/`e6f5b33`。）
 
-**未提交（本会话改动，勿覆盖）**：fq trim-q/range 代码与测试、
-`bgzf_write_benchmark`、`loc.rs` FASTQ 部分、Cargo.toml、AGENTS.md、
-上述笔记。提交前跑 fmt/clippy/test。
+**未提交（本会话改动，勿覆盖；`.git` 只读，用户回来后提交）**：
+`libs/kmer/`（count.rs 改名 + k_of、profile.rs pkp 读写、hist.rs 新增）、
+`cmd_pgr/kmer/`（新目录三子命令）、`pgr.rs`/`cmd_pgr/mod.rs`（注册）、
+`docs/kmer.md`、`docs/rept.md`/`README.md`/`AGENTS.md`/`CHANGELOG.md`、
+`tests/cli_kmer.rs`/`tests/cli_rept.rs`、`notes/design/kmer.md`、
+`notes/todo.md` 等。提交前跑 fmt/clippy/test（已跑，全绿）。
 
 **挂账/待决**：
 
-1. **kmer 直方图 + 峰值/基因组大小估计**（`KmerTable.counts` 现成；对齐
-   `Histex -A/-G`；GenomeScope 模型拟合是第二步）——用户未拍板是否开工。
+1. **kmer 峰值/基因组大小估计**：直方图本体已实现（`pgr kmer hist`，
+   `.hist` 兼容 FASTK）；**GenomeScope 模型拟合（kmercov/基因组大小）仍是
+   第二步**，未立项（R 侧拟合或原生实现待议）。
 2. **anchr BBTools 替换**三决策点：一期 `fq split`/`fq sample` 是否先做；
    接头修剪完全复刻 bbduk（tbo/tpe）vs 简化；流水线管道串联是否可接受。
 3. **`fq range` 二期**：双端 S2（`R1.fq R2.fq` + `--outfile-2`）。
@@ -156,5 +179,5 @@
       （来源：`chain-algorithms.md` §12.3）。
 - [x] **FastK/Profex 原生迁移（已实现 2026-08-09）**：`rept s-kmer`/`e-kmer`
       已原生化（`libs/kmer/` 计数 + profile + run 提取，`--keep-index` 缓存
-      升级为单文件 `.pgrk`；不做 super-mer/磁盘分桶/外部格式兼容），
+      升级为单文件 `.pkt`；不做 super-mer/磁盘分桶/外部格式兼容），
       设计 = `design/kmer.md`。

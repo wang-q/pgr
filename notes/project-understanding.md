@@ -2,6 +2,10 @@
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-09
+（2026-08-09：新增 `pgr kmer` 命令组（table/profile/hist）与三种格式
+ 定稿——`.pkt`（表，原 `.pgrk` 改名）、`.pkp`（profile，自有单文件）、
+ `.hist`（直方图，FASTK 字节兼容，实测与 FastK 输出一致）；`.prof` 因
+ 分片布局明确不做；更新 §2.1/§3/§4.4，设计见 [[design/kmer.md]] §10。
 （2026-08-09：`libs/poa` 补 SIMD 垂直并行（`simd.rs`，AVX2 手写 + `wide` 回退，
  分派沿用 HV 式），`Poa` 默认引擎切换，基准 120 bp ~8.7× / 600 bp ~12.3×；
  更新 §4.1/§9/§10 与 [[spoa.md]] 参考分析（新增，合并原 spoa_port.md 移植状态）。
@@ -97,6 +101,7 @@ src/
 │   ├── pbit/           #   群体基因组压缩
 │   ├── dist/           #   距离计算 (hv/pgi/seq)
 │   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv
+│   ├── kmer/           #   k-mer 表/profile/直方图：table/profile/hist (.pkt/.pkp/.hist)
 │   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
 │   ├── rept/           #   重复检测与遮蔽 (e-kmer/e-align/s-kmer/s-align/trf/masker)
 │   ├── rg/             #   .rg 行级区间操作 (cover/coverage/count/merge/prop/runlist/sort/span)
@@ -120,7 +125,7 @@ src/
     │   └── graph/      #     DSU 图构建 + GFA 输出
     ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
     ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
-    ├── kmer/           #   canonical k-mer 计数/profile/重复 run 提取 (.pgrk 缓存)
+    ├── kmer/           #   canonical k-mer 计数表 (.pkt)/profile (.pkp)/直方图 (.hist)/run 提取
     ├── sd/             #   分段重复检测核心
     ├── runlist/        #   runlist/.rg 区间核心 (IntSpan 构建、深度扫描线、merge 聚类、JSON I/O)
     ├── pl/             #   pipeline 共享逻辑 (PipelineCtx + 内建 runlist 管道)
@@ -255,7 +260,8 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 完全用 pgr 自身命令，`ucsc` 需要 kent-tools），充当工作流 glue。这与 `chain`/`net` 模块的
 纯 Rust 实现形成互补：能用 Rust 就自己实现，复杂/成熟的用外部工具
 （trf、RMBlast 等外部工具编排在 `rept` 模块；`rept s-kmer` / `e-kmer` 的
-k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依赖）。
+k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依赖；
+通用 k-mer 分析另有独立命令组 `pgr kmer`，见 §3.6）。
 
 > 注意（2026-08-06 与用户确认）：`pgr pl` 目前是"暂时没想好该放到哪边"的命令的
 > 临时存放处，定位可能随命令演化调整；新命令不要默认往 `pl` 里放。
@@ -264,6 +270,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 
 | 模块 | 子命令数 | 核心能力 |
 |------|----------|----------|
+| `kmer` | 3        | 通用 k-mer 分析：table (计数表 .pkt)、profile (逐序列谱 .pkp)、hist (直方图 .hist，FASTK 兼容) |
 | `sd`   | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
 | `rept` | 6        | 重复检测与遮蔽：e-kmer / e-align / s-kmer / s-align / trf / masker (RepeatMasker 模拟) |
 
@@ -347,9 +354,12 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity、best_crossover、
   merge_intervals、radix_sort），以及从外部 `intspan` crate 迁入的区间集合
   `IntSpan`（`intspan.rs`）与 `Range`（`range.rs`），API 与原 crate 一致
-- `libs/kmer/`：canonical k-mer 计数表（`count.rs`，含 `.pgrk` 紧凑持久化）、
-  基因组 profile 生成（`profile.rs`）、profile → 重复 run 提取（`extract.rs`），
-  替代 FastK `-p/-t/-p:<table>` + Profex `-z`（设计：`notes/design/kmer.md`）
+- `libs/kmer/`：canonical k-mer 计数表（`count.rs`，`.pkt` 紧凑持久化 +
+  `k_of` 读 header）、基因组 profile 生成 + `.pkp` 读写（`profile.rs`）、
+  直方图 + FASTK `.hist` 兼容写（`hist.rs`）、profile → 重复 run 提取
+  （`extract.rs`）；命令层 = `pgr kmer`（table/profile/hist）+ `rept
+  s-kmer`/`e-kmer`；替代 FastK `-p/-t/-p:<table>` + Profex `-z` + Histex
+  输入（设计：`notes/design/kmer.md`，含 §10 命令组与格式定稿）
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：k-mer →
   runlist 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `pgi build`

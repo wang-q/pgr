@@ -1,11 +1,12 @@
 //! Canonical k-mer counting, profile generation, and repeat-run extraction.
 //!
 //! Native replacement for the FastK (`-p` / `-t` / `-p:<table>`) and Profex
-//! (`-z`) steps of `pgr rept s-kmer` / `e-kmer`, with the `.pgrk` compact
+//! (`-z`) steps of `pgr rept s-kmer` / `e-kmer`, with the `.pkt` compact
 //! table cache. Design: `notes/design/kmer.md`.
 
 pub mod count;
 pub mod extract;
+pub mod hist;
 pub mod profile;
 
 /// Sorted canonical k-mer table with parallel counts.

@@ -2,6 +2,18 @@
 
 ## Unreleased - ReleaseDate
 
+### New Commands (`kmer`)
+
+* **`pgr kmer table`** - builds a canonical k-mer count table from one or
+  more FASTA/FASTQ files (FastK `-t1` semantics: all k-mers, including
+  singletons) and persists it as a `.pkt` file.
+* **`pgr kmer profile`** - per-sequence k-mer profiles (`.pkp`): self counts
+  by default, relative to a table with `-t <table>.pkt`.
+* **`pgr kmer hist`** - k-mer frequency histogram in the FastK `.hist`
+  binary layout (fixed bins 1..=32767), readable by Histex / KatGC /
+  GenomeScope tooling; verified byte- and value-identical against a real
+  FastK histogram on the same input.
+
 ### Repeat Detection (`rept`)
 
 * **Native k-mer pipeline for `s-kmer` / `e-kmer`** - canonical k-mer counting,
@@ -12,9 +24,9 @@
   old Profex quirk of dropping/guessing the final run of a chromosome is
   fixed (tail runs are now closed from the full in-memory profile). No
   external tools are needed for either command.
-* **`.pgrk` repeat-table cache** - `--keep-index` now writes a single compact
-  `<library>.pgrk` file (`lib.fa` -> `lib.pgrk`, `lib.fa.gz` ->
-  `lib.fa.pgrk`) instead of FastK's `<library>.repeat.k<k>.ktab` hidden
+* **`.pkt` repeat-table cache** - `--keep-index` now writes a single compact
+  `<library>.pkt` file (`lib.fa` -> `lib.pkt`, `lib.fa.gz` ->
+  `lib.fa.pkt`) instead of FastK's `<library>.repeat.k<k>.ktab` hidden
   shards plus a `.complete` marker. Old FastK caches are ignored and rebuilt
   once on the first run after upgrading.
 

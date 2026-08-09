@@ -166,7 +166,7 @@ Notes:
     complement). `e-kmer` (TnCentral) + `trf` covers ~75.7 kb (1.63%) and
     ~91.5% of the RepeatMasker intervals.
 *   `--keep-index` caches each library's k-mer table next to the library
-    (`<library>.pgrk`; needs a writable directory next to the library), so
+    (`<library>.pkt`; needs a writable directory next to the library), so
     re-running the same library skips the table build.
 
 ## RepeatMasker (reference)
@@ -280,8 +280,8 @@ pgr rept e-kmer [OPTIONS] <repeat> <infile>
 
 `e-kmer` builds a canonical k-mer count table from the repeat library on
 every run (in a temporary directory). Pass `--keep-index` to save that table
-next to the library as a single `<library>.pgrk` file (`lib.fa` ->
-`lib.pgrk`, `lib.fa.gz` -> `lib.fa.pgrk`); later runs reuse it directly
+next to the library as a single `<library>.pkt` file (`lib.fa` ->
+`lib.pkt`, `lib.fa.gz` -> `lib.fa.pkt`); later runs reuse it directly
 instead of rebuilding. The cache is invalidated automatically when the
 library file changes (mtime) or the requested `-k` no longer matches the
 stored table. Same convention as `pgr align pgi --keep-index`.

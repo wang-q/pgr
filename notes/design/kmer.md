@@ -10,6 +10,15 @@
 > **旧管线视为实验性参考**，迁移不要求输出与旧管线字节级一致，不保留已知
 > 缺陷（尾 run quirk，见 §2.2）。
 
+> **2026-08-09 后续（`pgr kmer` 命令组 + 三种格式）**：在 rept 用途之上新增
+> 顶级命令组 `pgr kmer`（table/profile/hist）与三种持久化格式——
+> `.pkt`（表，原 `.pgrk` 改名）、`.pkp`（profile，pgr 自有单文件）、
+> `.hist`（直方图，**FASTK 字节兼容**）。兼容性决策：直方图单文件、代价
+> 小（~50 行），做兼容（外部可比较：Histex/KatGC/GenomeScope 直接可读，
+> 已实测与 FastK 输出逐行一致）；profile 因 FASTK `.prof` 是 stub + 分片
+> 多文件布局（`.pidx.N`/`.prof.N` + RLE），**不做兼容**，用 `.pkp` 单文件
+> 自有格式（header + raw u16）；`.ktab` 维持不做（§3.0）。详见 §10。
+
 ## 1. 现状与目标
 
 现管线（`src/libs/pl/repeat.rs::run_repeat_pipeline`）：
@@ -273,15 +282,15 @@ key（并行）→ `radix_sort_u128_par` 排序 → 与 `table.keys` 线性归�
 
 ### 4.3 `--keep-index` 缓存
 
-* 新格式：`<库>.pgrk` 单文件（`lib.fa` → `lib.pgrk`，`lib.fa.gz` →
-  `lib.fa.pgrk`），**紧凑编码**：
+* 新格式：`<库>.pkt` 单文件（`lib.fa` → `lib.pkt`，`lib.fa.gz` →
+  `lib.fa.pkt`），**紧凑编码**：
   header（magic/version/k/条目数/key 字节数）+ 每条目
   `packed key（ceil(2k/8) 字节，复用 pgi 的 pack_kmer）+ u32 count`；
   k=17 时约 9 B/条目，5 Mb 库 ~45 MB（对比裸 bincode u128 的 ~100 MB）。
   bincode 只当容器；不再需要 FastK 的隐藏分片，也去掉 `.complete` 标记——
   完整性由 header 校验兜底（损坏即重建），写入用原子 rename（临时文件 +
   rename）。`cache_is_fresh` 保留 mtime 检查，判断对象从 `.ktab/.complete`
-  变为单个 `.pgrk` 文件。
+  变为单个 `.pkt` 文件。
   命名遵循项目 sidecar 惯例（替换扩展名，同 `.pgi`，实现参考
   `align/pgi.rs::sibling_pgi_path` 的 `.gz` 分支）：文件名不带 k 或
   场景限定，k 存在 header 里，读取时校验——k 与命令行不一致或 mtime 旧
@@ -356,21 +365,20 @@ key（并行）→ `radix_sort_u128_par` 排序 → 与 `table.keys` 线性归�
 | FASTK 能力 | pgr 现状 | 说明 |
 |---|---|---|
 | `-p` profile | ✅ `profile.rs self_profiles` | rept s-kmer 用 |
-| `-t` k-mer 表 | ✅ `count.rs KmerTable`（.pgrk 缓存） | 内存版；不做 .ktab 磁盘分桶 |
+| `-t` k-mer 表 | ✅ `count.rs KmerTable`（.pkt 缓存） | 内存版；不做 .ktab 磁盘分桶 |
 | `-p:<table>` 相对 profile | ✅ `relative_profiles` | rept e-kmer 用 |
 | Profex `-z` run 提取 | ✅ `extract.rs write_rg` | 已实现（修复尾 run quirk） |
-| **直方图 `.hist` + Histex（含 `-G` 基因组大小格式）** | ❌ **无** | **最大缺口**：`KmerTable.counts` 已具备，只差直方图聚合 + 峰值/基因组大小估计；对应 anchr 的 `jellyfish histo` / BBTools `kmercountexact` |
+| **直方图 `.hist` + Histex（含 `-G` 基因组大小格式）** | ✅ `hist.rs`（.hist 兼容写） | **已实现（2026-08-09）**：`from_table` 聚合 + FASTK 二进制布局写（固定 low=1/high=32767，含 ilowcnt/max_inst）；实测 Histex 读 pgr 输出与 FastK 自产逐行一致；峰值/GenomeScope 模型拟合仍是第二步（R 侧，未做） |
+| **profile 落盘（`.prof` 等价）** | ✅ `.pkp`（自有格式） | **已实现（2026-08-09）**：`save_profiles`/`load_profiles`，header + raw u16；**不做 FASTK `.prof` 兼容**（多文件分片 + RLE，代价中等且 pgr 无外部消费者） |
 | `-c` homopolymer 压缩 | ❌ 无 | PacBio/HiFi 专用（homopolymer 错误率高），低成本 |
 | Logex（表逻辑运算 + 计数阈值过滤） | ❌ 无 | 两个 k-mer 库的 AND/OR/NOT 集合运算 |
 | KmerMap（k-mer → .bed 区域） | ❌ 无 | k-mer 在目标序列上的覆盖区域 |
 | Tabex / Symmex | ❌ 无 | 表查看/导出、canonical → 对称表 |
 | Fastmerge/Fastcat/Fastrm 等 | ❌ 不做 | TB 级磁盘分桶/分布式设计，pgr 场景用不上（§8.2 已声明） |
 
-**结论**：`libs/kmer` 目前只覆盖 FASTK 的 **rept 用途**（profile/相对 profile/
-run），能用于 FQ reads 的功能尚未搬完——**最大缺口是 k-mer 直方图 + 峰值/
-基因组大小估计**（KmerTable 内部 count 已是 u32，直方图可直接聚合，成本低）。
-补齐优先级建议：
-1. 直方图 + 峰值/基因组大小估计（对齐 Histex `-G` / kmercountexact 语义）；
+**结论**：`libs/kmer` 已覆盖 FASTK 的 **rept 用途**（profile/相对 profile/
+run）与 **直方图**（.hist 兼容）。剩余缺口优先级：
+1. 峰值/基因组大小估计（GenomeScope 模型拟合，R 侧，未立项）；
 2. homopolymer 压缩（PacBio/HiFi 场景）；
 3. Logex / KmerMap（按需求再议）。
 
@@ -399,3 +407,54 @@ Fastrm Table-<k>
   需原生实现拟合（k-mer 谱 → 泊松/负二项模型 → kmercov/基因组大小），属
   第二步、成本更高。可先做直方图 + ASCII 输出（对齐 `Histex -A/-G` 格式），
   拟合后续再议。
+
+## 10. `pgr kmer` 命令组与三种格式（2026-08-09 定稿）
+
+### 10.1 命令归属
+
+新增顶级命令组 `pgr kmer`（table/profile/hist），**`rept s-kmer` /
+`e-kmer` 保留不动**：它们是完整"重复提取管线"（计数只是第一步），语义归
+rept；`pgr kmer` 是通用 k-mer 分析（表/谱/直方图），消费者是
+GenomeScope/MerquryFK 场景。`libs/kmer` 共享，命令层互不依赖。
+
+### 10.2 三种格式
+
+| 格式 | 内容 | 策略 | 实现 |
+|---|---|---|---|
+| `.pkt` | canonical k-mer 计数表（原 `.pgrk` 改名，magic `PKTT`） | pgr 自有单文件 | `count.rs`（紧凑编码，同 §4.3） |
+| `.pkp` | 逐序列 profile（magic `PKPP`） | pgr 自有单文件 | `profile.rs save/load_profiles` |
+| `.hist` | 频次直方图 | **FASTK 字节兼容** | `hist.rs`（新增） |
+
+`.hist` 布局（与 FastK `count.c` 写侧一致，实测 Histex 读 pgr 输出 =
+FastK 自产，diff 为空）：
+
+```text
+int32 k | int32 low=1 | int32 high=32767 | int64 ilowcnt(=bin1 数)
+int64 max_inst | int64 hist[1..=32767]     # 28B 头 + 32767×8B = 262164B 固定
+```
+
+`.pkp` 布局：`magic PKPP | u32 version | u32 k | u64 n_seqs`，每条
+`u64 length | u16[length]`（raw，未压缩；RLE 属内部编码，将来优化不动
+header）。
+
+### 10.3 输入形态
+
+* 序列输入：FASTA/FASTQ（复用 `fmt/seq` FAFQ reader），支持 gz/stdin。
+* `table`：多输入合并计数（FastK `-t1` 语义，含 singleton），`-o .pkt`。
+* `profile`：序列必填；无 `-t` = self（内部建表不落盘），有 `-t` =
+  relative（表内 count，缺省 0）。`k` 解析规则：有表用表 k（header 读取，
+  `count::k_of`），命令行给 k 则校验一致；无表时 `-k` 必填。
+* `hist`：序列直算或 `-t` 表二选一（`required_unless_present`）。
+
+### 10.4 兼容性结论（决策记录）
+
+* `.hist` 兼容：单文件固定布局，实现 ~50 行，**做**——外部可比较
+  （Histex/KatGC/GenomeScope 直接读）。
+* `.prof` 兼容：FASTK `.prof` = stub + `.<root>.pidx.N` + `.<root>.prof.N`
+  多文件分片 + RLE 编码（`merge.c`/`libfastk.c`），且 profile 按 read id
+  索引；实现需 300–500 行 + 分片语义。**不做**（用户拍板：不喜欢分片，
+  与 `.pgrk` 选自有格式同一理由）。
+* `.ktab` 兼容：stub + 分片 + 前缀索引，维持不做（§3.0）。
+* profile 落盘需求来源：MerquryFK 的 QV/completeness/trio 分型是
+  self + 相对 profile 逐位置比较（`MerquryFK.c scan_asm`、`hap_plotter.c`），
+  pgr 若做组装质量评估需要 `.pkp` 数据流；当前直方图不经过 profile。

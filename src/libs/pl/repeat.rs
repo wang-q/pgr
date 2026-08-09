@@ -153,7 +153,7 @@ pub struct RepeatOpts {
     pub opt_ff: usize,
     /// For `ir`: absolute path to the repeat database. `None` for `rept`.
     pub abs_repeat: Option<String>,
-    /// Keep the k-mer table (`<library>.pgrk`) next to the library for
+    /// Keep the k-mer table (`<library>.pkt`) next to the library for
     /// reuse on later runs (`--keep-index`).
     pub keep_index: bool,
     /// Minimum run depth filter; `None` to skip. `Some(2)` for `s-kmer`.
@@ -929,7 +929,7 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Build the e-kmer repeat table, reusing the `<library>.pgrk` cache when
+/// Build the e-kmer repeat table, reusing the `<library>.pkt` cache when
 /// `keep_index` is set and the cache is fresh; a corrupt or k-mismatched
 /// cache is rebuilt (the cache is pure acceleration, so rebuilding beats
 /// erroring out).
@@ -942,7 +942,7 @@ fn build_or_load_table(
     if !keep_index {
         return crate::libs::kmer::count::build_table(lib_seqs, k);
     }
-    let cache_path = pgrk_cache_path(abs_repeat);
+    let cache_path = pkt_cache_path(abs_repeat);
     if cache_is_fresh(abs_repeat, &cache_path) {
         match crate::libs::kmer::count::load(&cache_path, k) {
             Ok(table) => {
@@ -969,21 +969,21 @@ fn build_or_load_table(
     Ok(table)
 }
 
-/// Sibling cache path for a repeat library: `lib.fa` -> `lib.pgrk` and
-/// `lib.fa.gz` -> `lib.fa.pgrk` (same sidecar convention as `.pgi`).
-fn pgrk_cache_path(lib: &str) -> PathBuf {
+/// Sibling cache path for a repeat library: `lib.fa` -> `lib.pkt` and
+/// `lib.fa.gz` -> `lib.fa.pkt` (same sidecar convention as `.pgi`).
+fn pkt_cache_path(lib: &str) -> PathBuf {
     let mut p = PathBuf::from(lib);
     if p.extension().and_then(|e| e.to_str()) == Some("gz") {
-        // `lib.fa.gz` -> `lib.fa.pgrk`: keep the `.fa` so a gzipped library
+        // `lib.fa.gz` -> `lib.fa.pkt`: keep the `.fa` so a gzipped library
         // has its own cache, distinct from a plain `lib.fa`.
         p.set_extension("");
-        return PathBuf::from(format!("{}.pgrk", p.display()));
+        return PathBuf::from(format!("{}.pkt", p.display()));
     }
-    p.set_extension("pgrk");
+    p.set_extension("pkt");
     p
 }
 
-/// True when a `.pgrk` cache exists and is not older than the library.
+/// True when a `.pkt` cache exists and is not older than the library.
 ///
 /// Integrity (magic/version/length/k) is validated on load; a corrupt cache
 /// is simply rebuilt.
@@ -1093,14 +1093,14 @@ mod tests {
     }
 
     #[test]
-    fn pgrk_cache_freshness() {
+    fn pkt_cache_freshness() {
         // Regression: a cache older than the library (mtime) must be stale,
-        // and a corrupt `.pgrk` must not be reused (load rejects it, so the
+        // and a corrupt `.pkt` must not be reused (load rejects it, so the
         // pipeline rebuilds instead of reading a corrupt table).
         let dir = tempfile::tempdir().unwrap();
         let lib = dir.path().join("lib.fa");
         std::fs::write(&lib, ">seq\nACGT\n").unwrap();
-        let cache = pgrk_cache_path(lib.to_str().unwrap());
+        let cache = pkt_cache_path(lib.to_str().unwrap());
         let table =
             crate::libs::kmer::count::build_table(&[b"ACGTACGTACGTACGT".to_vec()], 8).unwrap();
         crate::libs::kmer::count::save(&table, &cache).unwrap();

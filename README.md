@@ -56,8 +56,8 @@ predictable:
 
 * Input formats: `fa`, `fas`, `fq`, `2bit`, `gff`, `rg`, `axt`, `chain`,
   `net`, `maf`, `paf`, `psl`, `lav`, `ms`
-* Task domains: `dist`, `sd`, `rept`, `runlist`, `pl`, `plot`, `align`,
-  `pgi`, `pbit`
+* Task domains: `dist`, `sd`, `rept`, `kmer`, `runlist`, `pl`, `plot`,
+  `align`, `pgi`, `pbit`
 
 **Second-level commands follow one of three naming patterns:**
 

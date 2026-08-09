@@ -2,7 +2,10 @@
 
 use super::KmerTable;
 use crate::libs::ds::radix_sort::radix_sort_u128_par;
+use anyhow::Context;
 use rayon::prelude::*;
+use std::io::Write;
+use std::path::Path;
 
 /// FastK caps per-k-mer counts at 32767 (`0x7fff`); profile values are `u16`.
 const PROFILE_CAP: u16 = 0x7fff;
@@ -107,6 +110,76 @@ impl Loc {
     fn split(self) -> (usize, usize) {
         (self.seq as usize, self.pos as usize)
     }
+}
+
+/// File magic for the `.pkp` per-sequence profile file.
+const PKP_MAGIC: &[u8; 4] = b"PKPP";
+/// Format version.
+const PKP_VERSION: u32 = 1;
+/// Bincode-free fixed header size: magic + version + k + n_seqs.
+const PKP_HEADER_LEN: usize = 20;
+
+/// Write per-sequence profiles to `path` in the `.pkp` format.
+///
+/// Layout: header (`magic/version/k/n_seqs`) plus one `u64` length and raw
+/// little-endian `u16` values per sequence. The file is self-contained (no
+/// external k or contig metadata needed to read it back).
+pub fn save_profiles(path: &Path, k: usize, profiles: &[Vec<u16>]) -> anyhow::Result<()> {
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+    w.write_all(PKP_MAGIC).context("writing pkp header")?;
+    w.write_all(&PKP_VERSION.to_le_bytes())
+        .context("writing pkp header")?;
+    w.write_all(&(k as u32).to_le_bytes())
+        .context("writing pkp header")?;
+    w.write_all(&(profiles.len() as u64).to_le_bytes())
+        .context("writing pkp header")?;
+    for p in profiles {
+        w.write_all(&(p.len() as u64).to_le_bytes())
+            .context("writing pkp length")?;
+        for &v in p {
+            w.write_all(&v.to_le_bytes())
+                .context("writing pkp values")?;
+        }
+    }
+    w.flush().context("flushing pkp file")?;
+    Ok(())
+}
+
+/// Read a `.pkp` file written by [`save_profiles`], validating magic/version
+/// and that the stored `k` matches the requested one.
+pub fn load_profiles(path: &Path, k: usize) -> anyhow::Result<Vec<Vec<u16>>> {
+    let bytes = std::fs::read(path).context("reading pkp file")?;
+    anyhow::ensure!(bytes.len() >= PKP_HEADER_LEN, "truncated pkp header");
+    anyhow::ensure!(&bytes[0..4] == PKP_MAGIC, "not a pgr profile (bad magic)");
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    anyhow::ensure!(version == PKP_VERSION, "unsupported pkp version {version}");
+    let stored_k = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    anyhow::ensure!(
+        stored_k == k,
+        "pkp k mismatch: file has k={stored_k}, requested {k}"
+    );
+    let n_seqs = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
+    let mut off = PKP_HEADER_LEN;
+    let mut profiles = Vec::with_capacity(n_seqs as usize);
+    for _ in 0..n_seqs {
+        let len_bytes = bytes.get(off..off + 8).context("truncated pkp length")?;
+        let len = u64::from_le_bytes(len_bytes.try_into().unwrap());
+        off += 8;
+        let n_bytes = (len as usize)
+            .checked_mul(2)
+            .context("pkp length overflow")?;
+        let body = bytes
+            .get(off..off + n_bytes)
+            .context("truncated pkp values")?;
+        let mut p = Vec::with_capacity(len as usize);
+        for chunk in body.chunks_exact(2) {
+            p.push(u16::from_le_bytes(chunk.try_into().unwrap()));
+        }
+        profiles.push(p);
+        off += n_bytes;
+    }
+    anyhow::ensure!(off == bytes.len(), "trailing bytes in pkp file");
+    Ok(profiles)
 }
 
 #[cfg(test)]
@@ -227,5 +300,45 @@ mod tests {
                 assert_eq!(got, expected, "k={k}");
             }
         }
+    }
+
+    #[test]
+    fn save_load_profiles_roundtrip() {
+        let profiles = vec![
+            vec![1, 2, 3, 0, 32767],
+            vec![5, 5, 5],
+            vec![],
+            vec![0u16; 1000],
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.pkp");
+        save_profiles(&path, 17, &profiles).unwrap();
+        let loaded = load_profiles(&path, 17).unwrap();
+        assert_eq!(loaded, profiles);
+    }
+
+    #[test]
+    fn pkp_layout_and_rejections() {
+        let profiles = vec![vec![7u16, 8], vec![9u16]];
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.pkp");
+        save_profiles(&path, 9, &profiles).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[0..4], b"PKPP");
+        assert_eq!(&bytes[4..8], &1u32.to_le_bytes());
+        assert_eq!(&bytes[8..12], &9u32.to_le_bytes());
+        assert_eq!(&bytes[12..20], &2u64.to_le_bytes()); // n_seqs
+                                                         // seq 0: len 2 + [7, 8]
+        assert_eq!(&bytes[20..28], &2u64.to_le_bytes());
+        assert_eq!(&bytes[28..32], &[7, 0, 8, 0]);
+
+        // k mismatch and bad magic must be rejected.
+        assert!(load_profiles(&path, 10).is_err());
+        let bad = dir.path().join("bad.pkp");
+        std::fs::write(&bad, b"XXXX").unwrap();
+        assert!(load_profiles(&bad, 9).is_err());
+        // Truncated body must be rejected.
+        std::fs::write(&path, &bytes[..bytes.len() - 3]).unwrap();
+        assert!(load_profiles(&path, 9).is_err());
     }
 }
