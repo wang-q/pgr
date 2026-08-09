@@ -95,6 +95,9 @@ fmt/clippy/test 确认。
 - **pgi 长链链化（pbit 路线 3）：明确不做**（2026-08-09 用户裁定——项目
   优势 = 引入 UCSC chainnet 经典链化管线，自研 chain 效果始终不如它；
   链化依赖由 chainnet 承担，见 `design/pbit.md` §PAF 驱动编码的演进）。
+- **gzip 并行解压 / zlib-ng / libdeflate：明确不做**（2026-08-09 用户裁定——
+  程序常被 shell 包裹并行执行，pgr 侧 `fa` 保持单线程；inflate 内部已是
+  zlib-rs AVX2，见 `benchmarks/bench-profile-hotspots.md` 场景 1）。
 
 ## 5. 待实现 / 待决策（2026-08-09 文档扫描补充）
 
@@ -107,6 +110,10 @@ fmt/clippy/test 确认。
       真核（拟南芥/玉米等转座子丰富）与 RepeatMasker masked 输出对比
       recall（E. coli 无转座子无参考价值）；polyA/卫星低复杂度缺口由
       `rept trf` 兜底（来源：`design/repeat-masking.md` §2.4/§2.5）。
+- [ ] **SIMD 第二梯队候选（待评估，来源 `design/simd-optimization.md` §6）**：
+      `nt::rev_comp`/`complement`（先 perf 验证 `fa rc`/chain `to_axt` 规模）
+      与 `paf::cigar` 位图 + run 扫描；`twobit from_dna` 打包 I/O 主导存疑。
+      `count_bases`（第一梯队）已实现（2026-08-09，wide 7.5× / AVX2 47×）。
 - [ ] **paf 查询层扩展（待实现）**：`--min-tree-coverage`（Caf Tree
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时

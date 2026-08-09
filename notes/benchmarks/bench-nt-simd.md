@@ -17,17 +17,31 @@ wide 相对标量 ~2.8×（128-bit 拆分 + 判等掩码开销）。
 
 ## count_n（N 家族：IUPAC 歧义码 + N + X，12 个小写化值）
 
-| 规模 | scalar（NT_VAL 查表） | avx2 | avx2/scalar |
-|---|---:|---:|---:|
-| 10 MB | 2.81 ms | 430 µs | ~6.5× |
+| 规模 | scalar（NT_VAL 查表） | wide | avx2 | avx2/scalar |
+|---|---:|---:|---:|---:|
+| 10 MB | 2.81 ms | 3.99 ms（慢 42%，回退标量） | 430 µs | ~6.5× |
 
-非 AVX2 平台回退标量（12 值判等在 `wide` 上无收益，见代码注释）。
+`wide` 12 次判等开销超过标量 filter（2026-08-09 实测），非 AVX2 平台回退
+标量——**不可类推**：同是 12 值判等，`count_bases` 的 wide 却有 ~7.5×，
+因为它的标量基准（12 值链式 match）慢得多。
 
 ## masked_bitmap（`fa masked` 掩码位图，默认模式 = 小写 ∪ N 家族）
 
 | 规模 | scalar | avx2 | avx2/scalar |
 |---|---:|---:|---:|
 | 10 MB | 6.41 ms | 425 µs | ~15.1× |
+
+## count_bases（`fa count`：A/C/G/T/N 五类计数，U→T、IUPAC/X→N）
+
+| 规模 | scalar | wide | avx2 | wide/scalar | avx2/scalar |
+|---|---:|---:|---:|---:|---:|
+| 1 MB | 4.66 ms | 624 µs | 98.7 µs | ~7.5× | ~47× |
+| 10 MB | 46.9 ms | 6.26 ms | 987 µs | ~7.5× | ~47.5× |
+
+标量版为 12 值 N 家族 match 分支（每字节最多十几次比较），AVX2 固定
+17 次向量判等 + popcount，故加速比高于 count_n；`wide` 同样有 ~7.4×
+（首版按 count_n 推断"wide 无收益"走标量，实测后纠正为 wide 路径）。
+实现 2026-08-09，`nt_simd::count_bases` + `fasta::stat::count_bases` 转发。
 
 ## 结论
 

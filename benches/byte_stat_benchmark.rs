@@ -48,6 +48,23 @@ fn scalar_masked_bitmap(seq: &[u8], gap_only: bool) -> Vec<u32> {
         .collect()
 }
 
+fn scalar_count_bases(seq: &[u8]) -> [usize; 5] {
+    let mut cnt = [0usize; 5];
+    for &b in seq {
+        match b | 0x20 {
+            0x61 => cnt[0] += 1,
+            0x63 => cnt[1] += 1,
+            0x67 => cnt[2] += 1,
+            0x74 | 0x75 => cnt[3] += 1,
+            0x62 | 0x64 | 0x68 | 0x6B | 0x6D | 0x6E | 0x72 | 0x73 | 0x76 | 0x77 | 0x78 | 0x79 => {
+                cnt[4] += 1
+            }
+            _ => {}
+        }
+    }
+    cnt
+}
+
 fn bench_stats(c: &mut Criterion) {
     let mut rng = rand::rng();
     for (name, len) in [("1mb", 1_000_000usize), ("10mb", 10_000_000usize)] {
@@ -71,6 +88,16 @@ fn bench_stats(c: &mut Criterion) {
             nt_simd::masked_bitmap(&seq, true),
             scalar_masked_bitmap(&seq, true),
             "gap bitmap sanity"
+        );
+        assert_eq!(
+            nt_simd::count_bases(&seq),
+            scalar_count_bases(&seq),
+            "count_bases sanity"
+        );
+        assert_eq!(
+            nt_simd::count_bases_with(SimdPath::Wide, &seq),
+            scalar_count_bases(&seq),
+            "count_bases wide sanity"
         );
 
         let mut group = c.benchmark_group(format!("byte_stat_{name}"));
@@ -131,6 +158,30 @@ fn bench_stats(c: &mut Criterion) {
                 b.iter_batched(
                     || black_box(seq.clone()),
                     |s| nt_simd::masked_bitmap_with(SimdPath::Avx2, &s, false),
+                    BatchSize::LargeInput,
+                )
+            });
+        }
+        group.bench_function("count_bases_scalar", |b| {
+            b.iter_batched(
+                || black_box(seq.clone()),
+                |s| scalar_count_bases(&s),
+                BatchSize::LargeInput,
+            )
+        });
+        group.bench_function("count_bases_wide", |b| {
+            b.iter_batched(
+                || black_box(seq.clone()),
+                |s| nt_simd::count_bases_with(SimdPath::Wide, &s),
+                BatchSize::LargeInput,
+            )
+        });
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") {
+            group.bench_function("count_bases_avx2", |b| {
+                b.iter_batched(
+                    || black_box(seq.clone()),
+                    |s| nt_simd::count_bases_with(SimdPath::Avx2, &s),
                     BatchSize::LargeInput,
                 )
             });

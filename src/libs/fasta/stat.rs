@@ -89,17 +89,8 @@ pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 /// IUPAC ambiguous codes (M, R, W, S, Y, K, V, H, D, B) are counted as `N`;
 /// other non-standard characters (e.g., gaps, `*`) are excluded from `len`.
 pub fn count_bases(seq: &[u8]) -> (usize, [usize; 5]) {
-    let mut len = 0usize;
-    let mut base_cnt = [0usize; 5];
-
-    for &el in seq {
-        let nt = crate::libs::nt::to_nt(el);
-        if !matches!(nt, crate::libs::nt::Nt::Invalid) {
-            len += 1;
-            base_cnt[nt as usize] += 1;
-        }
-    }
-
+    let base_cnt = crate::libs::nt_simd::count_bases(seq);
+    let len = base_cnt.iter().sum();
     (len, base_cnt)
 }
 

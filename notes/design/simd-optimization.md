@@ -74,8 +74,8 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
 
 ### 第三梯队：非向量化，但可能才是真瓶颈
 
-- gzip 并行解压：多成员 gzip 流检测边界后并行 inflate，或换
-  zlib-ng / libdeflate。**受"不引入新依赖"约束，需用户决策。**
+- gzip 并行解压：**已裁定不做**（2026-08-09——程序常被 shell 包裹并行
+  执行，pgr 侧 `fa` 保持单线程；zlib-rs inflate 内部已是 AVX2）。
 - 单文件多 contig 的 rayon 并行（`dist mash` 序列级并行等待同类场景）。
 
 ### 已评估不做
@@ -89,3 +89,47 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
 2. 若 `.gz` 主导 → 压缩层解压优化优先；若解压后 CPU 主导 →
    `rev_comp` / `complement` 是套用现有模式最自然、风险最低的下一块。
 3. 每个候选按三步模式走：热点确认 → 双路径实现 → 位一致 + 基准落盘。
+
+## 6. 全库 SIMD 候选清单（2026-08-09 扫描）
+
+按三步模式适用条件（纯数据并行、无依赖链、非 I/O/RNG 主导）全库扫描，
+`fa` 路径保持单线程（SIMD 为指令级并行，不引入 rayon，与用户 2026-08-09
+裁定一致）。
+
+### 第一梯队：与 nt_simd 完全同构，低风险，~10× 预期
+
+1. `fasta::stat::count_bases`（`pgr fa count`，`src/libs/fasta/stat.rs`）：
+   逐字节 5 类统计（A/C/G/T/N，IUPAC→N，U→T，X→N），= count_valid +
+   count_n 的组合，复用 `eq_any_lower` 骨架。**已实现（2026-08-09）**：
+   `nt_simd::count_bases`（AVX2 + `wide` 回退，实测 wide ~7.5×、AVX2
+   ~47×——首版按 count_n 推断"wide 无收益"走标量，实测后纠正），基准见
+   [[../benchmarks/bench-nt-simd.md]]），`fa count` 接入。
+2. `nt::complement` / `rev_comp`（`src/libs/nt.rs`）：NT_COMP 查表，
+   pshufb 或 eq_any；消费方 pbit/pgi/paf graph/`fa rc`/chain `to_axt`/loc，
+   需先验证 `fa rc`、`to_axt` 的真实规模。
+
+### 第二梯队：模式需变体（位图 + 串行 run 扫描），收益中等
+
+3. `paf::cigar::cigar_from_alignment` / `cs_from_alignment`
+   （`src/libs/paf/cigar.rs`）：逐列 `=`/`X`/`I`/`D` 分类 + run 合并，
+   同 `fa masked` 的"SIMD 位图 + 串行扫描"结构；消费方为 PAF 批量生成。
+
+### 第三梯队：可做但 I/O 主导，收益存疑（先 profile）
+
+4. `twobit::from_dna` 位打包（`src/libs/fmt/twobit.rs`）：4 碱基→1 字节
+   SIMD + 位图追踪 N/小写块；2bit 命令 I/O 主导，单次收益可能被淹没。
+
+### 明确排除（有据可依）
+
+- `pgi/wave.rs`（Myers wave front）：diagonal 推进依赖链；
+- `pbit/lz_diff.rs`：哈希匹配主导；
+- `pgi/build.rs` syncmer：滚动哈希 + 单调队列依赖链；
+- kmer 滚动打包：已证伪（2.95 ms，占比 ~1%，见
+  [[../benchmarks/bench-profile-hotspots.md]]）；
+- `alignment/variation.rs`：规模小；
+- gzip 解压：用户已裁定不做。
+
+### 实施顺序建议
+
+先 `count_bases`（骨架现成）→ perf 验证 `fa rc` / PAF 生成里 rev_comp 与
+cigar 的真实占比，决定第二梯队 → 其余按数据说话。

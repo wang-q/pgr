@@ -79,6 +79,9 @@ pub fn count_n(seq: &[u8]) -> usize {
 pub fn count_n_with(path: SimdPath, seq: &[u8]) -> usize {
     let scalar = |s: &[u8]| s.iter().filter(|&&b| is_n_base(b)).count();
     match path {
+        // Measured 2026-08-09: 12 equality lanes cost more than the scalar
+        // filter (wide 3.99 ms vs scalar 2.81 ms on 10 MB), unlike count_valid
+        // and count_bases whose scalar baselines are much slower.
         SimdPath::Wide => scalar(seq),
         SimdPath::Auto | SimdPath::Avx2 => {
             #[cfg(target_arch = "x86_64")]
@@ -89,6 +92,62 @@ pub fn count_n_with(path: SimdPath, seq: &[u8]) -> usize {
             scalar(seq)
         }
     }
+}
+
+/// Counts A/C/G/T/N bases, returning `[A, C, G, T, N]` counts; equivalent
+/// to `fasta::stat::count_bases` (IUPAC ambiguous codes and X count as N,
+/// U as T, other bytes ignored).
+pub fn count_bases(seq: &[u8]) -> [usize; 5] {
+    count_bases_with(SimdPath::Auto, seq)
+}
+
+/// [`count_bases`] with an explicit implementation path.
+pub fn count_bases_with(path: SimdPath, seq: &[u8]) -> [usize; 5] {
+    match path {
+        SimdPath::Wide => count_bases_wide(seq),
+        SimdPath::Auto | SimdPath::Avx2 => {
+            #[cfg(target_arch = "x86_64")]
+            if is_x86_feature_detected!("avx2") {
+                // SAFETY: gated on runtime AVX2 support.
+                return unsafe { avx2::count_bases_avx2(seq) };
+            }
+            count_bases_wide(seq)
+        }
+    }
+}
+
+/// Portable `wide` path for [`count_bases`]: 32-byte lanes, one saturating-
+/// subtraction equality per candidate value (17 total), popcount per class.
+fn count_bases_wide(seq: &[u8]) -> [usize; 5] {
+    let or20 = u8x32::splat(0x20);
+    let mut cnt = [0usize; 5];
+    let (chunks, remainder) = seq.as_chunks::<32>();
+    for chunk in chunks {
+        let t = u8x32::from(*chunk) | or20;
+        cnt[0] += eq_bits(t, u8x32::splat(0x61)).count_ones() as usize;
+        cnt[1] += eq_bits(t, u8x32::splat(0x63)).count_ones() as usize;
+        cnt[2] += eq_bits(t, u8x32::splat(0x67)).count_ones() as usize;
+        cnt[3] +=
+            (eq_bits(t, u8x32::splat(0x74)) | eq_bits(t, u8x32::splat(0x75))).count_ones() as usize;
+        let mut n_bits = 0u32;
+        for &val in &N_LOWER {
+            n_bits |= eq_bits(t, u8x32::splat(val));
+        }
+        cnt[4] += n_bits.count_ones() as usize;
+    }
+    for &b in remainder {
+        match b | 0x20 {
+            0x61 => cnt[0] += 1,
+            0x63 => cnt[1] += 1,
+            0x67 => cnt[2] += 1,
+            0x74 | 0x75 => cnt[3] += 1,
+            0x62 | 0x64 | 0x68 | 0x6B | 0x6D | 0x6E | 0x72 | 0x73 | 0x76 | 0x77 | 0x78 | 0x79 => {
+                cnt[4] += 1
+            }
+            _ => {}
+        }
+    }
+    cnt
 }
 
 /// Builds a per-base mask bitmap: word `w` bit `k` is set iff `seq[w*32+k]`
@@ -206,6 +265,32 @@ mod avx2 {
         count + remainder.iter().filter(|&&b| is_n_base(b)).count()
     }
 
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn count_bases_avx2(seq: &[u8]) -> [usize; 5] {
+        let mut cnt = [0usize; 5];
+        let (chunks, remainder) = seq.as_chunks::<32>();
+        for chunk in chunks {
+            let v = load(chunk.as_ptr());
+            cnt[0] += popcount(eq_any_lower(v, &[0x61]));
+            cnt[1] += popcount(eq_any_lower(v, &[0x63]));
+            cnt[2] += popcount(eq_any_lower(v, &[0x67]));
+            cnt[3] += popcount(eq_any_lower(v, &[0x74, 0x75]));
+            cnt[4] += popcount(eq_any_lower(v, &N_LOWER));
+        }
+        for &b in remainder {
+            match b | 0x20 {
+                0x61 => cnt[0] += 1,
+                0x63 => cnt[1] += 1,
+                0x67 => cnt[2] += 1,
+                0x74 | 0x75 => cnt[3] += 1,
+                0x62 | 0x64 | 0x68 | 0x6B | 0x6D | 0x6E | 0x72 | 0x73 | 0x76 | 0x77 | 0x78
+                | 0x79 => cnt[4] += 1,
+                _ => {}
+            }
+        }
+        cnt
+    }
+
     /// One 32-byte word of the mask bitmap.
     #[inline]
     unsafe fn mask_word(v: __m256i, gap_only: bool) -> u32 {
@@ -306,6 +391,47 @@ mod tests {
                 })
                 .count();
             assert_eq!(count_valid(&seq), valid_ref);
+        }
+    }
+
+    #[test]
+    fn count_bases_matches_scalar() {
+        fn scalar_count_bases(seq: &[u8]) -> [usize; 5] {
+            let mut cnt = [0usize; 5];
+            for &b in seq {
+                match b | 0x20 {
+                    0x61 => cnt[0] += 1,
+                    0x63 => cnt[1] += 1,
+                    0x67 => cnt[2] += 1,
+                    0x74 | 0x75 => cnt[3] += 1,
+                    0x62 | 0x64 | 0x68 | 0x6B | 0x6D | 0x6E | 0x72 | 0x73 | 0x76 | 0x77 | 0x78
+                    | 0x79 => cnt[4] += 1,
+                    _ => {}
+                }
+            }
+            cnt
+        }
+        let mut rng = StdRng::seed_from_u64(2026);
+        for len in [0usize, 1, 31, 32, 33, 63, 64, 65, 1000, 10000] {
+            let seq = random_seq(&mut rng, len);
+            assert_eq!(count_bases(&seq), scalar_count_bases(&seq), "len={len}");
+        }
+    }
+
+    #[test]
+    fn count_bases_matches_nt_reference() {
+        // A/C/G/T/N bucket semantics: U→T, IUPAC/X→N, Invalid ignored.
+        let mut rng = StdRng::seed_from_u64(20260809);
+        for _ in 0..20 {
+            let seq = random_seq(&mut rng, 500);
+            let mut expected = [0usize; 5];
+            for &b in &seq {
+                let nt = crate::libs::nt::to_nt(b);
+                if nt != crate::libs::nt::Nt::Invalid {
+                    expected[nt as usize] += 1;
+                }
+            }
+            assert_eq!(count_bases(&seq), expected);
         }
     }
 
