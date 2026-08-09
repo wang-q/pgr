@@ -214,6 +214,34 @@ profile 完整时尾 run 的 end 自然正确（最后一个 k-mer 覆盖到序�
 
 只写 `.rg`，不复刻 Profex 文本；染色体名映射（点号 → `cN`）仍在管线层做。
 
+### 3.5 FastK 查表结构对照（2026-08-09，profiling 驱动）
+
+§3.3 的"全局排序数组 + `partition_point`"是迁移时的简化取舍（语义一致、
+零额外内存），但 **FastK 原版查表不是全局二分**，而是前缀索引 + 分桶：
+
+* `.ktab` 参考表是"前缀压缩 + 索引"结构（`libfastk.c` `_Kmer_Stream`）：
+  `ibyte` 字节前缀 → `index[1 << (8*ibyte)]` 偏移表 + `inverse_index`
+  （反向前缀索引）。
+* `Split_Table`（`split.c`，相对 profile 时）把参考表按 1-byte 前缀
+  （`Pro_File::index[257]`）分发到 NPARTS×NTHREADS 个块表；序列侧 k-mer
+  同前缀路由到块，排序合并时**块内**取 count——即 O(1) 前缀定位 +
+  桶内小范围查找（几十条，可入 cache），且多线程独立。
+
+pgr 迁移丢失了这层结构。profiling 实测（[[../benchmarks/bench-profile-hotspots.md]]）：
+`rept s-kmer` 中 `table_profiles` 占 78.5%，每窗口 ~23 次 u128 比较全是对
+~73 MB 全局表的 DRAM 随机访问（cache-miss 41%，每窗口 ~28 次）；
+mg1655 为单 contig，"按序列 par_iter" 无效。
+
+**已实现（2026-08-09，排序合并替代逐窗口查表）**：前缀索引方案先实测证伪
+（隔离基准：全局二分 1.125 s vs 前缀桶 1.195 s，见
+[[../benchmarks/bench-profile-hotspots.md]]——73 MB 表随机访问延迟主导，
+比较次数 23→7 无收益）。最终采用 FastK 的**排序合并**路线：收集全部窗口
+key（并行）→ `radix_sort_u128_par` 排序 → 与 `table.keys` 线性归并一次
+写回。基准：self_profiles 1.43 s → 250 ms（5.2×）、relative_profiles
+1.41 s → 270 ms（5.4×），`rept s-kmer` 整命令 1.67 s → 0.50 s（3.4×）。
+接口 `self_profiles`/`relative_profiles` 不变；语义由
+`sort_merge_matches_binary_search` 对照测试保证。
+
 ## 4. 集成改动
 
 ### 4.1 `src/libs/pl/repeat.rs`

@@ -1,6 +1,8 @@
 //! Per-sequence k-mer profiles (FastK `-p` / `-p:<table>` equivalents).
 
 use super::KmerTable;
+use crate::libs::ds::radix_sort::radix_sort_u128_par;
+use rayon::prelude::*;
 
 /// FastK caps per-k-mer counts at 32767 (`0x7fff`); profile values are `u16`.
 const PROFILE_CAP: u16 = 0x7fff;
@@ -24,32 +26,94 @@ pub fn relative_profiles(seqs: &[Vec<u8>], k: usize, table: &KmerTable) -> Vec<V
 /// Shared scan: each valid window's canonical key is looked up in `table` and
 /// its count (capped to the FastK 32767 limit) becomes the profile value;
 /// N-containing windows and missing keys profile as 0.
+///
+/// Implementation follows FastK's merge strategy instead of per-window
+/// table search: collect all window keys, sort them (parallel radix), and
+/// merge against the sorted table once. Per-window random lookups on the
+/// multi-MB key table are latency-bound regardless of search structure
+/// (measured 2026-08-09, see notes/benchmarks/bench-profile-hotspots.md).
 fn table_profiles(seqs: &[Vec<u8>], k: usize, table: &KmerTable) -> Vec<Vec<u16>> {
-    seqs.iter()
-        .map(|seq| {
-            let n = seq.len();
-            if n < k {
-                return Vec::new();
-            }
-            let mut out = vec![0u16; n - k + 1];
-            super::canonical_keys(seq, k, |p, key| {
-                let idx = table.keys.partition_point(|&x| x < key);
-                let value = if idx < table.keys.len() && table.keys[idx] == key {
-                    table.counts[idx].min(PROFILE_CAP as u32) as u16
-                } else {
-                    0
-                };
-                out[p] = value;
-            });
-            out
+    if seqs.is_empty() || table.keys.is_empty() {
+        return seqs
+            .iter()
+            .map(|seq| vec![0u16; seq.len().saturating_sub(k - 1)])
+            .collect();
+    }
+    // Collect every valid window as (key, location); per-sequence vectors so
+    // the collection itself can run in parallel, then flatten for sorting.
+    let per_seq: Vec<Vec<(u128, Loc)>> = seqs
+        .par_iter()
+        .enumerate()
+        .map(|(si, seq)| {
+            let mut v = Vec::new();
+            super::canonical_keys(seq, k, |p, key| v.push((key, Loc::new(si, p))));
+            v
         })
-        .collect()
+        .collect();
+    let n_windows: usize = per_seq.iter().map(Vec::len).sum();
+    let mut keys: Vec<u128> = Vec::with_capacity(n_windows);
+    let mut locs: Vec<Loc> = Vec::with_capacity(n_windows);
+    for v in per_seq {
+        for (key, loc) in v {
+            keys.push(key);
+            locs.push(loc);
+        }
+    }
+    radix_sort_u128_par(&mut keys, &mut locs, 2 * k as u32);
+    // Merge sorted windows against the (sorted, deduplicated) table: equal
+    // keys receive the table count; everything else stays 0 (N windows were
+    // never collected).
+    let mut out: Vec<Vec<u16>> = seqs
+        .iter()
+        .map(|seq| vec![0u16; seq.len().saturating_sub(k - 1)])
+        .collect();
+    let mut i = 0usize;
+    let mut j = 0usize;
+    while i < keys.len() && j < table.keys.len() {
+        let wk = keys[i];
+        let tk = table.keys[j];
+        if wk < tk {
+            i += 1;
+        } else if wk > tk {
+            j += 1;
+        } else {
+            let count = table.counts[j].min(PROFILE_CAP as u32) as u16;
+            while i < keys.len() && keys[i] == tk {
+                let (si, pos) = locs[i].split();
+                out[si][pos] = count;
+                i += 1;
+            }
+            j += 1;
+        }
+    }
+    out
+}
+
+/// Location of a collected window: sequence index and window start.
+#[derive(Clone, Copy)]
+struct Loc {
+    seq: u32,
+    pos: u64,
+}
+
+impl Loc {
+    fn new(seq: usize, pos: usize) -> Self {
+        Self {
+            seq: seq as u32,
+            pos: pos as u64,
+        }
+    }
+
+    fn split(self) -> (usize, usize) {
+        (self.seq as usize, self.pos as usize)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::libs::kmer::count::build_table;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     /// Deterministic pseudo-random DNA block (same LCG as pgi tests).
     fn random_block(len: usize, seed: u64) -> Vec<u8> {
@@ -133,5 +197,35 @@ mod tests {
                 .sum::<u16>(),
             0
         );
+    }
+
+    #[test]
+    fn sort_merge_matches_binary_search() {
+        // Random multi-sequence inputs: the sort+merge implementation must
+        // agree with the previous per-window partition_point lookup.
+        let mut rng = StdRng::seed_from_u64(20260809);
+        for k in [1usize, 4, 8, 17, 40] {
+            for _ in 0..10 {
+                let seqs: Vec<Vec<u8>> = (0..rng.random_range(1..8))
+                    .map(|_| random_block(rng.random_range(20..200), rng.random()))
+                    .collect();
+                let table = build_table(&seqs, k).unwrap();
+                let got = table_profiles(&seqs, k, &table);
+                let expected: Vec<Vec<u16>> = seqs
+                    .iter()
+                    .map(|seq| {
+                        let mut out = vec![0u16; seq.len().saturating_sub(k - 1)];
+                        crate::libs::kmer::canonical_keys(seq, k, |p, key| {
+                            let idx = table.keys.partition_point(|&x| x < key);
+                            if idx < table.keys.len() && table.keys[idx] == key {
+                                out[p] = table.counts[idx].min(PROFILE_CAP as u32) as u16;
+                            }
+                        });
+                        out
+                    })
+                    .collect();
+                assert_eq!(got, expected, "k={k}");
+            }
+        }
     }
 }

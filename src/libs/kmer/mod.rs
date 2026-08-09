@@ -27,7 +27,7 @@ pub struct KmerTable {
 /// and its profile has a 0 at such positions). The rolling forward key and
 /// its reverse complement (same rolling scheme as `pgi/build.rs`) select the
 /// lexicographically smaller of the two strands.
-pub(crate) fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, u128)) {
+pub fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, u128)) {
     let n = seq.len();
     if n < k {
         return;

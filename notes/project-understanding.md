@@ -1,10 +1,13 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-08
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-09
 （2026-08-09：`libs/poa` 补 SIMD 垂直并行（`simd.rs`，AVX2 手写 + `wide` 回退，
  分派沿用 HV 式），`Poa` 默认引擎切换，基准 120 bp ~8.7× / 600 bp ~12.3×；
  更新 §4.1/§9/§10 与 [[spoa.md]] 参考分析（新增，合并原 spoa_port.md 移植状态）。
+（2026-08-09：新增 [[design/simd-optimization.md]]——三轮向量化（HV/POA/
+ fa 逐字节统计）的共同模式、适用边界与教训；实测 50 MB DNA 下 gzip 解压
+ 占 81%，建议下一步先 profile 真实场景再选点；更新 §10。
 （2026-08-09：fa 逐字节统计矢量化——`libs/nt_simd.rs`（count_valid/count_n/
  masked_bitmap，AVX2 + `wide` 回退），`fa size --no-ns`/`fa masked`/`fa filter`
  接入；基准 count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，详见
@@ -608,6 +611,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 | [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成（2026-08-06）；`rept masker` 完整 RepeatMasker 模拟已实现（2026-08-07） |
 | [[genome-nn-query.md]] | 百万级基因组最近邻查询/聚类/搜索方法调研（GSearch / RabbitTClust / BIGSI / LexicMap / MMseqs2 等），为 UI 设计铺垫 | 调研完成（2026-08-08）；命令形态与 sketch 选型待讨论 |
+| [[simd-optimization.md]] | SIMD 优化方法论（HV/POA/fa 逐字节三轮的"三步模式"、适用边界表、gzip 主导实测、后续候选热点与建议流程） | 已建立（2026-08-09） |
 
 ## 11. 外部工具参考索引（notes/references/）
 
@@ -656,3 +660,5 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-intspan-setops.md]] | IntSpan 集合运算（intersect/union/diff/xor）线性化与 `from_pairs` 批量构建的 criterion 基准：20k span 时 ~100–220×、100k 构建 ~105× |
 | [[benchmarks/bench-rg-runlist.md]] | `pgr rg runlist` vs `rgr runlist`：`IntSpan::covered` 二分后 overlap ~83×、superset ~588×（rgr 走旧 diff） |
 | [[benchmarks/bench-simd-hv-jaccard.md]] | SIMD/HV/Jaccard 基准（hnsm 迁移 + AVX2）：norm SIMD ~7.8×、AVX2 bit ±1 编码 ~4.8×（相对旧 bit）/~3.1×（相对旧 i8）、i8 保语义 ~2.1×、rapidhash Jaccard 最快（2026-08-07 更新） |
+| [[benchmarks/bench-nt-simd.md]] | fa 逐字节统计 SIMD 基准（nt_simd）：count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，wide 回退 ~2.8×；单基因组 CLI 上 I/O 主导（2026-08-09） |
+| [[benchmarks/bench-profile-hotspots.md]] | 热点 profiling 实测（2026-08-09，perf）：fa size gz 中 inflate 43%+memset 35%；rept s-kmer 中 table_profiles 79%（partition_point cache miss 41%，单 contig 无法并行）；pgi build 无单一主导 |
