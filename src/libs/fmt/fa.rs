@@ -444,33 +444,40 @@ pub fn mask_sequence(
 
 /// Find contiguous masked regions (lowercase and/or N/n) in a sequence. Returns 0-based inclusive (begin, end) pairs.
 pub fn find_masked_regions(seq: &[u8], gap_only: bool) -> Vec<(usize, usize)> {
+    let words = crate::libs::nt_simd::masked_bitmap(seq, gap_only);
     let mut regions = Vec::new();
-    let mut begin = usize::MAX;
-    let mut end = usize::MAX;
+    let mut begin: Option<usize> = None;
+    let mut end: Option<usize> = None;
 
-    for (i, &el) in seq.iter().enumerate() {
-        let is_masked = if gap_only {
-            crate::libs::nt::is_n(el)
-        } else {
-            crate::libs::nt::is_n(el) || crate::libs::nt::is_lower(el)
-        };
-
-        if is_masked {
-            if begin == usize::MAX {
-                begin = i;
+    for (wi, word) in words.into_iter().enumerate() {
+        let base = wi * 32;
+        let mut w = word;
+        let mut off = 0usize;
+        while w != 0 {
+            let tz = w.trailing_zeros() as usize;
+            let run = w >> tz;
+            let ones = run.trailing_ones() as usize;
+            let s = base + off + tz;
+            let e = s + ones - 1;
+            match end {
+                Some(prev_end) if s == prev_end + 1 => end = Some(e),
+                Some(prev_end) => {
+                    regions.push((begin.unwrap(), prev_end));
+                    begin = Some(s);
+                    end = Some(e);
+                }
+                None => {
+                    begin = Some(s);
+                    end = Some(e);
+                }
             }
-            end = i;
-        } else if begin != usize::MAX {
-            regions.push((begin, end));
-            begin = usize::MAX;
-            end = usize::MAX;
+            off += tz + ones;
+            w >>= tz + ones;
         }
     }
-
-    if begin != usize::MAX {
-        regions.push((begin, end));
+    if let (Some(b), Some(e)) = (begin, end) {
+        regions.push((b, e));
     }
-
     regions
 }
 

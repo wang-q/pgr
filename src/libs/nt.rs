@@ -118,14 +118,7 @@ pub fn is_lower(nt: u8) -> bool {
 /// assert_eq!(pgr::libs::nt::count_n(dna), 3);
 /// ```
 pub fn count_n(seq: &[u8]) -> usize {
-    let mut n_cnt = 0;
-    for c in seq {
-        if is_n(*c) {
-            n_cnt += 1;
-        }
-    }
-
-    n_cnt
+    crate::libs::nt_simd::count_n(seq)
 }
 
 /// convert IUPAC ambiguous codes to 'N'

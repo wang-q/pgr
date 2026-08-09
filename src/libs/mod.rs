@@ -14,6 +14,7 @@ pub mod linalg;
 pub mod loc;
 pub mod ms;
 pub mod nt;
+pub mod nt_simd;
 pub mod paf;
 pub mod par;
 pub mod pbit;

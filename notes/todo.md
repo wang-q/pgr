@@ -25,6 +25,12 @@
   位置），分派沿用 HV 式（AVX2 手写 + `wide` 回退，无 SSE4.1 中间档/SIMDe）；
   `Poa` 默认引擎切换，标量保留测试对照；基准 120 bp ~8.7× / 600 bp ~12.3×
   （`benches/poa_benchmark.rs`）；参考分析见 `references/spoa.md`（新增）。
+- **fa 逐字节统计矢量化（2026-08-09）**：`libs/nt_simd.rs` 新增
+  `count_valid`（`fa size --no-ns`）/ `count_n`（N 家族含 IUPAC）/
+  `masked_bitmap`（`fa masked` 位图，区域合并扫描在 `fmt/fa.rs`），分派沿用
+  HV 式（AVX2 手写 + `wide` 回退，N 家族非 AVX2 回退标量）；基准
+  count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×
+  （`benches/byte_stat_benchmark.rs`，详见 `benchmarks/bench-nt-simd.md`）。
 
 **未提交**：pbit 相关代码、测试与文档（本会话改动，含 v1010 判定 + 强制
 PAF）；并行审计另有 6 文件（fas_xlsx.rs、fas/subset.rs、cli_fas_vars.rs、

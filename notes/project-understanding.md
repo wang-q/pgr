@@ -5,6 +5,10 @@
 （2026-08-09：`libs/poa` 补 SIMD 垂直并行（`simd.rs`，AVX2 手写 + `wide` 回退，
  分派沿用 HV 式），`Poa` 默认引擎切换，基准 120 bp ~8.7× / 600 bp ~12.3×；
  更新 §4.1/§9/§10 与 [[spoa.md]] 参考分析（新增，合并原 spoa_port.md 移植状态）。
+（2026-08-09：fa 逐字节统计矢量化——`libs/nt_simd.rs`（count_valid/count_n/
+ masked_bitmap，AVX2 + `wide` 回退），`fa size --no-ns`/`fa masked`/`fa filter`
+ 接入；基准 count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，详见
+ [[benchmarks/bench-nt-simd.md]]，更新 §4.4。
 （2026-08-08：全量核对子命令注册与库文件——align 4 子命令（fill/lastz/pgi/rest）、paf 10
  子命令（新增 validate）、pl 4 子命令（ir/rept/trf 迁出为独立 rept 命令：ir→e-kmer、
  rept→s-kmer）、rept 独立命令（6 子命令，含 masker）；补 libs/rmblast.rs、
@@ -348,6 +352,8 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `pgi build`
   比对锚点（dist 侧已改用 mini/mash/frac 草图，不再使用 syncmer）
 - `libs/nt.rs`：核苷酸类型与 2-bit k-mer 编解码（`pack_kmer`/`rc_key`/`rolling_kmer_keys`）
+- `libs/nt_simd.rs`：逐字节统计 SIMD（`count_valid`/`count_n`/`masked_bitmap`，
+  AVX2 手写 + `wide` 回退，分派沿用 HV 式；`fa size --no-ns`/`fa masked` 接入）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 - `libs/plot/`：绘图工具（dot/histogram/nrps/venn）
 - `libs/lastz.rs`：lastz 调用封装
