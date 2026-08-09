@@ -612,6 +612,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成（2026-08-06）；`rept masker` 完整 RepeatMasker 模拟已实现（2026-08-07） |
 | [[genome-nn-query.md]] | 百万级基因组最近邻查询/聚类/搜索方法调研（GSearch / RabbitTClust / BIGSI / LexicMap / MMseqs2 等），为 UI 设计铺垫 | 调研完成（2026-08-08）；命令形态与 sketch 选型待讨论 |
 | [[simd-optimization.md]] | SIMD 优化方法论（HV/POA/fa 逐字节三轮的"三步模式"、适用边界表、gzip 主导实测、后续候选热点与建议流程） | 已建立（2026-08-09） |
+| [[kmer-sampling-simd.md]] | Kmer 采样消费方分析 + simd-minimizers/packed-seq 参考评估（2026-08-09）：pgi build/align rest/dist mini/frac/mash/hv 采样占比；窗口最小型仅 pgi build 值得（分块法已优化 -16.6%）；frac 8 路并行滚动证伪（87→282 ms）；"人基因组 4 秒"来源分析；基线基准数据 | 已建立（2026-08-09，自 benchmarks/references 合并迁入） |
 
 ## 11. 外部工具参考索引（notes/references/）
 
@@ -663,4 +664,3 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-nt-simd.md]] | fa 逐字节统计 SIMD 基准（nt_simd）：count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，wide 回退 ~2.8×；单基因组 CLI 上 I/O 主导（2026-08-09） |
 | [[benchmarks/bench-profile-hotspots.md]] | 热点 profiling 实测（2026-08-09，perf）：fa size gz 中 inflate 43%+memset 35%；rept s-kmer 中 table_profiles 79%（partition_point cache miss 41%）→ 排序合并优化 ~5.2–5.4×、整命令 3.4×；pgi build 无单一主导；gzip 并行解压已裁定不做 |
 | [[benchmarks/bench-simd-tiers.md]] | SIMD 三级回退速度对比（AVX2 / wide128 / 标量，2026-08-09 汇总）：统计类 AVX2 超 wide 5–6×、DP/打包类仅 1.2–1.8×；count_n/masked 无 wide、norm 无 AVX2 手写、cigar 无 wide 的设计取舍与依据 |
-| [[benchmarks/bench-kmer-consumers.md]] | Kmer 采样消费方分析（2026-08-09）：pgi build/align rest/dist mini/frac/mash/hv 的采样占比与借鉴价值；窗口最小型仅 pgi build 值得（已优化），哈希草图型 frac 43% 最高（8 路并行哈希方向） |
