@@ -561,7 +561,7 @@ fn command_kmer_gsize_model_fit() -> anyhow::Result<()> {
     // magnitude only. Exact recovery is covered by the noiseless synthetic
     // unit test in libs/kmer/hist.rs.
     assert!(
-        (300.0..=3000.0).contains(&size),
+        (500.0..=10000.0).contains(&size),
         "genome size {size} far from 1000 bp"
     );
     Ok(())

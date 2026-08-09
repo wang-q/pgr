@@ -13,7 +13,7 @@ pub const MAX_ITERATIONS: usize = 200;
 
 /// Natural log of the gamma function (Lanczos approximation, GSL-style).
 #[allow(clippy::excessive_precision)]
-fn lgamma(x: f64) -> f64 {
+pub(crate) fn lgamma(x: f64) -> f64 {
     const C: [f64; 9] = [
         0.99999999999980993,
         676.5203681218851,
@@ -36,26 +36,6 @@ fn lgamma(x: f64) -> f64 {
         }
         0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
     }
-}
-
-/// Negative binomial PMF, R `dnbinom(x, size, mu)` semantics.
-fn dnbinom(x: f64, size: f64, mu: f64) -> f64 {
-    if mu <= 0.0 {
-        return 0.0;
-    }
-    if !size.is_finite() {
-        // Poisson limit as size -> Inf (R dnbinom handles size = Inf).
-        return (-mu + x * mu.ln() - lgamma(x + 1.0)).exp();
-    }
-    if size <= 0.0 {
-        return 0.0;
-    }
-    // log P = lgamma(x+size) - lgamma(size) - lgamma(x+1)
-    //        + size*ln(size/(size+mu)) + x*ln(mu/(size+mu))
-    let log_p = lgamma(x + size) - lgamma(size) - lgamma(x + 1.0)
-        + size * (size / (size + mu)).ln()
-        + x * (mu / (size + mu)).ln();
-    log_p.exp()
 }
 
 /// Model parameters shared by the fitted mixtures.
@@ -104,8 +84,13 @@ pub(crate) fn predict(p: usize, top: usize, params: &ModelParams, k: usize, x: f
             // r0 = 1, t0 = s0 = 1
             let alpha1 = 1.0 - params.d;
             let alpha2 = params.d;
-            alpha1 * dnbinom(x, params.kmercov / params.bias, params.kmercov)
-                + alpha2 * dnbinom(x, 2.0 * params.kmercov / params.bias, 2.0 * params.kmercov)
+            alpha1 * super::nbinom::dnbinom(x, params.kmercov / params.bias, params.kmercov)
+                + alpha2
+                    * super::nbinom::dnbinom(
+                        x,
+                        2.0 * params.kmercov / params.bias,
+                        2.0 * params.kmercov,
+                    )
         }
         (2, 1) | (2, 0) => {
             let r0 = 1.0 - params.r1;
@@ -119,10 +104,25 @@ pub(crate) fn predict(p: usize, top: usize, params: &ModelParams, k: usize, x: f
             let alpha2 = (1.0 - params.d) * s0 + params.d * (s1 * s1);
             let alpha3 = params.d * (2.0 * s0 * s1);
             let alpha4 = params.d * (s0 * s0);
-            alpha1 * dnbinom(x, params.kmercov / params.bias, params.kmercov)
-                + alpha2 * dnbinom(x, 2.0 * params.kmercov / params.bias, 2.0 * params.kmercov)
-                + alpha3 * dnbinom(x, 3.0 * params.kmercov / params.bias, 3.0 * params.kmercov)
-                + alpha4 * dnbinom(x, 4.0 * params.kmercov / params.bias, 4.0 * params.kmercov)
+            alpha1 * super::nbinom::dnbinom(x, params.kmercov / params.bias, params.kmercov)
+                + alpha2
+                    * super::nbinom::dnbinom(
+                        x,
+                        2.0 * params.kmercov / params.bias,
+                        2.0 * params.kmercov,
+                    )
+                + alpha3
+                    * super::nbinom::dnbinom(
+                        x,
+                        3.0 * params.kmercov / params.bias,
+                        3.0 * params.kmercov,
+                    )
+                + alpha4
+                    * super::nbinom::dnbinom(
+                        x,
+                        4.0 * params.kmercov / params.bias,
+                        4.0 * params.kmercov,
+                    )
         }
         _ => 0.0,
     }
@@ -136,7 +136,8 @@ pub(crate) fn predict_unique(p: usize, params: &ModelParams, k: usize, x: f64) -
             if params.d > 1.0 {
                 0.0
             } else {
-                (1.0 - params.d) * dnbinom(x, params.kmercov / params.bias, params.kmercov)
+                (1.0 - params.d)
+                    * super::nbinom::dnbinom(x, params.kmercov / params.bias, params.kmercov)
             }
         }
         2 => {
@@ -149,8 +150,12 @@ pub(crate) fn predict_unique(p: usize, params: &ModelParams, k: usize, x: f64) -
                 let s1 = 1.0 - t0;
                 let a1 = (1.0 - params.d) * (2.0 * s1);
                 let a2 = (1.0 - params.d) * s0;
-                a1 * dnbinom(x, params.kmercov / params.bias, params.kmercov)
-                    + a2 * dnbinom(x, 2.0 * params.kmercov / params.bias, 2.0 * params.kmercov)
+                a1 * super::nbinom::dnbinom(x, params.kmercov / params.bias, params.kmercov)
+                    + a2 * super::nbinom::dnbinom(
+                        x,
+                        2.0 * params.kmercov / params.bias,
+                        2.0 * params.kmercov,
+                    )
             }
         }
         _ => 0.0,
@@ -417,23 +422,15 @@ fn nls_peak(
     // estLength = sum(x*count)/kmercov is already genome-scale; try starts
     // around it (the transformed profile carries an x factor, not x^3, so
     // no kmercov^2 correction is needed).
-    // estLength = sum(x*count)/kmercov is already genome-scale; try starts
-    // around it (the transformed profile carries an x factor, not x^3, so
-    // no kmercov^2 correction is needed).
-    let length_inits = [
-        est_length / p as f64,
-        est_length / p as f64 * 1.25,
-        est_length / p as f64 * 0.8,
-    ];
+    // R `nls_peak` starts: length_initial = estLength/p, kmercov_initial =
+    // estKmercov, bias_initial = 0.5, d_initial = 0.10.
+    let length_inits = [est_length / p as f64];
     let r_starts: Vec<f64> = if p == 1 {
         vec![0.0]
     } else {
         vec![0.001, 0.001 * 1.0, 0.001, 0.01, 0.01, 0.01]
     };
-    // d starts span the plausible range; R uses a single 0.10 start, but
-    // the extra starts help escape the d/length local optimum that the
-    // numeric LM can otherwise settle into.
-    let d_starts = [0.001, 0.10, 0.50];
+    let d_starts = [0.10];
     let maxfev = 100 * (spec_params_len(p) + 1);
     let residual = |params: &[f64]| -> Vec<f64> {
         let mp = params_to_model(params, p);
@@ -842,7 +839,9 @@ mod tests {
         assert!((lgamma(7.0) - (720.0f64).ln()).abs() < 1e-10);
         // dnbinom sums to ~1 over the support for a Poisson-like shape.
         let size = 20.0 / 0.5;
-        let total: f64 = (0..200).map(|x| dnbinom(x as f64, size, 20.0)).sum();
+        let total: f64 = (0..200)
+            .map(|x| super::super::nbinom::dnbinom(x as f64, size, 20.0))
+            .sum();
         assert!((total - 1.0).abs() < 1e-6, "dnbinom sum {total}");
     }
 

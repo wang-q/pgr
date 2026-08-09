@@ -177,8 +177,10 @@ fn qrsolv(
 ) {
     for j in 0..n {
         for i in (j + 1)..n {
-            let tmp = r[j * n + i];
-            r[i * n + j] = tmp;
+            // r(i,j) = r(j,i): copy the strict upper triangle into the
+            // lower triangle (column-major: upper is r[i*n+j]).
+            let tmp = r[i * n + j];
+            r[j * n + i] = tmp;
         }
         x[j] = r[j * n + j];
         wa[j] = qtb[j];
@@ -212,9 +214,11 @@ fn qrsolv(
             qtbpj = -sin * wa[k] + cos * qtbpj;
             wa[k] = temp;
             for i in (k + 1)..n {
-                let temp = cos * r[i * n + k] + sin * sdiag[i];
-                sdiag[i] = -sin * r[i * n + k] + cos * sdiag[i];
-                r[i * n + k] = temp;
+                // r(i,k) = cos*r(i,k) + sin*sdiag(i): lower triangle
+                // (row i, col k) is r[k*n+i] in column-major order.
+                let temp = cos * r[k * n + i] + sin * sdiag[i];
+                sdiag[i] = -sin * r[k * n + i] + cos * sdiag[i];
+                r[k * n + i] = temp;
             }
         }
         sdiag[j] = r[j * n + j];
@@ -234,7 +238,8 @@ fn qrsolv(
             let j = nsing - kk - 1;
             let mut sum = 0.0;
             for i in (j + 1)..nsing {
-                sum += r[i * n + j] * wa[i];
+                // r(i,j) is at r[j*n+i] (column-major).
+                sum += r[j * n + i] * wa[i];
             }
             wa[j] = (wa[j] - sum) / sdiag[j];
         }
@@ -354,7 +359,8 @@ fn lmpar(
             wa1[j] /= sdiag[j];
             let temp3 = wa1[j];
             for i in (j + 1)..n {
-                wa1[i] -= r[i * n + j] * temp3;
+                // r(i,j) is at r[j*n+i] (column-major).
+                wa1[i] -= r[j * n + i] * temp3;
             }
         }
         let temp3 = enorm(&wa1[..n]);
@@ -657,6 +663,7 @@ pub(crate) fn invert_matrix(a: &[f64], n: usize) -> Option<Vec<f64>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 mod tests {
     use super::*;
 
@@ -706,6 +713,139 @@ mod tests {
         );
         assert!(res.x[0] <= 3.0 + 1e-6, "x0 must respect upper bound");
         assert!((res.x[1] - 2.0).abs() < 1e-6, "x1 {}", res.x[1]);
+    }
+
+    #[test]
+    fn lmpar_matches_minpack_lm_reference() {
+        // First-iteration inputs from the minpack.lm Fortran run on the
+        // GenomeScope problem; expected output par=0.56244753664 and
+        // x=(0.095564939, 4.656859496, 0.679095862, -90.452266883).
+        let n = 4;
+        let r = vec![
+            -7955.050625225653,
+            0.0,
+            0.0,
+            0.0, //
+            -1614.2909977540087,
+            -1218.6343721288254,
+            0.0,
+            0.0, //
+            -68.334174844890711,
+            285.81791036053585,
+            -307.59028780530474,
+            0.0, //
+            8.403675929025966,
+            8.500842227421385e-6,
+            -1.8756556049487534e-4,
+            -1.0352689913445627e-4,
+        ];
+        let ipvt = vec![0usize, 2, 1, 3];
+        let diag = vec![
+            7955.050625225653,
+            425.40947625405056,
+            2022.6233357606282,
+            8.403675931761132,
+        ];
+        let qtb = vec![
+            -3362.422530966394,
+            -212.386257577499,
+            -3543.6065262283173,
+            -451.94132229970836,
+        ];
+        let delta = 2613.2047615359565;
+        let mut x = vec![0.0; n];
+        let mut sdiag = vec![0.0; n];
+        let mut wa1 = vec![0.0; n];
+        let mut wa2 = vec![0.0; n];
+        let par: f64 = lmpar(
+            n,
+            &mut r.clone(),
+            &ipvt,
+            &diag,
+            &qtb,
+            delta,
+            0.0,
+            &mut x,
+            &mut sdiag,
+            &mut wa1,
+            &mut wa2,
+        );
+        assert!((par - 0.56244753664351843).abs() < 1e-12, "par {par}");
+        let expected = [
+            0.0955649391598923,
+            4.656859495638244,
+            0.6790958621285849,
+            -90.45226688323875,
+        ];
+        for (i, e) in expected.iter().enumerate() {
+            assert!((x[i] - e).abs() < 1e-8, "x[{i}] {} vs {e}", x[i]);
+        }
+    }
+
+    #[test]
+    fn qrsolv_matches_minpack_lm_reference() {
+        // First lmpar iteration of the GenomeScope run: par=1.5063873743616401e-6.
+        let n = 4;
+        let mut r = vec![
+            -7955.050625225653,
+            0.0,
+            0.0,
+            0.0, //
+            -1614.2909977540087,
+            -1218.6343721288254,
+            0.0,
+            0.0, //
+            -68.334174844890711,
+            285.81791036053585,
+            -307.59028780530474,
+            0.0, //
+            8.403675929025966,
+            8.500842227421385e-6,
+            -1.8756556049487534e-4,
+            -1.0352689913445627e-4,
+        ];
+        let ipvt = [0usize, 2, 1, 3];
+        let orig_diag = [
+            7955.050625225653,
+            425.40947625405056,
+            2022.6233357606282,
+            8.403675931761132,
+        ];
+        let par: f64 = 1.5063873743616401e-6;
+        let temp = par.sqrt();
+        let diag: Vec<f64> = orig_diag.iter().map(|d| temp * d).collect();
+        let qtb = vec![
+            -3362.422530966394,
+            -212.386257577499,
+            -3543.6065262283173,
+            -451.94132229970836,
+        ];
+        let mut x = vec![0.0; n];
+        let mut sdiag = vec![0.0; n];
+        let mut wa = vec![0.0; n];
+        qrsolv(n, &mut r, &ipvt, &diag, &qtb, &mut x, &mut sdiag, &mut wa);
+        let expected = [
+            0.10233276198364068f64,
+            11.520260552142499,
+            2.8762302542552676,
+            342.93815320894311,
+        ];
+        for (i, e) in expected.iter().enumerate() {
+            assert!((x[i] - e).abs() < 1e-8f64, "x[{i}] {} vs {e}", x[i]);
+        }
+        let expected_s = [
+            -7955.056616917308f64,
+            -1218.6385112553457,
+            -307.5917711573897,
+            0.014587118848163102,
+        ];
+        for (i, e) in expected_s.iter().enumerate() {
+            assert!(
+                (sdiag[i] - e).abs() < 1e-8f64,
+                "sdiag[{i}] {} vs {e}",
+                sdiag[i]
+            );
+        }
     }
 
     #[test]
