@@ -2,10 +2,10 @@ use super::align::{Alignment, AlignmentEngine, AlignmentParams, AlignmentType};
 use super::graph::PoaGraph;
 use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
-use wide::i32x8;
+use wide::i32x4;
 
 /// Number of i32 lanes per SIMD vector (AVX2 256-bit).
-const LANES: usize = 8;
+const LANES: usize = 4;
 
 /// Negative infinity sentinel, identical to the scalar engine.
 const NEG_INF: i32 = -1_000_000_000;
@@ -118,19 +118,19 @@ fn build_ctx(sequence: &[u8], graph: &PoaGraph) -> AlignCtx {
 }
 
 /// Match/mismatch profile per vector column (`j == 0` and padding lanes are 0).
-fn build_profile(
+fn build_profile<const N: usize>(
     seq: &[u8],
     base: u8,
     m_score: i32,
     n_score: i32,
     n_seq: usize,
     n_vec: usize,
-) -> Vec<[i32; LANES]> {
+) -> Vec<[i32; N]> {
     (0..n_vec)
         .map(|v| {
-            let mut arr = [0i32; LANES];
+            let mut arr = [0i32; N];
             for (k, a) in arr.iter_mut().enumerate() {
-                let j = v * LANES + k;
+                let j = v * N + k;
                 *a = if j == 0 || j > n_seq {
                     0
                 } else if seq[j - 1] == base {
@@ -145,12 +145,17 @@ fn build_profile(
 }
 
 /// Virtual-root row: `root[0] = 0`, `root[j] = gap_open + (j-1)*gap_extend`.
-fn build_root(gap_open: i32, gap_extend: i32, n_seq: usize, n_vec: usize) -> Vec<[i32; LANES]> {
+fn build_root<const N: usize>(
+    gap_open: i32,
+    gap_extend: i32,
+    n_seq: usize,
+    n_vec: usize,
+) -> Vec<[i32; N]> {
     (0..n_vec)
         .map(|v| {
-            let mut arr = [0i32; LANES];
+            let mut arr = [0i32; N];
             for (k, a) in arr.iter_mut().enumerate() {
-                let j = v * LANES + k;
+                let j = v * N + k;
                 *a = if j == 0 || j > n_seq {
                     0
                 } else {
@@ -165,19 +170,17 @@ fn build_root(gap_open: i32, gap_extend: i32, n_seq: usize, n_vec: usize) -> Vec
 /// Shifts a vector right by one lane, filling lane 0 with `prev_last`:
 /// `[prev_last, v0, v1, ..., v6]` (the `j-1` diagonal for a column).
 #[inline]
-fn shift1(v: i32x8, prev_last: i32) -> i32x8 {
+fn shift1(v: i32x4, prev_last: i32) -> i32x4 {
     let arr = v.to_array();
-    i32x8::from([
-        prev_last, arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6],
-    ])
+    i32x4::from([prev_last, arr[0], arr[1], arr[2]])
 }
 
 /// Prefix scan with linear penalties: `y[k] = max_{t <= k}(a[t] + (k-t)*e)`.
 ///
 /// Log-step scan (shift 1/2/4 lanes), equivalent to spoa's `prefix_max`.
-fn prefix_scan(mut a: i32x8, e: i32) -> i32x8 {
-    let neg_inf = i32x8::splat(NEG_INF);
-    for n in [1usize, 2, 4] {
+fn prefix_scan(mut a: i32x4, e: i32) -> i32x4 {
+    let neg_inf = i32x4::splat(NEG_INF);
+    for n in [1usize, 2] {
         let arr = a.to_array();
         let mut shifted = [0i32; LANES];
         let mut excl = [0i32; LANES];
@@ -185,8 +188,8 @@ fn prefix_scan(mut a: i32x8, e: i32) -> i32x8 {
             shifted[k] = if k >= n { arr[k - n] } else { arr[LANES - 1] };
             excl[k] = if k >= n { 0 } else { -1 };
         }
-        let excl_mask = i32x8::from(excl);
-        let contrib = excl_mask.select(neg_inf, i32x8::from(shifted)) + i32x8::splat(n as i32 * e);
+        let excl_mask = i32x4::from(excl);
+        let contrib = excl_mask.select(neg_inf, i32x4::from(shifted)) + i32x4::splat(n as i32 * e);
         a = a.max(contrib);
     }
     a
@@ -194,18 +197,18 @@ fn prefix_scan(mut a: i32x8, e: i32) -> i32x8 {
 
 /// Fills lane 0 of `v` with `boundary`.
 #[inline]
-fn set_lane0(v: i32x8, boundary: i32) -> i32x8 {
+fn set_lane0(v: i32x4, boundary: i32) -> i32x4 {
     let arr = v.to_array();
     let mut out = arr;
     out[0] = boundary;
-    i32x8::from(out)
+    i32x4::from(out)
 }
 
 /// Clamps negative-infinity-domain lanes to `NEG_INF`.
 #[inline]
-fn clamp_neg_inf(v: i32x8) -> i32x8 {
-    let mask = (v - i32x8::splat(NEG_INF_HALF)).is_negative();
-    mask.select(i32x8::splat(NEG_INF), v)
+fn clamp_neg_inf(v: i32x4) -> i32x4 {
+    let mask = (v - i32x4::splat(NEG_INF_HALF)).is_negative();
+    mask.select(i32x4::splat(NEG_INF), v)
 }
 
 /// Forward DP (wide path); returns M/E/F matrices and best-cell info.
@@ -216,9 +219,9 @@ fn forward_wide(
     sequence: &[u8],
     ctx: &AlignCtx,
 ) -> (
-    Vec<Vec<i32x8>>,
-    Vec<Vec<i32x8>>,
-    Vec<Vec<i32x8>>,
+    Vec<Vec<i32x4>>,
+    Vec<Vec<i32x4>>,
+    Vec<Vec<i32x4>>,
     i32,
     usize,
     usize,
@@ -233,16 +236,14 @@ fn forward_wide(
 
     let n_nodes = ctx.n_nodes;
     let n_vec = ctx.n_vec;
-    let g_open_v = i32x8::splat(g_open);
-    let g_ext_v = i32x8::splat(g_ext);
-    let neg_inf_v = i32x8::splat(NEG_INF);
-    let j1_zero = i32x8::from([
-        NEG_INF, 0, NEG_INF, NEG_INF, NEG_INF, NEG_INF, NEG_INF, NEG_INF,
-    ]);
+    let g_open_v = i32x4::splat(g_open);
+    let g_ext_v = i32x4::splat(g_ext);
+    let neg_inf_v = i32x4::splat(NEG_INF);
+    let j1_zero = i32x4::from([NEG_INF, 0, NEG_INF, NEG_INF]);
 
-    let root: Vec<i32x8> = build_root(g_open, g_ext, ctx.n_seq, n_vec)
+    let root: Vec<i32x4> = build_root(g_open, g_ext, ctx.n_seq, n_vec)
         .into_iter()
-        .map(i32x8::from)
+        .map(i32x4::from)
         .collect();
 
     let mut m = vec![vec![neg_inf_v; n_vec]; n_nodes];
@@ -258,7 +259,7 @@ fn forward_wide(
     for i in 0..n_nodes {
         let preds = &ctx.preds_of_rank[i];
         let is_start = ctx.is_start[i];
-        let profile: Vec<i32x8> = build_profile(
+        let profile: Vec<i32x4> = build_profile(
             sequence,
             ctx.base_of_rank[i],
             m_score,
@@ -267,7 +268,7 @@ fn forward_wide(
             n_vec,
         )
         .into_iter()
-        .map(i32x8::from)
+        .map(i32x4::from)
         .collect();
 
         // Boundary value for F at j == 0 (column 0, lane 0).
@@ -319,7 +320,7 @@ fn forward_wide(
                 }
             }
             if is_local {
-                m_vec = m_vec.max(i32x8::splat(0));
+                m_vec = m_vec.max(i32x4::splat(0));
             }
             m_vec = clamp_neg_inf(m_vec);
             if v == 0 {
@@ -470,6 +471,10 @@ mod avx2 {
     use super::*;
     use std::arch::x86_64::*;
 
+    /// AVX2 processes 8 i32 lanes; shadows the 128-bit `LANES` of the wide
+    /// path so internal `[i32; LANES]` arrays keep their 256-bit width.
+    const LANES: usize = 8;
+
     #[inline]
     unsafe fn set1(v: i32) -> __m256i {
         _mm256_set1_epi32(v)
@@ -548,7 +553,9 @@ mod avx2 {
         let is_semi = align_type == AlignmentType::SemiGlobal;
 
         let n_nodes = ctx.n_nodes;
-        let n_vec = ctx.n_vec;
+        // build_ctx sizes vectors for the 128-bit wide path; AVX2 needs its
+        // own 8-lane count.
+        let n_vec = (ctx.n_seq + 1).div_ceil(LANES);
         let g_open_v = set1(g_open);
         let g_ext_v = set1(g_ext);
         let neg_inf_v = set1(NEG_INF);

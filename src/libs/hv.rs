@@ -1,6 +1,6 @@
 use rand::{RngCore, SeedableRng};
 use rapidhash::RapidRng;
-use wide::{bytemuck, i32x8, u16x8, u32x8, u8x16};
+use wide::{bytemuck, i32x4, u32x4};
 
 #[cfg(target_arch = "x86_64")]
 mod rng_jump {
@@ -152,30 +152,22 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
             let halves = [(rnd_bits as u32), (rnd_bits >> 32) as u32];
 
             for (k, half) in halves.iter().enumerate() {
-                // Use SIMD to process 8 bits at a time
-                for j in (0..32).step_by(8) {
-                    let bit_mask = u32x8::splat(1);
-                    let shift = u32x8::from([
-                        j as u32,
-                        (j + 1) as u32,
-                        (j + 2) as u32,
-                        (j + 3) as u32,
-                        (j + 4) as u32,
-                        (j + 5) as u32,
-                        (j + 6) as u32,
-                        (j + 7) as u32,
-                    ]);
-                    let bits = (u32x8::splat(*half) >> shift) & bit_mask;
+                // Use SIMD to process 4 bits at a time (128-bit lanes).
+                for j in (0..32).step_by(4) {
+                    let bit_mask = u32x4::splat(1);
+                    let shift =
+                        u32x4::from([j as u32, (j + 1) as u32, (j + 2) as u32, (j + 3) as u32]);
+                    let bits = (u32x4::splat(*half) >> shift) & bit_mask;
 
                     // Convert bits to i32 and shift left by 1 (0/1 bit pattern
                     // is identical in u32 and i32, so a reinterpret cast suffices)
-                    let bits_i32: i32x8 = bytemuck::cast(bits);
-                    let bits_i32 = bits_i32 << i32x8::splat(1);
+                    let bits_i32: i32x4 = bytemuck::cast(bits);
+                    let bits_i32 = bits_i32 << i32x4::splat(1);
 
                     let base = i * 64 + k * 32 + j;
-                    let mut hv_simd = i32x8::from(&hv[base..base + 8]);
+                    let mut hv_simd = i32x4::from(&hv[base..base + 4]);
                     hv_simd += bits_i32;
-                    hv[base..base + 8].copy_from_slice(&hv_simd.to_array());
+                    hv[base..base + 4].copy_from_slice(&hv_simd.to_array());
                 }
             }
         }
@@ -226,7 +218,8 @@ pub fn hash_hv_i8(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     for hash in seed_vec {
         let mut rng = RapidRng::seed_from_u64(*hash);
 
-        // Process 8 dimensions per chunk (1 u64 = 8 bytes)
+        // Process 8 dimensions per chunk (1 u64 = 8 bytes), as two 4-lane
+        // 128-bit vectors (SSE2/NEON, independent of the compile-time avx2).
         let num_chunk = hv_d / 8;
 
         for i in 0..num_chunk {
@@ -235,21 +228,27 @@ pub fn hash_hv_i8(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
 
             // Sign-extend each byte as i8, then to i32: (b << 24) >> 24
             // with an arithmetic right shift equals b as i8 as i32.
-            let mut arr = [0u8; 16];
-            arr[..8].copy_from_slice(&bytes);
-            let vec_u8 = u8x16::from(arr);
-            let vec_u16 = u16x8::from_u8x16_low(vec_u8);
-            let vec_i32 = i32x8::from_u16x8(vec_u16);
-            let vec_vals = (vec_i32 << i32x8::splat(24)) >> i32x8::splat(24);
+            let lo = i32x4::from([
+                bytes[0] as i8 as i32,
+                bytes[1] as i8 as i32,
+                bytes[2] as i8 as i32,
+                bytes[3] as i8 as i32,
+            ]);
+            let hi = i32x4::from([
+                bytes[4] as i8 as i32,
+                bytes[5] as i8 as i32,
+                bytes[6] as i8 as i32,
+                bytes[7] as i8 as i32,
+            ]);
 
-            // Load current HV values
-            let mut hv_simd = i32x8::from(&hv[i * 8..(i + 1) * 8]);
+            let base = i * 8;
+            let mut hv_lo = i32x4::from(&hv[base..base + 4]);
+            hv_lo += lo;
+            hv[base..base + 4].copy_from_slice(&hv_lo.to_array());
 
-            // Accumulate
-            hv_simd += vec_vals;
-
-            // Store back
-            hv[i * 8..(i + 1) * 8].copy_from_slice(&hv_simd.to_array());
+            let mut hv_hi = i32x4::from(&hv[base + 4..base + 8]);
+            hv_hi += hi;
+            hv[base + 4..base + 8].copy_from_slice(&hv_hi.to_array());
         }
     }
 

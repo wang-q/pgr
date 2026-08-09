@@ -1,9 +1,4 @@
-use wide::f32x8;
-
-/// Number of lanes in the SIMD vector.
-/// Each SIMD vector can process 8 `f32` elements at once.
-/// 32 * 8 = 256, AVX2
-const LANES: usize = 8;
+use wide::f32x4;
 
 // https://www.maartengrootendorst.com/blog/distances/
 // https://crates.io/crates/semanticsimilarity_rs
@@ -25,22 +20,33 @@ const LANES: usize = 8;
 /// assert_eq!(format!("{:.4}", distance), "18.1659".to_string());
 /// ```
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
-    let (a_extra, a_chunks): (&[f32], &[[f32; LANES]]) = a.as_rchunks();
-    let (b_extra, b_chunks): (&[f32], &[[f32; LANES]]) = b.as_rchunks();
+    // 8-element blocks feed two independent 128-bit accumulators (ILP),
+    // independent of the compile-time avx2 flag.
+    let (a_extra, a_chunks): (&[f32], &[[f32; 8]]) = a.as_rchunks();
+    let (b_extra, b_chunks): (&[f32], &[[f32; 8]]) = b.as_rchunks();
 
-    let mut sums = [0.0; LANES];
-    for ((x, y), d) in std::iter::zip(a_extra, b_extra).zip(&mut sums) {
+    let mut extra = 0.0f32;
+    for (x, y) in std::iter::zip(a_extra, b_extra) {
         let diff = x - y;
-        *d = diff * diff;
+        extra += diff * diff;
     }
 
-    let mut sums = f32x8::from(sums);
-    std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        let diff = f32x8::from(*x) - f32x8::from(*y);
-        sums += diff * diff;
-    });
-
-    sums.reduce_add().sqrt()
+    let mut s0 = f32x4::from([extra, 0.0, 0.0, 0.0]);
+    let mut s1 = f32x4::splat(0.0);
+    for (x, y) in a_chunks.iter().zip(b_chunks) {
+        let (xl, xh) = (
+            f32x4::from([x[0], x[1], x[2], x[3]]),
+            f32x4::from([x[4], x[5], x[6], x[7]]),
+        );
+        let (yl, yh) = (
+            f32x4::from([y[0], y[1], y[2], y[3]]),
+            f32x4::from([y[4], y[5], y[6], y[7]]),
+        );
+        let (dl, dh) = (xl - yl, xh - yh);
+        s0 += dl * dl;
+        s1 += dh * dh;
+    }
+    (s0 + s1).reduce_add().sqrt()
 }
 
 /// Computes the dot product of two vectors `a` and `b`.
@@ -60,20 +66,29 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
 /// assert_eq!(dot, 220.0);
 /// ```
 pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
-    let (a_extra, a_chunks): (&[f32], &[[f32; LANES]]) = a.as_rchunks();
-    let (b_extra, b_chunks): (&[f32], &[[f32; LANES]]) = b.as_rchunks();
+    let (a_extra, a_chunks): (&[f32], &[[f32; 8]]) = a.as_rchunks();
+    let (b_extra, b_chunks): (&[f32], &[[f32; 8]]) = b.as_rchunks();
 
-    let mut sums = [0.0; LANES];
-    for ((x, y), d) in std::iter::zip(a_extra, b_extra).zip(&mut sums) {
-        *d = x * y;
+    let mut extra = 0.0f32;
+    for (x, y) in std::iter::zip(a_extra, b_extra) {
+        extra += x * y;
     }
 
-    let mut sums = f32x8::from(sums);
-    std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        sums += f32x8::from(*x) * f32x8::from(*y);
-    });
-
-    sums.reduce_add()
+    let mut s0 = f32x4::from([extra, 0.0, 0.0, 0.0]);
+    let mut s1 = f32x4::splat(0.0);
+    for (x, y) in a_chunks.iter().zip(b_chunks) {
+        let (xl, xh) = (
+            f32x4::from([x[0], x[1], x[2], x[3]]),
+            f32x4::from([x[4], x[5], x[6], x[7]]),
+        );
+        let (yl, yh) = (
+            f32x4::from([y[0], y[1], y[2], y[3]]),
+            f32x4::from([y[4], y[5], y[6], y[7]]),
+        );
+        s0 += xl * yl;
+        s1 += xh * yh;
+    }
+    (s0 + s1).reduce_add()
 }
 
 /// Computes the L2 norm (Euclidean norm) of a vector `a`.
@@ -110,19 +125,24 @@ pub fn norm_l2(a: &[f32]) -> f32 {
 /// assert_eq!(norm_sq, 385.0);
 /// ```
 pub fn norm_l2_sq(a: &[f32]) -> f32 {
-    let (a_extra, a_chunks): (&[f32], &[[f32; LANES]]) = a.as_rchunks();
+    // 8-element blocks feed two independent 128-bit accumulators, restoring
+    // the ILP of the old 256-bit path without requiring AVX2.
+    let (a_extra, a_chunks): (&[f32], &[[f32; 8]]) = a.as_rchunks();
 
-    let mut sums = [0.0; LANES];
-    for (x, d) in std::iter::zip(a_extra, &mut sums) {
-        *d = x * x;
+    let mut extra = 0.0f32;
+    for x in a_extra {
+        extra += x * x;
     }
 
-    let mut sums = f32x8::from(sums);
-    a_chunks.iter().for_each(|x| {
-        sums += f32x8::from(*x) * f32x8::from(*x);
-    });
-
-    sums.reduce_add()
+    let mut s0 = f32x4::from([extra, 0.0, 0.0, 0.0]);
+    let mut s1 = f32x4::splat(0.0);
+    for x in a_chunks {
+        let lo = f32x4::from([x[0], x[1], x[2], x[3]]);
+        let hi = f32x4::from([x[4], x[5], x[6], x[7]]);
+        s0 += lo * lo;
+        s1 += hi * hi;
+    }
+    (s0 + s1).reduce_add()
 }
 
 /// Computes the sum of all elements in a vector `a`.
@@ -140,19 +160,20 @@ pub fn norm_l2_sq(a: &[f32]) -> f32 {
 /// assert_eq!(sum_value, 55.0);
 /// ```
 pub fn sum(a: &[f32]) -> f32 {
-    let (a_extra, a_chunks): (&[f32], &[[f32; LANES]]) = a.as_rchunks();
+    let (a_extra, a_chunks): (&[f32], &[[f32; 8]]) = a.as_rchunks();
 
-    let mut sums = [0.0; LANES];
-    for (x, d) in std::iter::zip(a_extra, &mut sums) {
-        *d = *x;
+    let mut extra = 0.0f32;
+    for x in a_extra {
+        extra += *x;
     }
 
-    let mut sums = f32x8::from(sums);
-    a_chunks.iter().for_each(|x| {
-        sums += f32x8::from(*x);
-    });
-
-    sums.reduce_add()
+    let mut s0 = f32x4::from([extra, 0.0, 0.0, 0.0]);
+    let mut s1 = f32x4::splat(0.0);
+    for x in a_chunks {
+        s0 += f32x4::from([x[0], x[1], x[2], x[3]]);
+        s1 += f32x4::from([x[4], x[5], x[6], x[7]]);
+    }
+    (s0 + s1).reduce_add()
 }
 
 /// Computes the mean (average) of a vector `a`.
@@ -194,20 +215,25 @@ pub fn mean(a: &[f32]) -> f32 {
 /// assert_eq!(intersection, 30.0);
 /// ```
 pub fn jaccard_intersection(a: &[f32], b: &[f32]) -> f32 {
-    let (a_extra, a_chunks): (&[f32], &[[f32; LANES]]) = a.as_rchunks();
-    let (b_extra, b_chunks): (&[f32], &[[f32; LANES]]) = b.as_rchunks();
+    let (a_extra, a_chunks): (&[f32], &[[f32; 8]]) = a.as_rchunks();
+    let (b_extra, b_chunks): (&[f32], &[[f32; 8]]) = b.as_rchunks();
 
-    let mut sums = [0.0; LANES];
-    for ((x, y), d) in std::iter::zip(a_extra, b_extra).zip(&mut sums) {
-        *d = f32::min(*x, *y);
+    let mut extra = 0.0f32;
+    for (x, y) in std::iter::zip(a_extra, b_extra) {
+        extra += f32::min(*x, *y);
     }
 
-    let mut sums = f32x8::from(sums);
-    std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        sums += f32x8::min(f32x8::from(*x), f32x8::from(*y));
-    });
-
-    sums.reduce_add()
+    let mut s0 = f32x4::from([extra, 0.0, 0.0, 0.0]);
+    let mut s1 = f32x4::splat(0.0);
+    for (x, y) in a_chunks.iter().zip(b_chunks) {
+        let xl = f32x4::from([x[0], x[1], x[2], x[3]]);
+        let xh = f32x4::from([x[4], x[5], x[6], x[7]]);
+        let yl = f32x4::from([y[0], y[1], y[2], y[3]]);
+        let yh = f32x4::from([y[4], y[5], y[6], y[7]]);
+        s0 += f32x4::min(xl, yl);
+        s1 += f32x4::min(xh, yh);
+    }
+    (s0 + s1).reduce_add()
 }
 
 /// Computes the Jaccard union of two vectors `a` and `b`.
@@ -228,20 +254,25 @@ pub fn jaccard_intersection(a: &[f32], b: &[f32]) -> f32 {
 /// assert_eq!(union, 80.0);
 /// ```
 pub fn jaccard_union(a: &[f32], b: &[f32]) -> f32 {
-    let (a_extra, a_chunks): (&[f32], &[[f32; LANES]]) = a.as_rchunks();
-    let (b_extra, b_chunks): (&[f32], &[[f32; LANES]]) = b.as_rchunks();
+    let (a_extra, a_chunks): (&[f32], &[[f32; 8]]) = a.as_rchunks();
+    let (b_extra, b_chunks): (&[f32], &[[f32; 8]]) = b.as_rchunks();
 
-    let mut sums = [0.0; LANES];
-    for ((x, y), d) in std::iter::zip(a_extra, b_extra).zip(&mut sums) {
-        *d = f32::max(*x, *y);
+    let mut extra = 0.0f32;
+    for (x, y) in std::iter::zip(a_extra, b_extra) {
+        extra += f32::max(*x, *y);
     }
 
-    let mut sums = f32x8::from(sums);
-    std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        sums += f32x8::max(f32x8::from(*x), f32x8::from(*y));
-    });
-
-    sums.reduce_add()
+    let mut s0 = f32x4::from([extra, 0.0, 0.0, 0.0]);
+    let mut s1 = f32x4::splat(0.0);
+    for (x, y) in a_chunks.iter().zip(b_chunks) {
+        let xl = f32x4::from([x[0], x[1], x[2], x[3]]);
+        let xh = f32x4::from([x[4], x[5], x[6], x[7]]);
+        let yl = f32x4::from([y[0], y[1], y[2], y[3]]);
+        let yh = f32x4::from([y[4], y[5], y[6], y[7]]);
+        s0 += f32x4::max(xl, yl);
+        s1 += f32x4::max(xh, yh);
+    }
+    (s0 + s1).reduce_add()
 }
 
 /// Computes the Pearson correlation coefficient between two vectors `a` and `b`.

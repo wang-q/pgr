@@ -116,7 +116,11 @@ inflate 内部已是 AVX2；`rept s-kmer` 的 79% 在 `table_profiles` 的
       （反汇编实证：`u8x16` 在 `+avx2` 编译下仍 0 条 ymm；`u8x32`
       则有 3 条）——老 CPU 因此可兜底。**nt_simd 已改造**
       （2026-08-09，`u8x16` + `SimdPath::Scalar` 显式兜底，性能与 256-bit
-      时代一致）；**linalg/poa/hv 待改**（见 `todo.md`）。
+      时代一致）；**linalg/poa/hv 已改完（2026-08-09 晚）**。教训：有跨
+      chunk 累加依赖链的函数（linalg norm/dot 等），128-bit 化必须配
+      **双累加器**（8 元素块拆两个独立向量），否则依赖链变长慢 ~2×
+      （实测 norm 0.72→1.45µs，双累加恢复 747ns）；逐 chunk 独立无累加链
+      的函数（nt_simd 统计）无此问题。
    3. 无法检测/无 SIMD 平台 → **纯标量**最终兜底。
    无 SSE4.1 中间档、无 SIMDe；wide 256-bit 类型（`u8x32` 等）**禁用**。
 8. **wide 必须实测且受编译前提约束**：

@@ -110,17 +110,24 @@ fmt/clippy/test 确认。
       真核（拟南芥/玉米等转座子丰富）与 RepeatMasker masked 输出对比
       recall（E. coli 无转座子无参考价值）；polyA/卫星低复杂度缺口由
       `rept trf` 兜底（来源：`design/repeat-masking.md` §2.4/§2.5）。
-- [ ] **wide 128-bit 化：linalg / poa / hv**（原则见
-      `design/simd-optimization.md` §5 第 7 条）：当前 `f32x8`/`i32x8`/
-      `u32x8`（256-bit）在编译开 avx2 时变真 AVX2、无 AVX2 CPU 上 SIGILL；
-      改为 `f32x4`/`i32x4`/`u32x4`（SSE2/NEON 原生，默认编译性能不变）。
-      `nt_simd` 已改（2026-08-09，`u8x16` + `Scalar` 兜底，验证通过）。
+- [x] ~~**wide 128-bit 化：linalg / poa / hv**~~ → **已完成（2026-08-09）**：
+      全部改 128-bit（`f32x4`/`i32x4`/`u32x4`，SSE2/NEON 原生，编译 avx2
+      无关）。**linalg 需双累加器**（8 元素块拆两个 128-bit，否则单累加器
+      依赖链慢 2×：norm 0.72→1.45µs，双累加恢复 747ns）；**poa** 的 avx2
+      模块遮蔽 `LANES=8`、`build_root/profile` 泛型化、avx2 自算 n_vec
+      （基准 12.1×/8.1× 不变）；**hv** 处 2 重写为双 `i32x4`（RNG 调用数
+      不变，AVX2 主路径不变）。三种编译配置（默认/+avx2/aarch64）全验证。
 - [x] ~~**SIMD 第二梯队 `paf::cigar`（来源 `design/simd-optimization.md` §6）**~~ →
       **已实现（2026-08-09）**：`classify_alignment` SIMD 分类掩码一次扫描 +
       `scan_cigar_ops`/`scan_cs` 共享 + 位运算 run 跳扫；`maf to-paf` 40 M
       列 0.55 s → 0.347 s（~37%），输出逐字节一致。`rev_comp`/`complement`
       已评估暂缓（`fa rc` 实测仅 ~14%，memset/IO 主导）。
       `count_bases`（第一梯队）已实现（wide 7.5× / AVX2 47×）。
+- [x] ~~**hv_benchmark 拆分**~~ → **已完成（2026-08-09）**：现役核心
+      （`hash_hv_bit`/`i8`/`sparse`，16 组）留在 `benches/hv_benchmark.rs`
+      （全跑 ~2.5 min）；历史对照（AVX-512 ref、RNG 候选、i16/pshufb、
+      encode 变体、哈希吞吐）移入 `benches/hv_benchmark_ref.rs`（按需
+      filter 跑）。原 54 组全跑 10–20 min 的根因是组数多，非单组数据量。
 - [ ] **paf 查询层扩展（待实现）**：`--min-tree-coverage`（Caf Tree
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
