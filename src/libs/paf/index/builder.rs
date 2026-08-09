@@ -1,14 +1,14 @@
 //! Index construction: in-memory, multi-reader, and lazy BGZF modes.
 
 use super::{build_trees, insert_record, PafIndex, PafMetadata};
+use crate::libs::bgzf::CachedBgzfReader;
 use crate::libs::paf::parser::{parse_paf, parse_paf_line};
 use anyhow::Context;
 use coitrees::Interval;
 use indexmap::IndexMap;
-use noodles_bgzf as bgzf;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::BufRead;
+use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 impl PafIndex {
@@ -80,8 +80,8 @@ impl PafIndex {
 
     /// Lazy BGZF build: store virtual positions, fetch CIGAR on demand.
     pub(crate) fn build_lazy_bgzf(path: &str) -> anyhow::Result<Self> {
-        let file = File::open(path)?;
-        let mut reader = bgzf::io::Reader::new(file);
+        let capacity = NonZeroUsize::new(16).expect("non-zero");
+        let mut reader = CachedBgzfReader::open_virtual(path, capacity)?;
 
         let mut names = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
@@ -89,7 +89,7 @@ impl PafIndex {
         let mut line = String::new();
 
         loop {
-            let vpos = u64::from(reader.virtual_position());
+            let vpos = u64::from(reader.virtual_position().unwrap_or_default());
             line.clear();
             let n = reader.read_line(&mut line)?;
             if n == 0 {
@@ -110,7 +110,7 @@ impl PafIndex {
             names,
             trees,
             reverse_trees,
-            lazy_source: Some(Mutex::new(bgzf::io::Reader::new(File::open(path)?))),
+            lazy_source: Some(Mutex::new(CachedBgzfReader::open_virtual(path, capacity)?)),
             lazy_source_path: Some(path.to_string()),
         })
     }
@@ -118,8 +118,10 @@ impl PafIndex {
     /// Reopen the lazy source file (used after `load` to restore lazy mode).
     pub(crate) fn reopen_lazy_source(&mut self) -> std::io::Result<()> {
         if let Some(ref path) = self.lazy_source_path {
-            let file = File::open(path)?;
-            self.lazy_source = Some(Mutex::new(bgzf::io::Reader::new(file)));
+            let capacity = NonZeroUsize::new(16).expect("non-zero");
+            self.lazy_source = Some(Mutex::new(
+                CachedBgzfReader::open_virtual(path, capacity).map_err(std::io::Error::other)?,
+            ));
         }
         Ok(())
     }

@@ -10,9 +10,7 @@ use crate::libs::paf::cigar::{reverse_cigar, CigarOp};
 use crate::libs::paf::record::PafRecord;
 use coitrees::{BasicCOITree, Interval, IntervalTree};
 use indexmap::IndexMap;
-use noodles_bgzf as bgzf;
 use std::collections::HashMap;
-use std::fs::File;
 use std::sync::{Arc, Mutex};
 
 pub(crate) use query::project;
@@ -78,7 +76,7 @@ pub struct PafIndex {
     /// without requiring a second PAF record with swapped roles.
     pub(crate) reverse_trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
     /// Lazy CIGAR source: BGZF reader + original file path (for persistence).
-    pub(crate) lazy_source: Option<Mutex<bgzf::io::Reader<File>>>,
+    pub(crate) lazy_source: Option<Mutex<crate::libs::bgzf::CachedBgzfReader>>,
     pub(crate) lazy_source_path: Option<String>,
 }
 

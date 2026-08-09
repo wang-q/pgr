@@ -19,10 +19,10 @@ pub fn is_fq<P: AsRef<std::path::Path>>(path: P) -> anyhow::Result<bool> {
 
     let first_char = if buffer[0] == 0x1f && buffer[1] == 0x8b {
         // Gzip-compressed: decompress the first bytes
-        let mut decoder = flate2::read::GzDecoder::new(
+        let mut decoder = crate::libs::bgzf::GzReader::new(
             std::fs::File::open(path)
                 .with_context(|| format!("could not open {}", path.display()))?,
-        );
+        )?;
         let mut buf = [0; 2];
         decoder
             .read_exact(&mut buf)

@@ -56,9 +56,16 @@ pub fn reader(input: &str) -> anyhow::Result<Box<dyn BufRead + Send>> {
     let file = File::open(path).with_context(|| format!("could not open {}", path.display()))?;
 
     if path.extension() == Some(std::ffi::OsStr::new("gz")) {
-        Ok(Box::new(BufReader::new(flate2::read::MultiGzDecoder::new(
-            file,
-        ))))
+        if crate::is_bgzf(input) {
+            Ok(Box::new(BufReader::with_capacity(
+                1 << 16,
+                crate::libs::bgzf::ParallelBgzfReader::open(input, 4)?,
+            )))
+        } else {
+            Ok(Box::new(BufReader::new(crate::libs::bgzf::GzReader::new(
+                file,
+            )?)))
+        }
     } else {
         Ok(Box::new(BufReader::new(file)))
     }

@@ -37,11 +37,10 @@ rand = { version = "0.9.0" }
 minimizer-iter = "1.2.1"
 
 coitrees = "0.4"
-noodles = { version = "0.104.0", features = ["core", "fasta", "fastq", "bgzf", "gff"] }
+noodles = { version = "0.104.0", features = ["core", "fasta", "fastq", "gff"] }
 noodles-core = "0.18.0"
 noodles-fasta = "0.58.0"
 noodles-fastq = "0.21.0"
-noodles-bgzf = "0.45.0"
 noodles-gff = "0.54.0"
 memchr = "2.8.3"
 bstr = "1.13.0"
@@ -52,8 +51,9 @@ tempfile = "3.14.0"
 
 rust_xlsxwriter = "0.83.0"
 bio = "0.30.1"
-flate2 = "1.1.8"
 libdeflater = "1.25.2"
+crc32fast = "1.5.0"
+libz-ng-sys = "1.1.29"
 tera = "1.20.1"
 csv = "1.4.0"
 serde = { version = "1", features = ["derive"] }
@@ -225,8 +225,9 @@ sqlite-vector-rs = "0.1"
 linflate = "0.1.11"
 isal-rs = "0.5.3"
 isal-sys = "0.5.3"
-libz-ng-sys = "1.1.29"
 miniz_oxide = "0.8"
+noodles-bgzf = "0.45.0"
+flate2 = "1.1.8"
 
 [profile.release]
 lto = true

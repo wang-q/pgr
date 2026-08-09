@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use flate2::{Decompress, FlushDecompress};
 use isal_sys::igzip_lib::{
     inflate_state, isal_inflate_init, isal_inflate_stateless, ISAL_DECOMP_OK, ISAL_DEFLATE,
 };
@@ -101,6 +102,35 @@ fn replay_reads<R: Read + Seek>(reader: &mut R, reads: &[(u64, usize)]) {
         buf.resize(len, 0);
         reader.read_exact(&mut buf).expect("read");
         black_box(&buf);
+    }
+}
+
+struct Flate2Inflater {
+    decompress: Decompress,
+}
+
+impl Default for Flate2Inflater {
+    fn default() -> Self {
+        Self {
+            decompress: Decompress::new(false),
+        }
+    }
+}
+
+impl BlockInflater for Flate2Inflater {
+    fn inflate(&mut self, cdata: &[u8], dst: &mut [u8]) -> io::Result<()> {
+        self.decompress.reset(false);
+        let status = self
+            .decompress
+            .decompress(cdata, dst, FlushDecompress::Finish)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        if status != flate2::Status::StreamEnd {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "incomplete inflate",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -221,9 +251,7 @@ fn zeroed_z_stream() -> libz_ng_sys::z_stream {
 
 fn inflater_variants() -> Vec<(&'static str, InflaterFactory)> {
     vec![
-        ("flate2", || {
-            Box::<pgr::libs::bgzf::Flate2Inflater>::default()
-        }),
+        ("flate2", || Box::<Flate2Inflater>::default()),
         ("linflate", || {
             Box::new(LinflateInflater { buf: Vec::new() })
         }),
@@ -277,5 +305,53 @@ fn bench_cached_reader(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_indexed_reader, bench_cached_reader);
+fn bench_sequential_read(c: &mut Criterion) {
+    let set = test_set();
+    let mut group = c.benchmark_group("bgzf/sequential_read");
+
+    group.bench_function("gz_reader", |b| {
+        b.iter(|| {
+            let mut rdr =
+                pgr::libs::bgzf::GzReader::new(std::fs::File::open(&set.path).unwrap()).unwrap();
+            let mut total = 0usize;
+            let mut buf = vec![0u8; 1 << 16];
+            loop {
+                let n = rdr.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                total += n;
+            }
+            black_box(total);
+        })
+    });
+
+    for workers in [1usize, 2, 4] {
+        group.bench_function(BenchmarkId::new("parallel", workers), |b| {
+            b.iter(|| {
+                let mut rdr =
+                    pgr::libs::bgzf::ParallelBgzfReader::open(&set.path, workers).unwrap();
+                let mut total = 0usize;
+                let mut buf = vec![0u8; 1 << 16];
+                loop {
+                    let n = rdr.read(&mut buf).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    total += n;
+                }
+                black_box(total);
+            })
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_indexed_reader,
+    bench_cached_reader,
+    bench_sequential_read
+);
 criterion_main!(benches);

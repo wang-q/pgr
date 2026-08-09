@@ -231,11 +231,10 @@ mod tests {
     fn write_bgzf_fasta(dir: &std::path::Path, name: &str, seq: &str) -> String {
         let path = dir.join(format!("{name}.fa.gz"));
         let file = std::fs::File::create(&path).unwrap();
-        let mut writer = noodles_bgzf::io::Writer::new(file);
+        let mut writer = crate::libs::bgzf::BgzfWriter::new(file).unwrap();
         writeln!(writer, ">{name}").unwrap();
         writeln!(writer, "{seq}").unwrap();
-        writer.flush().unwrap();
-        drop(writer);
+        writer.finish().unwrap();
         crate::libs::fmt::fa::build_gzi_index(path.to_str().unwrap()).unwrap();
         path.to_string_lossy().to_string()
     }

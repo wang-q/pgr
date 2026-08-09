@@ -1483,10 +1483,7 @@ impl<W: Write + Seek> Compressor<W> {
 
 /// flate2-compress a byte slice.
 fn flate2_compress(data: &[u8]) -> Result<Vec<u8>> {
-    use std::io::Write;
-    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(data)?;
-    Ok(encoder.finish()?)
+    Ok(crate::libs::bgzf::gzip_compress(data, 6)?)
 }
 
 #[cfg(test)]
@@ -1711,10 +1708,7 @@ mod tests {
     fn test_flate2_roundtrip() -> Result<()> {
         let data = b"hello world hello world hello world";
         let compressed = flate2_compress(data)?;
-        use std::io::Read;
-        let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
-        let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed)?;
+        let decompressed = crate::libs::bgzf::gzip_decompress(&compressed, data.len())?;
         assert_eq!(decompressed, data);
         Ok(())
     }

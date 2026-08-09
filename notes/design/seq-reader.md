@@ -338,6 +338,72 @@ BGZF 随机访问、`plot/histogram.rs` CSV 外零残留）：
 - 其余 dev-deps（linflate/isal/libz-ng/miniz_oxide）保留，仅用于
   基准复现；rust-htslib 已从 dev-deps 移除。
 
+## 8. 去除 noodles-bgzf：自研 BGZF 全套（2026-08-09）
+
+用户裁定：**去除 noodles-bgzf 依赖，从头实现**。`src/` 里
+noodles_bgzf 引用清零（仅 benches/tests 的 dev 对照保留）；
+`Cargo.toml` 移除 noodles-bgzf 直接依赖与 noodles 主 crate 的
+`bgzf` feature。
+
+### 自研组件（`src/libs/bgzf/`）
+
+- `index.rs`：`GziIndex`（bgzip 兼容 .gzi 读写 + 二分 query）。
+- `mod.rs`：`VirtualPos`（48+16 位打包）、通用 gzip 头解析
+  （FEXTRA/FNAME/FCOMMENT/FHCRC + BC 子字段）、整块
+  `gzip_compress`/`gzip_decompress`（libdeflater + crc32fast，
+  ISIZE 预分配 + bomb 上限）、`CachedBgzfReader`（随机访问块缓存，
+  现支持无索引的虚拟位置 seek + `BufRead`）。
+- `writer.rs`：`BgzfWriter`（单线程）+ `ParallelBgzfWriter`
+  （worker 池压缩、按序输出；块上限 0xff00 留 stored 兜底余量）。
+- `reader.rs`：`GzReader`（流式多成员 gzip，zlib-ng raw inflate +
+  手写 gzip 头/trailer/CRC 校验，替代 MultiGzDecoder）+
+  `ParallelBgzfReader`（读线程解析块 + ≤4 worker libdeflater 解压 +
+  按序输出，替代 bgzf::io::Reader 的并行版）。
+
+### 关键 bug 与教训
+
+1. **z_stream 地址移动**：zlib 的 inflate_state 保存 init 时的 strm
+   地址，Rust struct 移动（入 Box/struct）后 `state->strm != strm` →
+   Z_STREAM_ERROR。**修复：`Box<z_stream>` 固定地址**。这解释了之前
+   基准中 libz-ng 复用失败的现象。
+2. **gzip 模式（window_bits=31）在此 zlib-ng 版本不可用**（首次
+   inflate 即 Z_STREAM_ERROR），改用手写 gzip 头 + raw inflate(-15) +
+   手动 CRC/ISIZE 校验。
+3. **pbit 段边界既有 bug**：collection 段长用 `footer_start`（文件尾）
+   而非 `paf_data_offset`，把 PAF recovery 数据并入 collection；
+   flate2 GzDecoder 只解第一个成员而侥幸通过，自研
+   gzip_decompress（尾部 ISIZE 预分配）暴露。**修复：
+   `collection_end = paf_data_offset.min(footer_start)`**。
+4. CachedBgzfReader 初始 current=None 时顺序读直接 EOF（随机访问先
+   seek 未暴露）——初始化为从块 0 开始。
+
+### 依赖变更
+
+- 新增正式：libdeflater（已有）、crc32fast、libz-ng-sys（流式 gzip）。
+- 移除正式：noodles-bgzf、flate2（pgr 直接依赖；仅 dev 测试/基准用）。
+- flate2 使用点迁移：pbit 4 处解压 + 3 处压缩 → gzip_compress/
+  gzip_decompress（保留 bomb 上限）；sd/search_lastz、fq is_fq →
+  自研；io.rs MultiGzDecoder → GzReader/ParallelBgzfReader。
+
+### 性能（50 MB FASTA → BGZF，release）
+
+| 顺序读实现 | 耗时 |
+|---|---:|
+| GzReader 单线程（zlib-ng 流式） | 42.3 ms |
+| ParallelBgzfReader 1 worker（libdeflater） | 33.0 ms |
+| ParallelBgzfReader 2 workers | 17.7 ms |
+| **ParallelBgzfReader 4 workers** | **9.5 ms** |
+
+- 4 线程 vs 单线程流式 **4.5×**；`pgr fa size` 端到端
+  148 ms → **20 ms（7.4×，含解析与输出）**。
+- 随机访问（CachedBgzfReader + libdeflater）与写入侧迁移后，
+  `cli_fa_index`/`cli_paf_bgzf` 等全部集成测试通过。
+
+### 剩余
+
+- dev-deps 的 noodles-bgzf 仅作基准对照（IndexedReader）；正式代码
+  已完全自研。
+
 解读：
 
 - **多行拼接是 noodles 慢的主因**：FASTA 80 bp 多行时每记录逐行 append

@@ -193,31 +193,14 @@ impl Collection {
         }
         write_string(&mut raw, &self.cmd_line)?;
 
-        let mut encoder = flate2::write::GzEncoder::new(
-            Vec::with_capacity(raw.len() / 2),
-            flate2::Compression::default(),
-        );
-        use std::io::Write;
-        encoder.write_all(&raw)?;
-        Ok(encoder.finish()?)
+        Ok(crate::libs::bgzf::gzip_compress(&raw, 6)?)
     }
 
     /// Deserialize from a flate2-compressed byte vector (as produced by
     /// `serialize`).
     pub fn deserialize(data: &[u8]) -> Result<Self> {
-        use std::io::Read;
-        let mut decoder = flate2::read::GzDecoder::new(data);
-        let mut raw = Vec::new();
-        decoder
-            .by_ref()
-            .take(MAX_COLLECTION_UNCOMPRESSED as u64 + 1)
-            .read_to_end(&mut raw)?;
-        if raw.len() > MAX_COLLECTION_UNCOMPRESSED {
-            return Err(anyhow!(
-                "sample index decompressed size exceeds maximum {} bytes",
-                MAX_COLLECTION_UNCOMPRESSED
-            ));
-        }
+        let raw = crate::libs::bgzf::gzip_decompress(data, MAX_COLLECTION_UNCOMPRESSED)
+            .map_err(|e| anyhow!("sample index decompression failed: {e}"))?;
         let mut cursor = std::io::Cursor::new(raw);
 
         let sample_count = read_u32_le(&mut cursor)? as usize;
@@ -312,11 +295,8 @@ mod tests {
     fn test_deserialize_rejects_gzip_bomb() {
         // A tiny compressed stream that expands to just over the bound must be
         // rejected (gzip bomb), not allocate unbounded memory.
-        use std::io::Write;
         let bomb_len = MAX_COLLECTION_UNCOMPRESSED + 1024;
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(&vec![0u8; bomb_len]).unwrap();
-        let packed = encoder.finish().unwrap();
+        let packed = crate::libs::bgzf::gzip_compress(&vec![0u8; bomb_len], 6).unwrap();
         assert!(
             packed.len() < 1024 * 1024,
             "bomb should compress much smaller than the decompressed bound"

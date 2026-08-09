@@ -220,13 +220,9 @@ mod tests {
         ] {
             let subdir = dir.path().join(sub);
             std::fs::create_dir_all(&subdir).unwrap();
-            let mut gz = flate2::write::GzEncoder::new(
-                std::fs::File::create(subdir.join(format!("{name}.fa.gz"))).unwrap(),
-                flate2::Compression::default(),
-            );
-            use std::io::Write;
-            write!(gz, ">{name}\n{seq}\n").unwrap();
-            gz.finish().unwrap();
+            let content = format!(">{name}\n{seq}\n");
+            let packed = crate::libs::bgzf::gzip_compress(content.as_bytes(), 6).unwrap();
+            std::fs::write(subdir.join(format!("{name}.fa.gz")), packed).unwrap();
         }
         let files = crate::libs::fmt::fa::find_fasta_files(dir.path());
         assert_eq!(files.len(), 2);

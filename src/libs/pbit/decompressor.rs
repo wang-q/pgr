@@ -27,13 +27,7 @@ type SampleContig = (String, Vec<SegmentDesc>, Vec<(u32, u32)>);
 /// Parse the flate2-compressed PAF recovery block written by
 /// `Compressor::write_paf_data` (v1009).
 fn read_paf_data(data: &[u8]) -> Result<Vec<PafRecovery>> {
-    use std::io::Read;
-    let mut decoder = flate2::read::GzDecoder::new(data);
-    let mut raw = Vec::new();
-    decoder
-        .by_ref()
-        .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
-        .read_to_end(&mut raw)?;
+    let raw = crate::libs::bgzf::gzip_decompress(data, MAX_DELTA_UNCOMPRESSED)?;
     if raw.len() > MAX_DELTA_UNCOMPRESSED {
         anyhow::bail!(
             "PAF recovery data exceeds maximum uncompressed size {} bytes",
@@ -289,7 +283,8 @@ impl<R: Read + Seek> Decompressor<R> {
                 footer_start
             ));
         }
-        let collection_len = footer_start - footer.sample_index_offset;
+        let collection_end = footer.paf_data_offset.min(footer_start);
+        let collection_len = collection_end - footer.sample_index_offset;
         reader.seek(SeekFrom::Start(footer.sample_index_offset))?;
         let mut compressed = vec![0u8; collection_len as usize];
         reader.read_exact(&mut compressed)?;
@@ -591,12 +586,7 @@ impl<R: Read + Seek> Decompressor<R> {
                 // LZ-diff: packed_data is flate2-compressed raw delta. Bound the
                 // decompressed size to reject gzip bombs (an attacker could
                 // otherwise expand a tiny payload into a multi-GB allocation).
-                let mut decoder = flate2::read::GzDecoder::new(&packed[..]);
-                let mut delta = Vec::new();
-                decoder
-                    .by_ref()
-                    .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
-                    .read_to_end(&mut delta)?;
+                let delta = crate::libs::bgzf::gzip_decompress(&packed, MAX_DELTA_UNCOMPRESSED)?;
                 if delta.len() > MAX_DELTA_UNCOMPRESSED {
                     anyhow::bail!(
                         "LZ-diff delta decompressed size exceeds maximum {} bytes",

@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use noodles_bgzf as bgzf;
 use std::io::{Read, Write};
 
 use pgr::libs::fmt::fa;
@@ -140,17 +139,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         ))
     };
 
-    let mut builder =
-        bgzf::io::multithreaded_writer::Builder::default().set_worker_count(opt_parallel);
-
-    if (0..=9).contains(&compress_level) {
-        use noodles_bgzf::io::writer::CompressionLevel;
-        let level = CompressionLevel::new(compress_level as u8)
-            .ok_or_else(|| anyhow::anyhow!("invalid compression level: {}", compress_level))?;
-        builder = builder.set_compression_level(level);
-    }
-
-    let mut writer = builder.build_from_writer(inner_writer);
+    let mut writer = if (0..=9).contains(&compress_level) {
+        pgr::libs::bgzf::ParallelBgzfWriter::with_level(
+            inner_writer,
+            opt_parallel.get(),
+            compress_level,
+        )?
+    } else {
+        pgr::libs::bgzf::ParallelBgzfWriter::new(inner_writer, opt_parallel.get())?
+    };
 
     // Manually read/write in 64KB chunks (BGZF block size) instead of std::io::copy.
     // std::io::copy uses a smaller default buffer (usually 8KB), which causes frequent small writes.

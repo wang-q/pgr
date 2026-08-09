@@ -12,6 +12,7 @@
 //! ```
 
 use anyhow::{bail, Result};
+use std::io::Read;
 
 use crate::libs::paf::cigar::CigarOp;
 
@@ -19,7 +20,6 @@ use super::format::MAX_DELTA_UNCOMPRESSED;
 
 /// Pack CIGAR ops + X/I bases into a flate2-compressed byte buffer.
 pub fn pack_cigar(ops: &[CigarOp], xi_bases: &[u8]) -> Result<Vec<u8>> {
-    use std::io::Write;
     let mut raw = Vec::with_capacity(8 + ops.len() * 4 + xi_bases.len());
     raw.extend_from_slice(&(ops.len() as u32).to_le_bytes());
     for op in ops {
@@ -28,9 +28,7 @@ pub fn pack_cigar(ops: &[CigarOp], xi_bases: &[u8]) -> Result<Vec<u8>> {
     }
     raw.extend_from_slice(&(xi_bases.len() as u32).to_le_bytes());
     raw.extend_from_slice(xi_bases);
-    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(&raw)?;
-    Ok(encoder.finish()?)
+    Ok(crate::libs::bgzf::gzip_compress(&raw, 6)?)
 }
 
 /// Unpack a flate2-compressed buffer into (CIGAR ops, X/I bases).
@@ -39,13 +37,7 @@ pub fn pack_cigar(ops: &[CigarOp], xi_bases: &[u8]) -> Result<Vec<u8>> {
 /// gzip bombs: an attacker can embed a tiny compressed payload that expands to
 /// gigabytes, which would otherwise drive a multi-GB allocation in the caller.
 pub fn unpack_cigar(packed: &[u8]) -> Result<(Vec<CigarOp>, Vec<u8>)> {
-    use std::io::Read;
-    let mut decoder = flate2::read::GzDecoder::new(packed);
-    let mut raw = Vec::new();
-    decoder
-        .by_ref()
-        .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
-        .read_to_end(&mut raw)?;
+    let raw = crate::libs::bgzf::gzip_decompress(packed, MAX_DELTA_UNCOMPRESSED)?;
     if raw.len() > MAX_DELTA_UNCOMPRESSED {
         bail!(
             "CIGAR delta decompressed size exceeds maximum {} bytes",
@@ -179,11 +171,8 @@ mod tests {
         // rejected (gzip bomb), not allocate unbounded memory. Compressing a
         // run of zeros yields a small stream even though it decompresses to
         // > MAX_DELTA_UNCOMPRESSED bytes.
-        use std::io::Write;
         let bomb_len = MAX_DELTA_UNCOMPRESSED + 1024;
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(&vec![0u8; bomb_len]).unwrap();
-        let packed = encoder.finish().unwrap();
+        let packed = crate::libs::bgzf::gzip_compress(&vec![0u8; bomb_len], 6).unwrap();
         assert!(
             packed.len() < 1024 * 1024,
             "bomb should compress much smaller than the decompressed bound"
@@ -200,13 +189,10 @@ mod tests {
     fn test_unpack_cigar_rejects_huge_op_count() {
         // A tiny payload whose op_count field is ~4 billion (with no op data)
         // must be rejected before `Vec::with_capacity` allocates ~16 GB.
-        use std::io::Write;
         let mut raw = Vec::new();
         raw.extend_from_slice(&u32::MAX.to_le_bytes()); // op_count = ~4 billion
         raw.extend_from_slice(&0u32.to_le_bytes()); // xi_count = 0
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(&raw).unwrap();
-        let packed = encoder.finish().unwrap();
+        let packed = crate::libs::bgzf::gzip_compress(&raw, 6).unwrap();
         let err = unpack_cigar(&packed).unwrap_err();
         assert!(
             err.to_string().contains("op_count"),
@@ -219,13 +205,10 @@ mod tests {
     fn test_unpack_cigar_rejects_huge_xi_count() {
         // A tiny payload whose xi_count field is ~4 billion (with no xi data)
         // must be rejected before `vec![0u8; xi_count]` allocates ~4 GB.
-        use std::io::Write;
         let mut raw = Vec::new();
         raw.extend_from_slice(&0u32.to_le_bytes()); // op_count = 0
         raw.extend_from_slice(&u32::MAX.to_le_bytes()); // xi_count = ~4 billion
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(&raw).unwrap();
-        let packed = encoder.finish().unwrap();
+        let packed = crate::libs::bgzf::gzip_compress(&raw, 6).unwrap();
         let err = unpack_cigar(&packed).unwrap_err();
         assert!(
             err.to_string().contains("xi_count"),

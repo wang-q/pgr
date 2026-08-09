@@ -1,9 +1,9 @@
 use crate::libs::bgzf::CachedBgzfReader;
 use crate::libs::ds::Range;
 use indexmap::IndexMap;
-use noodles_bgzf as bgzf;
 use noodles_core;
 use noodles_fasta as fasta;
+use std::io::BufReader;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;
 
@@ -21,7 +21,9 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
         // http://www.htslib.org/doc/bgzip.html
         // Bgzip will attempt to ensure BGZF blocks end on a newline when the input is a text file.
         // The exception to this is where a single line is larger than a BGZF block (64Kb).
-        Box::new(bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
+        Box::new(BufReader::new(crate::libs::bgzf::GzReader::new(
+            std::fs::File::open(infile)?,
+        )?))
     } else {
         crate::libs::io::reader(infile)?
     };

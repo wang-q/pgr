@@ -4,7 +4,6 @@ use super::{CigarStore, PafIndex, PafMetadata};
 use crate::libs::paf::cigar::{extract_cigar, gap_compressed_identity, reverse_cigar, CigarOp};
 use crate::libs::paf::parser::parse_paf_line;
 use coitrees::{Interval, IntervalNode, IntervalTree};
-use noodles_bgzf as bgzf;
 use std::io::BufRead;
 
 impl PafIndex {
@@ -13,7 +12,10 @@ impl PafIndex {
         if let Some(ref src) = self.lazy_source {
             // Recover from a poisoned mutex rather than panicking (Zero Panic).
             let mut reader = src.lock().unwrap_or_else(|e| e.into_inner());
-            if reader.seek(bgzf::VirtualPosition::from(vpos)).is_err() {
+            if reader
+                .seek_virtual(crate::libs::bgzf::VirtualPos::from(vpos))
+                .is_err()
+            {
                 return vec![];
             }
             let mut line = String::new();
