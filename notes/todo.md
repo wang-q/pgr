@@ -39,11 +39,12 @@
   估计）+ `cmd_pgr/kmer/gsize.rs`；合成 30× 1 kb reads 实测 peak≈26、
   估计 969 bp（误差 ~3%）。`--model` 已实现 **genescopefk.R（GenomeScope
   2.0）原生迁移**（`libs/kmer/genomescope.rs`）：负二项混合（p=1/2）+
-  手写 Levenberg-Marquardt（log-length 参数化 + 高斯消元，无新依赖）+
-  四轮 trimming + 打分选择；输出 `summary.txt`/`model.txt`（对齐 anchr
-  `2_fastk` 的 `grep ^kmercov` 解析）。无噪声合成谱精确还原参数
-  （d/kmercov/bias/length 全准）；真实 reads 的 kmercov 准（60×→55.9），
-  基因组大小受端部异质性影响（p>2 多拓扑/错误分量明确不做）。
+  **minpack lmdif 完整移植**（fdjac2/qrfac/qrsolv/lmpar/主循环，投影
+  边界，无新依赖）+ 四轮 trimming + 打分选择 + 真实 SE（hessian）；
+  输出 `summary.txt`/`model.txt`（对齐 anchr `2_fastk` 的
+  `grep ^kmercov` 解析）。**R 端到端对照（2026-08-10，本机 R + minpack.lm）：
+  kmercov/bias/d/length/SE 高度一致**（55.7 vs 55.73 等）；Model Fit
+  62% vs 64%（2% 已知偏差）；p>2 多拓扑/错误分量明确不做。
 - **三种 kmer 格式定稿**：`.pkt`（表，原 `.pgrk` 改名，magic `PKTT`）、
   `.pkp`（profile，magic `PKPP`，header + raw u16）、`.hist`（直方图，
   **FASTK 字节兼容**：固定 low=1/high=32767，28B 头 + 32767×8B；实测

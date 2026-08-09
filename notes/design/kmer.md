@@ -466,21 +466,31 @@ header）。
 * **模型**：p=1（unique + repeat 两负二项分量）、p=2（AA/AB/BB 四类混合，
   `predict2_1`）；公式逐行对齐 R（alpha 系数 + `dnbinom(x, size=kmercov*i/
   bias, mu=kmercov*i)`），`predict` 返回 mixture，公式层乘 `x^1 * length`
-  （R 的 `y_transform ~ x*length*predict`）。
-* **拟合**：手写 **Levenberg-Marquardt**（数值雅可比 + Marquardt 阻尼 +
-  高斯消元，无新依赖）；`length` 用 **log 参数化**（estLength 初值因
-  y_transform 含 x³ 因子可达真实值 ~1700 倍，线性尺度病态，log 后 LM
-  稳定收敛）；多 r 初值（p=2 六组）、`p` 个 kmercov 候选、四轮 trimming
-  （start += 5）、打分（RSSE + percent modeled）跨轮选最优。
-* **输出**：`summary.txt`（property/min/max 表）+ `model.txt`（参数表，
-  `kmercov` 行可被 anchr `2_fastk` 的 `grep '^kmercov' | cut -f 2` 解析）。
+  （R 的 `y_transform ~ x*length*predict`）；`dnbinom` 对 size=Inf 退化为
+  泊松（R 语义，bias→0 时 LM 不会产生 NaN）。
+* **拟合**：**minpack `lmdif` 完整移植**（genescopefk.R 的 nlsLM 无解析
+  雅可比 → lmdif）：`fdjac2`（前向差分，eps=sqrt(machine eps)）+
+  `qrfac`（Householder QR 带列置换）`qrsolv`（Givens 消去阻尼对角）+
+  `lmpar`（trust-region 阻尼参数二分）+ `lmdif` 主循环（外循环雅可比/QR/
+  梯度判据 + 内循环 trust-region 步长 + ftol/ptol/gtol 收敛判据 +
+  info 1-8）；参数边界用 R 的投影法（fcn 调用前 clamp）。拟合后从最终
+  R 算 hessian（P^T R^T R P）求逆得真实 SE（对齐 R summary）。
+* **输出**：`summary.txt`（property/min/max 表）+ `model.txt`（参数表含
+  Estimate + Std. Error，`kmercov` 行可被 anchr `2_fastk` 的
+  `grep '^kmercov' | cut -f 2` 解析）。
 * **不做**：p>2 多拓扑、错误分量、端部修正、R 绘图（明确记录）。
-* **验证**：无噪声合成谱精确还原 d/kmercov/bias/length（单测，dev≈0）；
-  真实 60× reads：kmercov 55.9（准）、genome_size 1282（受端部异质性
-  影响偏高）、Model Fit ~26%。无 R 环境，未与 R 版端到端对照（记录限制）。
-* **排错记录**：`predict` 误含 x*length 导致 LM 无法收敛（R 的 predict
-  只返回 mixture）——已修复；`est_length` 初值尺度问题用 log-length
-  解决。
+* **验证（本机 R 4.4.2 + minpack.lm 端到端对照，2026-08-10）**：真实
+  60× 1 kb reads 同一直方图喂 R `genescopefk.R` 与 pgr `gsize --model`：
+  kmercov 55.7 vs 55.73、bias 0 vs 0、d 0 vs 0、length 1018 vs 988、
+  kmercov SE 0.745 vs 0.787（全部高度一致）；Model Fit 62.1% vs 64.4%
+  （2% 差，score_model 的 first_zero 边缘细节，记录为已知偏差）。
+  无噪声合成谱精确还原参数（单测）。
+* **排错记录**：`predict` 误含 x*length 因子（R 的 predict 只返回
+  mixture）→ LM 无法收敛；稀疏/稠密直方图语义（R 读文件只含非零行，
+  稠密数组把 count=0 的 x 也算残差）→ m/score 错误；`qrsolv` 的 sdiag
+  只清 j..n（清全部会破坏前几列 S 对角）→ lmpar 零步长；`dnbinom`
+  size=Inf 需退化泊松 → bias 无法到 0 边界；est_length 初值稀疏后已是
+  正确量级（x 因子，非 x³），用 est 附近多初值。
 
 ### 10.5 QUORUM 质量偏置计数（2026-08-09 补充）
 
