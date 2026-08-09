@@ -1,9 +1,0 @@
-GenomeScope version 2.0 (pgr native)
-p = 1
-k = 17
-property                      min               max               
-Homozygous (a)                100.0000%         100.0000%         
-Genome Haploid Length         0 bp              83182316700 bp    
-Genome Repeat Length          -721 bp           721 bp            
-Genome Unique Length          316 bp            1758 bp           
-Model Fit                     8.0441%           8.0441%           

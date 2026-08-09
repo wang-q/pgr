@@ -1,8 +1,0 @@
-Formula: y_transform ~ x*length*predict
-
-Parameters:
-            Estimate          Std. Error        
-d           0.000000          0.347776          
-kmercov     57.538180         6.253779          
-bias        0.000000          0.000998          
-length      1036.579588       41591157831.641586

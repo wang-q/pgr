@@ -115,3 +115,5 @@ git*.txt
 # Plots
 *.pdf
 *.png
+summary.txt
+model.txt

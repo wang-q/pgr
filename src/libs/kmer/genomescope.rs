@@ -127,6 +127,36 @@ pub(crate) fn predict(p: usize, top: usize, params: &ModelParams, k: usize, x: f
         _ => 0.0,
     }
 }
+
+/// Unique-sequence portion of the model mixture (R `predict*_unique`):
+/// only the non-duplicated components.
+pub(crate) fn predict_unique(p: usize, params: &ModelParams, k: usize, x: f64) -> f64 {
+    match p {
+        1 => {
+            if params.d > 1.0 {
+                0.0
+            } else {
+                (1.0 - params.d) * dnbinom(x, params.kmercov / params.bias, params.kmercov)
+            }
+        }
+        2 => {
+            let r0 = 1.0 - params.r1;
+            if r0 < 0.0 || params.d > 1.0 {
+                0.0
+            } else {
+                let t0 = r0.powi(k as i32);
+                let s0 = t0;
+                let s1 = 1.0 - t0;
+                let a1 = (1.0 - params.d) * (2.0 * s1);
+                let a2 = (1.0 - params.d) * s0;
+                a1 * dnbinom(x, params.kmercov / params.bias, params.kmercov)
+                    + a2 * dnbinom(x, 2.0 * params.kmercov / params.bias, 2.0 * params.kmercov)
+            }
+        }
+        _ => 0.0,
+    }
+}
+
 pub struct GenomeScopeResult {
     /// Ploidy.
     pub p: usize,
@@ -150,6 +180,8 @@ pub struct GenomeScopeResult {
     pub repeat_len: [f64; 2],
     /// Unique length range.
     pub unique_len: [f64; 2],
+    /// K-mers attributed to duplicated sequence (R `repeat_kmers`).
+    pub repeat_kmers: f64,
     /// Model fit (percent kmers modeled, all/full).
     pub model_fit: [f64; 2],
     /// Read error rate range.
@@ -237,8 +269,62 @@ pub fn fit(hist: &[u64], k: usize, p: usize) -> GenomeScopeResult {
     match best {
         Some((model, _)) => {
             let score = score_model(hist, &model, k);
-            let total = model.params.length;
-            let genome_haploid = [model.length_range[0].max(0.0), model.length_range[1]];
+            // R report_results summary values (point estimates).
+            let pairs: Vec<(f64, f64)> = hist
+                .iter()
+                .enumerate()
+                .filter(|(_, &c)| c > 0)
+                .map(|(i, &c)| ((i + 1) as f64, c as f64))
+                .collect();
+            let total_kmers: f64 = pairs.iter().map(|&(x, c)| x * c).sum();
+            let se_k = model.se[if p == 1 { 1 } else { 2 }];
+            let kcov_min = (model.params.kmercov - 2.0 * se_k).max(0.0);
+            let kcov_max = model.params.kmercov + 2.0 * se_k;
+            let kcovfloor = kcov_min.floor().max(1.0) as usize;
+            // R `error_xcutoff_ind = tail(which(x <= error_xcutoff), 1)`.
+            let err_cut = pairs
+                .iter()
+                .rposition(|&(x, _)| x <= kcovfloor as f64)
+                .map_or(1, |i| i + 1);
+            let mut error_kmers = vec![0.0f64; err_cut];
+            let mut first_zero = err_cut;
+            for i in 0..err_cut {
+                let (x, count) = pairs[i];
+                let pred = model.params.length * predict(p, 1, &model.params, k, x);
+                let e = count - pred;
+                if e < 1.0 {
+                    first_zero = i;
+                    break;
+                }
+                error_kmers[i] = e.max(1e-10);
+            }
+            let total_error: f64 = error_kmers[..first_zero]
+                .iter()
+                .zip(&pairs[..first_zero])
+                .map(|(&e, &(x, _))| e * x)
+                .sum();
+            let unique_kmers: f64 = pairs
+                .iter()
+                .map(|&(x, _)| x * model.params.length * predict_unique(p, &model.params, k, x))
+                .sum();
+            let repeat_kmers = (total_kmers - unique_kmers - total_error).max(0.0);
+            let total_len = (total_kmers - total_error) / (p as f64 * model.params.kmercov);
+            // R divides by the 2-SE kmercov range (`kcov` vector) and writes
+            // the min column first: min = value / (kcov + 2 SE).
+            let repeat_len = [
+                repeat_kmers / (p as f64 * kcov_max),
+                repeat_kmers / (p as f64 * kcov_min),
+            ];
+            let unique_len = if repeat_kmers == 0.0 {
+                [total_len, total_len]
+            } else {
+                [
+                    unique_kmers / (p as f64 * kcov_max),
+                    unique_kmers / (p as f64 * kcov_min),
+                ]
+            };
+            let error_rate =
+                1.0 - (1.0 - total_error / total_kmers.max(1e-300)).powf(1.0 / k as f64);
             GenomeScopeResult {
                 p,
                 k,
@@ -248,14 +334,12 @@ pub fn fit(hist: &[u64], k: usize, p: usize) -> GenomeScopeResult {
                 d: model.params.d,
                 length: model.params.length,
                 het: model.params.r1,
-                genome_haploid,
-                repeat_len: [model.d_range[0] * total, model.d_range[1] * total],
-                unique_len: [
-                    (1.0 - model.d_range[1]) * total,
-                    (1.0 - model.d_range[0]) * total,
-                ],
+                genome_haploid: [total_len, total_len],
+                repeat_len,
+                unique_len,
+                repeat_kmers,
                 model_fit: [score.all_score, score.full_score],
-                error_rate: [0.0, 0.0],
+                error_rate: [error_rate, error_rate],
                 converged: true,
             }
         }
@@ -280,6 +364,7 @@ fn empty_result(p: usize, k: usize) -> GenomeScopeResult {
         genome_haploid: [0.0, 0.0],
         repeat_len: [0.0, 0.0],
         unique_len: [0.0, 0.0],
+        repeat_kmers: 0.0,
         model_fit: [0.0, 0.0],
         error_rate: [0.0, 0.0],
         converged: false,
@@ -329,6 +414,9 @@ fn nls_peak(
     let bias_init = 0.5;
     let mut best: Option<(ModelParams, f64, Vec<f64>, Vec<f64>)> = None;
     let mut best_dev = f64::INFINITY;
+    // estLength = sum(x*count)/kmercov is already genome-scale; try starts
+    // around it (the transformed profile carries an x factor, not x^3, so
+    // no kmercov^2 correction is needed).
     // estLength = sum(x*count)/kmercov is already genome-scale; try starts
     // around it (the transformed profile carries an x factor, not x^3, so
     // no kmercov^2 correction is needed).
@@ -497,13 +585,14 @@ struct ModelScore {
 
 fn score_model(hist: &[u64], model: &FittedModel, k: usize) -> ModelScore {
     // Sparse (x, count) pairs, matching R's histogram file where zero-count
-    // rows are absent.
+    // rows are absent, with the trailing position removed (R `kmer_hist_orig`).
     let pairs: Vec<(f64, f64)> = hist
         .iter()
         .enumerate()
         .filter(|(_, &c)| c > 0)
         .map(|(i, &c)| ((i + 1) as f64, c as f64))
         .collect();
+    let pairs = &pairs[..pairs.len().saturating_sub(1)];
     let end = pairs.len();
     let y_transform: Vec<f64> = pairs.iter().map(|&(x, c)| x * c).collect();
     let pred: Vec<f64> = pairs
@@ -512,10 +601,11 @@ fn score_model(hist: &[u64], model: &FittedModel, k: usize) -> ModelScore {
         .collect();
     let se_k = model.se[if model.p == 1 { 1 } else { 2 }];
     let kcovfloor = ((model.params.kmercov - 2.0 * se_k).floor().max(1.0)) as usize;
+    // R `error_xcutoff_ind = tail(which(x <= error_xcutoff), 1)`.
     let err_cut = pairs
         .iter()
-        .position(|&(x, _)| x > kcovfloor as f64)
-        .unwrap_or(end);
+        .rposition(|&(x, _)| x <= kcovfloor as f64)
+        .map_or(1, |i| i + 1);
     let recip = |i: usize| 1.0 / pairs[i].0;
 
     // Truncate error residuals once they drop below 1 (R `first_zero`).
@@ -548,19 +638,89 @@ fn score_model(hist: &[u64], model: &FittedModel, k: usize) -> ModelScore {
     }
 }
 
+/// R `signif(x, digits)`: round to `digits` significant digits.
+fn signif(x: f64, digits: i32) -> f64 {
+    if x == 0.0 || !x.is_finite() {
+        return x;
+    }
+    let mag = x.abs().log10().floor();
+    let scale = 10f64.powi(digits - 1 - mag as i32);
+    (x * scale).round() / scale
+}
+
+/// Format a double like R's default print (`options(digits=7)`).
+fn r_num(x: f64) -> String {
+    if !x.is_finite() {
+        return format!("{x}");
+    }
+    if x == 0.0 {
+        return "0".to_string();
+    }
+    let mag = x.abs().log10().floor();
+    if !(-4.0..7.0).contains(&mag) {
+        let mant = x / 10f64.powi(mag as i32);
+        let mut s = format!("{mant:.6e}");
+        let (m, e) = s.split_once('e').unwrap();
+        let m = m.trim_end_matches('0').trim_end_matches('.');
+        s = format!("{m}e{e}");
+        return s;
+    }
+    let decimals = (7 - 1 - mag as i32).max(0) as usize;
+    let mut s = format!("{x:.decimals$}");
+    if s.contains('.') {
+        s = s.trim_end_matches('0').trim_end_matches('.').to_string();
+    }
+    s
+}
+
+/// R `percentage_format`: `signif(num, 6) * 100` plus `%`.
+fn pct(v: f64) -> String {
+    format!("{}%", r_num(signif(v, 6) * 100.0))
+}
+
+/// R `bp_format`: `formatC(round(num), big.mark=",")` plus `bp`.
+fn bp(v: Option<f64>) -> String {
+    let Some(x) = v else {
+        return "NA bp".to_string();
+    };
+    let n = x.round() as i64;
+    let digits = n.abs().to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    if n < 0 {
+        out.insert(0, '-');
+    }
+    format!("{out} bp")
+}
+
 /// Write `summary.txt` and `model.txt` in the GenomeScope formats consumed
-/// by anchr's `2_fastk` (`grep ^kmercov model.txt`).
-pub fn write_outputs(outdir: &std::path::Path, result: &GenomeScopeResult) -> anyhow::Result<()> {
+/// by anchr's `2_fastk` (`grep ^kmercov model.txt`); the summary layout
+/// mirrors `genescopefk.R`'s `report_results`.
+pub fn write_outputs(
+    outdir: &std::path::Path,
+    input: &str,
+    result: &GenomeScopeResult,
+) -> anyhow::Result<()> {
     std::fs::create_dir_all(outdir)?;
     let summary = outdir.join("summary.txt");
     let model = outdir.join("model.txt");
-    let bp = |v: f64| format!("{:.0} bp", v);
-    let pct = |v: f64| format!("{:.4}%", v * 100.0);
+
+    // R always writes this 5-line header; anchr 2_fastk skips the first six
+    // lines (`sed '1,6 d'`), so the layout must match exactly.
+    let mut s = String::new();
+    s.push_str("GenomeScope version 2.0\n");
+    s.push_str(&format!("input file = {input}\n"));
+    s.push_str(&format!("output directory = {}\n", outdir.display()));
+    s.push_str(&format!("p = {}\n", result.p));
+    s.push_str(&format!("k = {}\n", result.k));
+
     if result.converged {
-        let mut s = String::new();
-        s.push_str("GenomeScope version 2.0 (pgr native)\n");
-        s.push_str(&format!("p = {}\n", result.p));
-        s.push_str(&format!("k = {}\n", result.k));
+        s.push('\n');
         s.push_str(&format!("{:<30}{:<18}{:<18}\n", "property", "min", "max"));
         if result.p == 1 {
             s.push_str(&format!(
@@ -570,42 +730,61 @@ pub fn write_outputs(outdir: &std::path::Path, result: &GenomeScopeResult) -> an
                 pct(1.0)
             ));
         } else {
+            // R reports the 2-SE range (min_max1 on r1): homozygous min =
+            // 1 - r1_max, heterozygous min = r1_min.
+            let se_r1 = result.se.get(1).copied().unwrap_or(0.0);
+            let r1_min = (result.het - 2.0 * se_r1).max(0.0);
+            let r1_max = (result.het + 2.0 * se_r1).min(1.0);
             s.push_str(&format!(
                 "{:<30}{:<18}{:<18}\n",
                 "Homozygous (aa)",
-                pct(1.0 - result.het),
-                pct(1.0 - result.het)
+                pct(1.0 - r1_max),
+                pct(1.0 - r1_min)
             ));
             s.push_str(&format!(
                 "{:<30}{:<18}{:<18}\n",
                 "Heterozygous (ab)",
-                pct(result.het),
-                pct(result.het)
+                pct(r1_min),
+                pct(r1_max)
             ));
         }
+        // R computes `total_len` as a scalar and indexes element [2] of it,
+        // which yields NA; replicate that display quirk.
         s.push_str(&format!(
             "{:<30}{:<18}{:<18}\n",
             "Genome Haploid Length",
-            bp(result.genome_haploid[0]),
-            bp(result.genome_haploid[1])
+            bp(None),
+            bp(Some(result.genome_haploid[1]))
         ));
         s.push_str(&format!(
             "{:<30}{:<18}{:<18}\n",
             "Genome Repeat Length",
-            bp(result.repeat_len[0]),
-            bp(result.repeat_len[1])
+            bp(Some(result.repeat_len[0])),
+            bp(Some(result.repeat_len[1]))
         ));
+        let (u_min, u_max) = if result.repeat_kmers == 0.0 {
+            (bp(None), bp(Some(result.unique_len[1])))
+        } else {
+            (
+                bp(Some(result.unique_len[0])),
+                bp(Some(result.unique_len[1])),
+            )
+        };
         s.push_str(&format!(
             "{:<30}{:<18}{:<18}\n",
-            "Genome Unique Length",
-            bp(result.unique_len[0]),
-            bp(result.unique_len[1])
+            "Genome Unique Length", u_min, u_max
         ));
         s.push_str(&format!(
             "{:<30}{:<18}{:<18}\n",
             "Model Fit",
             pct(result.model_fit[0]),
             pct(result.model_fit[1])
+        ));
+        s.push_str(&format!(
+            "{:<30}{:<18}{:<18}\n",
+            "Read Error Rate",
+            pct(result.error_rate[0]),
+            pct(result.error_rate[1])
         ));
         std::fs::write(&summary, s)?;
 
@@ -647,11 +826,8 @@ pub fn write_outputs(outdir: &std::path::Path, result: &GenomeScopeResult) -> an
         ));
         std::fs::write(&model, m)?;
     } else {
-        std::fs::write(
-            &summary,
-            "GenomeScope version 2.0 (pgr native)\np = ...\nFailed to converge.\n",
-        )?;
-        std::fs::write(&model, "Failed to converge.")?;
+        // R writes only the header when the fit fails (no model.txt).
+        std::fs::write(&summary, s)?;
     }
     Ok(())
 }

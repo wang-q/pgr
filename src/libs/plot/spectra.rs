@@ -21,7 +21,8 @@ pub struct SpectraSummary {
     pub se_kmercov: f64,
     /// Genome haploid length (bp).
     pub len: f64,
-    /// Unique fraction.
+    /// Unique-sequence fraction of the haploid length (R title
+    /// `unique_len/total_len`; 1 when repeats are absent).
     pub unique: f64,
     /// Read error rate.
     pub error_rate: f64,
@@ -37,10 +38,11 @@ pub fn compute_error_rate(
     se_kmercov: f64,
 ) -> f64 {
     let kcovfloor = ((params.kmercov - 2.0 * se_kmercov).floor().max(1.0)) as usize;
+    // R `error_xcutoff_ind = tail(which(x <= error_xcutoff), 1)`.
     let err_cut = hist
         .iter()
-        .position(|&(x, _)| x > kcovfloor as f64)
-        .unwrap_or(hist.len());
+        .rposition(|&(x, _)| x <= kcovfloor as f64)
+        .map_or(1, |i| i + 1);
     let mut error_kmers = vec![0.0f64; err_cut];
     let mut first_zero = err_cut;
     for i in 0..err_cut {
@@ -86,10 +88,11 @@ pub fn render_spectra<W: Write>(
 fn build_views(hist: &[(f64, f64)], summary: &SpectraSummary) -> String {
     let params = &summary.params;
     let kcovfloor = ((params.kmercov - 2.0 * summary.se_kmercov).floor().max(1.0)) as usize;
+    // R `error_xcutoff_ind = tail(which(x <= error_xcutoff), 1)`.
     let err_cut = hist
         .iter()
-        .position(|&(x, _)| x > kcovfloor as f64)
-        .unwrap_or(hist.len());
+        .rposition(|&(x, _)| x <= kcovfloor as f64)
+        .map_or(1, |i| i + 1);
 
     // Error residuals (count space), truncated at the first value < 1.
     let mut error_kmers = vec![0.0f64; hist.len()];

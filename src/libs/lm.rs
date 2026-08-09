@@ -17,9 +17,54 @@ pub struct LmResult {
     pub nfev: usize,
 }
 
-/// Euclidean norm.
+/// Euclidean norm, minpack `enorm`: scaled three-sum accumulation so no
+/// overflow/underflow occurs for extreme components (matches `enorm.f`).
 fn enorm(x: &[f64]) -> f64 {
-    x.iter().map(|v| v * v).sum::<f64>().sqrt()
+    const RDWARF: f64 = 3.834e-20;
+    const RGIANT: f64 = 1.304e19;
+    let mut s1 = 0.0;
+    let mut s2 = 0.0;
+    let mut s3 = 0.0;
+    let mut x1max = 0.0;
+    let mut x3max = 0.0;
+    let agiant = RGIANT / x.len() as f64;
+    for &v in x {
+        let xabs = v.abs();
+        if RDWARF < xabs && xabs < agiant {
+            s2 += xabs * xabs;
+            continue;
+        }
+        if xabs <= RDWARF {
+            // Sum for small components.
+            if xabs <= x3max {
+                if xabs != 0.0 {
+                    s3 += (xabs / x3max).powi(2);
+                }
+            } else {
+                s3 = 1.0 + s3 * (x3max / xabs).powi(2);
+                x3max = xabs;
+            }
+        } else {
+            // Sum for large components.
+            if xabs <= x1max {
+                s1 += (xabs / x1max).powi(2);
+            } else {
+                s1 = 1.0 + s1 * (x1max / xabs).powi(2);
+                x1max = xabs;
+            }
+        }
+    }
+    if s1 != 0.0 {
+        x1max * (s1 + (s2 / x1max) / x1max).sqrt()
+    } else if s2 != 0.0 {
+        if s2 >= x3max {
+            (s2 * (1.0 + (x3max / s2) * (x3max * s3))).sqrt()
+        } else {
+            (x3max * ((s2 / x3max) + (x3max * s3))).sqrt()
+        }
+    } else {
+        x3max * s3.sqrt()
+    }
 }
 
 /// Forward-difference Jacobian, minpack `fdjac2` (epsfcn = 0 uses the
@@ -66,6 +111,10 @@ pub(crate) fn qrfac(
         rdiag[j] = acnorm[j];
         ipvt[j] = j;
     }
+    // Working copy of the column norms (minpack `wa`): swapped and updated
+    // during the factorization, while `acnorm` keeps the original column
+    // norms (lmdif uses them for the diag scaling and gnorm afterwards).
+    let mut wa = acnorm.to_vec();
     let minmn = m.min(n);
     for j in 0..minmn {
         let mut kmax = j;
@@ -79,7 +128,7 @@ pub(crate) fn qrfac(
                 a.swap(j * m + i, kmax * m + i);
             }
             rdiag[kmax] = rdiag[j];
-            acnorm.swap(kmax, j);
+            wa[kmax] = wa[j];
             ipvt.swap(j, kmax);
         }
         let mut ajnorm = enorm(&a[j * m + j..j * m + m]);
@@ -103,9 +152,9 @@ pub(crate) fn qrfac(
                 if rdiag[k] != 0.0 {
                     let t = a[k * m + j] / rdiag[k];
                     rdiag[k] *= (0.0f64.max(1.0 - t * t)).sqrt();
-                    if p05 * (rdiag[k] / acnorm[k]).powi(2) <= epsmch {
+                    if p05 * (rdiag[k] / wa[k]).powi(2) <= epsmch {
                         rdiag[k] = enorm(&a[k * m + j + 1..k * m + m]);
-                        acnorm[k] = rdiag[k];
+                        wa[k] = rdiag[k];
                     }
                 }
             }
@@ -409,16 +458,15 @@ pub fn lmdif<F: Fn(&[f64]) -> Vec<f64>>(
 
         wa4[..m].copy_from_slice(&fvec);
         for j in 0..n {
-            if fjac[j * m + j] == 0.0 {
-                continue;
-            }
-            let mut sum = 0.0;
-            for i in j..m {
-                sum += fjac[j * m + i] * wa4[i];
-            }
-            let temp = -sum / fjac[j * m + j];
-            for i in j..m {
-                wa4[i] += fjac[j * m + i] * temp;
+            if fjac[j * m + j] != 0.0 {
+                let mut sum = 0.0;
+                for i in j..m {
+                    sum += fjac[j * m + i] * wa4[i];
+                }
+                let temp = -sum / fjac[j * m + j];
+                for i in j..m {
+                    wa4[i] += fjac[j * m + i] * temp;
+                }
             }
             fjac[j * m + j] = rdiag[j];
             qtf[j] = wa4[j];

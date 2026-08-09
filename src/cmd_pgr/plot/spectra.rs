@@ -55,14 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(|(i, &c)| ((i + 1) as f64, c as f64))
         .collect();
 
-    let total: f64 = pairs.iter().map(|&(_, c)| c).sum();
-    let kcovfloor = ((params.kmercov - 2.0 * se_kmercov).floor().max(1.0)) as usize;
-    let err: f64 = pairs
-        .iter()
-        .filter(|&&(x, _)| x <= kcovfloor as f64)
-        .map(|&(_, c)| c)
-        .sum::<f64>()
-        / total.max(1.0);
+    let err = pgr::libs::plot::spectra::compute_error_rate(&pairs, k, &params, se_kmercov);
     let summary = pgr::libs::plot::spectra::SpectraSummary {
         k,
         p,

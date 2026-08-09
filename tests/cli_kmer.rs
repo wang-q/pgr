@@ -600,6 +600,18 @@ fn command_kmer_gsize_model_writes_genomescope_outputs() -> anyhow::Result<()> {
     let model = outdir.join("model.txt");
     assert!(summary.is_file(), "summary.txt must be written");
     assert!(model.is_file(), "model.txt must be written");
+    let summary_text = std::fs::read_to_string(&summary)?;
+    // anchr 2_fastk deletes the first six lines (`sed '1,6 d'`), so the
+    // header must be the GenomeScope 5-liner plus a blank line.
+    let head: Vec<&str> = summary_text.lines().take(6).collect();
+    assert_eq!(head[0], "GenomeScope version 2.0");
+    assert!(head[1].starts_with("input file = "));
+    assert!(head[2].starts_with("output directory = "));
+    assert_eq!(head[3], "p = 1");
+    assert_eq!(head[4], "k = 17");
+    assert_eq!(head[5], "");
+    assert!(summary_text.contains("Genome Haploid Length"));
+    assert!(summary_text.contains("Read Error Rate"));
     let model_text = std::fs::read_to_string(&model)?;
     // anchr 2_fastk parses `grep '^kmercov' model.txt | cut -f 2`.
     let kcov_line = model_text

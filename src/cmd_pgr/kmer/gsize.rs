@@ -81,7 +81,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // the GenomeScope formats consumed by anchr's 2_fastk; the summary
         // goes to stdout.
         let outdir = if outfile == "stdout" { "." } else { outfile };
-        pgr::libs::kmer::genomescope::write_outputs(std::path::Path::new(outdir), &model)?;
+        let input = table_path.unwrap_or_else(|| args.get_one::<String>("infile").unwrap());
+        pgr::libs::kmer::genomescope::write_outputs(std::path::Path::new(outdir), input, &model)?;
         if args.get_flag("plot") {
             let pairs: Vec<(f64, f64)> = hist
                 .hist
@@ -91,14 +92,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .map(|(i, &c)| ((i + 1) as f64, c as f64))
                 .collect();
             let se_kmercov = model.se[if p == 1 { 1 } else { 2 }];
-            let total: f64 = pairs.iter().map(|&(_, c)| c).sum();
-            let kcovfloor = ((model.kmercov - 2.0 * se_kmercov).floor().max(1.0)) as usize;
-            let err: f64 = pairs
-                .iter()
-                .filter(|&&(x, _)| x <= kcovfloor as f64)
-                .map(|&(_, c)| c)
-                .sum::<f64>()
-                / total.max(1.0);
             let params = pgr::libs::kmer::genomescope::ModelParams {
                 d: model.d,
                 kmercov: model.kmercov,
@@ -112,8 +105,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 params,
                 se_kmercov,
                 len: model.length,
-                unique: 1.0 - model.d,
-                error_rate: err,
+                unique: if model.repeat_kmers == 0.0 {
+                    1.0
+                } else {
+                    model.unique_len[1] / model.genome_haploid[1]
+                },
+                error_rate: pgr::libs::plot::spectra::compute_error_rate(
+                    &pairs, k, &params, se_kmercov,
+                ),
             };
             let spectra_path = std::path::Path::new(outdir).join("spectra.tex");
             let mut sw = pgr::writer(spectra_path.to_str().unwrap())?;
