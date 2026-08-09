@@ -6,14 +6,15 @@
 //! reallocation. Supports gzip/stdin through `crate::libs::io::reader`.
 
 use anyhow::Context;
+use bstr::{BStr, BString};
 use memchr::{memchr, memchr2};
 use std::io::BufRead;
 
 /// A FAFQ record with reused buffers (capacity kept across reads).
 #[derive(Default)]
 pub struct SeqRecord {
-    name: Vec<u8>,
-    comment: Vec<u8>,
+    name: BString,
+    comment: BString,
     seq: Vec<u8>,
     qual: Vec<u8>,
     is_fastq: bool,
@@ -34,14 +35,14 @@ impl SeqRecord {
         self.is_fastq = false;
     }
 
-    /// Record name (without the `>`/`@` prefix).
-    pub fn name(&self) -> &[u8] {
-        &self.name
+    /// Record name (without the `>`/`@` prefix), as a byte string.
+    pub fn name(&self) -> &BStr {
+        BStr::new(&self.name)
     }
 
     /// Optional description (text after the name, before end of line).
-    pub fn comment(&self) -> &[u8] {
-        &self.comment
+    pub fn comment(&self) -> &BStr {
+        BStr::new(&self.comment)
     }
 
     /// Optional description, `None` when absent (noodles-compatible).
@@ -402,6 +403,19 @@ mod tests {
         assert!(!rec.is_fastq());
         assert_eq!(rec.sequence(), b"GGGG");
         assert!(!r.read_record(&mut rec).unwrap());
+    }
+
+    #[test]
+    fn non_utf8_name_is_byte_clean() {
+        // bstr semantics: the name is a byte string; non-UTF-8 bytes must not
+        // fail at the read layer (consumers choose how to decode).
+        let data = b">seq\xff\xfe desc\nACGT\n";
+        let mut r = SeqReader::from_reader(Box::new(Cursor::new(data.to_vec())));
+        let mut rec = SeqRecord::new();
+        assert!(r.read_record(&mut rec).unwrap());
+        assert_eq!(rec.name(), b"seq\xff\xfe");
+        assert_eq!(rec.comment(), b"desc");
+        assert_eq!(rec.sequence(), b"ACGT");
     }
 
     #[test]

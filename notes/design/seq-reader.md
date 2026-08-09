@@ -111,6 +111,15 @@ FAFQ 自动检测（`>`/`@` 头、`+` 质量）+ 边界处理（CRLF、空行、
 校验）；`SeqReader::new` 走 `io::reader`（支持 stdin/gz），
 `from_reader` 支持借用/owned 缓冲。`memchr` 2.8.3 已入正式依赖。
 
+### bstr 引入（2026-08-09）
+
+`SeqRecord` 的 `name`/`comment` 用 `BString`（bstr 1.13，传递依赖已有、
+现入直接依赖），`name()`/`comment()` 返回 `&BStr`——**名称是字节字符串，
+读取层不强制 UTF-8**（新增 `non_utf8_name_is_byte_clean` 测试：非 UTF-8
+名称可正常读取，消费方自行决定解码）。`description()` 保持 `Option<&[u8]>`
+兼容写回/签名路径。`io.rs` 的 `read_lines`/`read_names` 评估后**不改**：
+处理的是用户文本列表（UTF-8 语义合理），bstr 无实质收益。
+
 ### 基准（50 MB 合成数据）
 
 50 MB 合成数据（FASTA 80 bp 多行；FASTQ 单行——noodles_fastq
