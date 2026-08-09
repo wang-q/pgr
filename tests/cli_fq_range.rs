@@ -68,6 +68,105 @@ fn command_fq_range_subsequence() {
 }
 
 #[test]
+fn command_fq_range_paired_end_by_name() {
+    let r1 = write_temp(
+        ".fq",
+        "@read1/1\nACGTACGT\n+\n!!!!!!!!\n@read2/1\nTGCA\n+\n!!!!\n",
+    );
+    let r2 = write_temp(
+        ".fq",
+        "@read1/2\nTGCATGCA\n+\n!!!!!!!!\n@read2/2\nACGT\n+\n!!!!\n",
+    );
+    let out_dir = tempfile::tempdir().unwrap();
+    let out1 = out_dir.path().join("r1.out.fq");
+    let out2 = out_dir.path().join("r2.out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "range",
+            r1.path().to_str().unwrap(),
+            "--mate",
+            r2.path().to_str().unwrap(),
+            "read1",
+            "-o",
+            out1.to_str().unwrap(),
+            "--outfile-2",
+            out2.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(&out1).unwrap(),
+        "@read1/1\nACGTACGT\n+\n!!!!!!!!\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&out2).unwrap(),
+        "@read1/2\nTGCATGCA\n+\n!!!!!!!!\n"
+    );
+    // Both .loc sidecars were created.
+    assert!(std::path::Path::new(&format!("{}.loc", r1.path().display())).is_file());
+    assert!(std::path::Path::new(&format!("{}.loc", r2.path().display())).is_file());
+}
+
+#[test]
+fn command_fq_range_paired_end_subsequence() {
+    let r1 = write_temp(".fq", "@read1/1\nACGTACGTACGT\n+\n!!!!IIIIIIII\n");
+    let r2 = write_temp(".fq", "@read1/2\nTGCATGCATGCA\n+\nJJJJJJJJJJJJ\n");
+    let out_dir = tempfile::tempdir().unwrap();
+    let out1 = out_dir.path().join("r1.out.fq");
+    let out2 = out_dir.path().join("r2.out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "range",
+            r1.path().to_str().unwrap(),
+            "--mate",
+            r2.path().to_str().unwrap(),
+            "read1:3-6",
+            "-o",
+            out1.to_str().unwrap(),
+            "--outfile-2",
+            out2.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(&out1).unwrap(),
+        "@read1/1\nGTAC\n+\n!!II\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&out2).unwrap(),
+        "@read1/2\nCATG\n+\nJJJJ\n"
+    );
+}
+
+#[test]
+fn command_fq_range_rejects_outfile_2_without_pair() {
+    let file = write_temp(".fq", "@r1\nACGT\n+\n!!!!\n");
+    let out_dir = tempfile::tempdir().unwrap();
+    let out2 = out_dir.path().join("r2.out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "range",
+            file.path().to_str().unwrap(),
+            "r1",
+            "--outfile-2",
+            out2.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "--outfile-2 requires two input files",
+        ));
+}
+
+#[test]
 fn command_fq_range_rejects_plain_gzip() {
     // Plain gzip has no block index, so random access cannot seek by plain
     // offset; only plain text and BGZF are supported.

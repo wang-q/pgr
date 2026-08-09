@@ -72,3 +72,35 @@ pgr fq to-fa [OPTIONS] <infiles>...
     ```bash
     pgr fq to-fa input1.fq input2.fq -o output.fa
     ```
+
+## range
+
+Extracts FASTQ records by read name (or a region within a read) using a
+`.loc` index that is created automatically.
+
+### Options
+
+| Argument | Description |
+|----------|-------------|
+| `infile` | Input FASTQ file (plain text or BGZF `.gz`) |
+| `--mate <FILE>` | Second mate file for paired-end extraction |
+| `ranges` | Read names and/or `name:start-end` regions (or `-r` list file) |
+| `-r`, `--rgfile <FILE>` | Read names/regions from a file |
+| `-c`, `--cache <N>` | LRU cache capacity for extracted records (default 1) |
+| `-o`, `--outfile <FILE>` | Output filename (default: stdout) |
+| `--outfile-2 <FILE>` | Output for the second mate (requires `--mate`) |
+| `-u`, `--update` | Force rebuild the `.loc` index |
+
+Read names with `/1` `/2` suffixes are matched by their pair name;
+interleaved reads with identical names are both returned in order.
+`name:start-end` returns the subsequence of both sequence and quality
+(1-based inclusive). The index is rebuilt when the input is newer.
+
+### Examples
+
+```bash
+pgr fq range reads.fq read1 read2 -o out.fq
+pgr fq range reads.fq "read1:10-100" -o out.fq
+pgr fq range reads.fq -r names.txt -c 10 -o out.fq
+pgr fq range R1.fq --mate R2.fq read1 -o r1.out.fq --outfile-2 r2.out.fq
+```

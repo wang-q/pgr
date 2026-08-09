@@ -81,7 +81,9 @@
   `normalize_pair_name`）+ `cmd_pgr/fq/range.rs`；name 归一化（strip
   `/1` `/2`）、交错同名 `#n` 消歧、`name:start-end` 子段、BGZF 复用
   `.gzi`、普通 gzip 明确不支持；设计 = `design/fq-index.md`
-  （一期实现，二期 = 双端 S2）。
+  （一期实现；二期双端 S2 已落地：`--mate` + `--outfile-2`，同一组
+  ranges 对两端各建 `.loc` 索引、各输出一个文件，测试见
+  `tests/cli_fq_range.rs`）。
 - **BGZF 写侧基准**：`benches/bgzf_write_benchmark.rs`（单线程
   `BgzfWriter` + `ParallelBgzfWriter` 1/2/3/4/6/8，50 MB 伪随机 ~7.3×），
   Cargo.toml 注册 `harness=false`。
@@ -111,7 +113,8 @@ estimate、profile.rs pkp）、`cmd_pgr/kmer/`（gc/gsize/qhist/qcheck 新增）
    anchr）；**p>2 多拓扑、错误分量、端部修正仍是后续**（明确不做/待议）。
 2. **anchr BBTools 替换**三决策点：一期 `fq split`/`fq sample` 是否先做；
    接头修剪完全复刻 bbduk（tbo/tpe）vs 简化；流水线管道串联是否可接受。
-3. **`fq range` 二期**：双端 S2（`R1.fq R2.fq` + `--outfile-2`）。
+3. ~~**`fq range` 二期**：双端 S2~~（已完成：`--mate` + `--outfile-2`，
+   见上）。
 4. 参考项目笔记待续（用户会继续给新项目）。
 
 ## 1. 等数据/场景到位再启动

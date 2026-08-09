@@ -11,7 +11,8 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 This command extracts FASTQ records by read name (or a region within a read)
-using a `.loc` index that is created automatically.
+using a `.loc` index that is created automatically. Paired-end input (two
+files) writes each mate to its own output with `--outfile-2`.
 
 Notes:
 * Index format matches `fa range`: name, plain offset, record size
@@ -33,11 +34,20 @@ Examples:
 
 4. Force rebuild the index:
    pgr fq range in.fq read1 --update
+
+5. Paired-end extraction (mate via --mate, same ranges, separate outputs):
+   pgr fq range R1.fq --mate R2.fq read1 -o r1.out.fq --outfile-2 r2.out.fq
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTQ file to process",
         ))
+        .arg(
+            Arg::new("mate")
+                .long("mate")
+                .num_args(1)
+                .help("Second mate file (paired-end)"),
+        )
         .arg(crate::cmd_pgr::args::ranges_arg())
         .arg(crate::cmd_pgr::args::rgfile_arg())
         .arg(
@@ -50,6 +60,12 @@ Examples:
                 .help("Set the capacity of the LRU cache"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
+        .arg(
+            Arg::new("outfile_2")
+                .long("outfile-2")
+                .num_args(1)
+                .help("Output filename for the second mate (paired-end)"),
+        )
         .arg(
             Arg::new("update")
                 .long("update")
@@ -79,26 +95,16 @@ fn write_fq_record<W: Write>(
     Ok(())
 }
 
-/// Execute the range command.
-pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args.get_one::<String>("infile").unwrap();
-    let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut protected: Vec<String> = vec![infile.to_string()];
-    if let Some(rgfile) = args.get_one::<String>("rgfile") {
-        protected.push(rgfile.clone());
-    }
-    protected.push(format!("{}.loc", infile));
-    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, protected.iter().map(|s| s.as_str()))?;
-
-    let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
-    let opt_cache = *args.get_one::<std::num::NonZeroUsize>("cache").unwrap();
-    let mut cache: lru::LruCache<String, Vec<u8>> = lru::LruCache::new(opt_cache);
-
-    let force_update = args.get_flag("update");
+/// Extracts the requested ranges from one indexed FASTQ file into `out`.
+fn extract_file(
+    infile: &str,
+    ranges: &[String],
+    cache_capacity: std::num::NonZeroUsize,
+    force_update: bool,
+    mut out: impl Write,
+) -> anyhow::Result<()> {
+    let mut cache: lru::LruCache<String, Vec<u8>> = lru::LruCache::new(cache_capacity);
     let (mut reader, loc_of) = pgr::libs::loc::open_fq_indexed(infile, force_update)?;
-
-    let mut out =
-        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     for el in ranges.iter() {
         let rg = Range::from_str(el);
         let hits = pgr::libs::loc::query_fq_locs(&loc_of, rg.chr());
@@ -137,5 +143,57 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
     out.flush()?;
+    Ok(())
+}
+
+/// Execute the range command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mate = args.get_one::<String>("mate").map(String::as_str);
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let outfile_2 = args.get_one::<String>("outfile_2").map(String::as_str);
+    if mate.is_none() && outfile_2.is_some() {
+        bail!("--outfile-2 requires two input files (paired-end)");
+    }
+    if mate.is_some() && outfile_2.is_none() {
+        bail!("--mate requires --outfile-2 (paired-end output)");
+    }
+    if outfile_2 == Some("stdout") {
+        bail!("--outfile-2 must be a file path, not stdout");
+    }
+    let mut protected: Vec<String> = vec![infile.to_string()];
+    if let Some(m) = mate {
+        protected.push(m.to_string());
+    }
+    if let Some(rgfile) = args.get_one::<String>("rgfile") {
+        protected.push(rgfile.clone());
+    }
+    protected.push(format!("{infile}.loc"));
+    if let Some(m) = mate {
+        protected.push(format!("{m}.loc"));
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, protected.iter().map(|s| s.as_str()))?;
+    if let Some(o2) = outfile_2 {
+        crate::cmd_pgr::args::ensure_outfile_distinct(o2, protected.iter().map(|s| s.as_str()))?;
+        if outfile != "stdout" && pgr::libs::io::same_path(outfile, o2) {
+            bail!("output files must be distinct: {} and {}", outfile, o2);
+        }
+    }
+
+    let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
+    let cache_capacity = *args.get_one::<std::num::NonZeroUsize>("cache").unwrap();
+    let force_update = args.get_flag("update");
+    if let Some(mate) = mate {
+        let mut out1 = pgr::writer(outfile)
+            .with_context(|| format!("Failed to open writer for {}", outfile))?;
+        extract_file(infile, &ranges, cache_capacity, force_update, &mut out1)?;
+        let mut out2 = pgr::writer(outfile_2.unwrap())
+            .with_context(|| format!("Failed to open writer for {}", outfile_2.unwrap()))?;
+        extract_file(mate, &ranges, cache_capacity, force_update, &mut out2)?;
+    } else {
+        let mut out = pgr::writer(outfile)
+            .with_context(|| format!("Failed to open writer for {}", outfile))?;
+        extract_file(infile, &ranges, cache_capacity, force_update, &mut out)?;
+    }
     Ok(())
 }

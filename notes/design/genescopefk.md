@@ -119,6 +119,16 @@ summary.txt 除 Model Fit / Error Rate 两行外与 R 逐字节一致；模型�
 （d=0、bias=0）完全一致。剩余差异是同一盆地内 Rust 与 f2c C 的语言级
 浮点路径差异（1017 vs 988 vs 1019.9），无法也不必要逐位消除。
 
+**p=2 端到端对照**（同 hist.tsv，2026-08-10）：pgr d=0/r1=0.001197/
+kcov=27.91/bias=0/length=1041.8 vs R d=0/r1=0.001252/kcov=27.86/
+bias=0/length=1004——结构与 p=1 相同的对齐程度（同盆地，summary
+Haploid 903 vs 904、Repeat/Unique 一致，Model Fit 64.71% vs 65.25%）。
+
+**anchr 2_fastk 消费验证**（2026-08-10）：`grep '^kmercov' model.txt |
+tr -s ' ' '\t' | cut -f 2` → COV=55.8；`summary.txt` 经 `sed '1,6 d'` +
+表格式处理的输出与 R 过同一管线**逐行结构一致**（仅 Model Fit /
+Error Rate 数值不同）。
+
 ## 6. 注意事项 / 教训
 
 - **rsstrace 陷阱**：minpack.lm 的 `rsstrace[0]` 会被首轮 fdjac2 的扰动
