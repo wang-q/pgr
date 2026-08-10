@@ -23,6 +23,7 @@ preset）：
 | :--- | :--- | :--- |
 | `*.per-base.bed.gz` | 逐碱基深度，游程压缩 `chrom start stop depth` | 默认（`-n` 关闭） |
 | `*.regions.bed.gz` | 每个窗口/BED 区域的 mean（或 `-m` median）深度 | `--by <window\|bed>` |
+| `*.mosdepth.region.dist.txt` | 每区域（窗口/BED）深度分布 | `--by <window\|bed>` |
 | `*.quantized.bed.gz` | 相邻碱基合并进同一深度 bin（如 `1:10:20`） | `--quantize` |
 | `*.thresholds.bed.gz` | 每个区域内深度 ≥ 各阈值的碱基数 | `--thresholds` + `--by` |
 | `*.mosdepth.global.dist.txt` | 每染色体/全基因组"深度 ≥ X 的碱基占比"累积分布 | 总是 |
@@ -31,7 +32,8 @@ preset）：
 
 关键过滤：`-F/--flag` 默认 **1796**（0x704 = unmapped | secondary | QC-fail |
 duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(isize)`）、
-`-R/--read-groups`、`-c/--chrom`（支持 `chr:start-end`）。CRAM 需要 `-f/--fasta`
+`-R/--read-groups`、`-c/--chrom`（支持 `chr:start-end`，1-based、内部减 1 转
+0-based；BED 输入则直接按 0-based half-open 映射）。CRAM 需要 `-f/--fasta`
 或 `REF_PATH`（`check_cram_has_ref` 缺引用直接 quit(1)）。
 
 ## 3. 深度计算核心
@@ -50,8 +52,11 @@ duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(is
 * 相邻参考块之间只有 deletion/N 时**不重复开段**（`pos == last_stop` 检查），
   块的起止事件精确对齐 CIGAR 的 M/= /X 段。
 
-事件直接写入差分数组：`arr[p.pos] += p.value`，单条 read 的多个块产生多个
-`+1/-1` 事件。`to_coverage` 对全数组 `cumsum()` 得到逐碱基深度。
+单 CIGAR 且仅一个 `M` op 时有快速路径（`gen_start_ends` 里
+`c.len == 1 and op == match`）直接产生 `(ipos, +1)` / `(ipos+len, -1)` 两个
+事件，跳过逐 op 扫描。事件写入差分数组：`arr[p.pos] += p.value`，单条 read
+的多个块产生多个 `+1/-1` 事件。`to_coverage` 对全数组 `cumsum()` 得到逐碱基
+深度。
 
 ### 3.2 三种计数模式
 
@@ -59,7 +64,7 @@ duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(is
 | :--- | :--- | :--- |
 | 默认 | CIGAR 粒度 + **mate 重叠校正**（见 3.3） | 精确深度 |
 | `-x --fast-mode` | 只看 `rec.start/rec.stop`（read 外边界），不看内部 CIGAR、不校正 mate | 快速、绝大多数场景推荐 |
-| `-a --fragment-mode` | 只统计 proper pair 的 read1，覆盖整个 fragment（`start ~ start+abs(isize)`） | fragment 深度 |
+| `-a --fragment-mode` | 只统计 proper pair 的 read1（跳过 read2/supplementary），覆盖整个 fragment（起点取 `min(start, matepos)`，至 `+abs(isize)`） | fragment 深度 |
 
 ### 3.3 mate 重叠校正
 
@@ -77,9 +82,10 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   `(start, stop, depth)` 游程；整数转字符串用自带的 `fastIntToStr`（Milo Yip
   itoa 查表法，输出是主要性能瓶颈）。
 * **regions**：窗口（`window_gen`，半开 `[start, start+window)`）或 BED 区域
-  （`region_gen`，按染色体预读、边消费边删）；mean 直接求和除以长度，
-  `-m` median 用 `CountStat` 直方图（65536 桶，超出 65535 的深度计入末桶，
-  高深度时中位数是近似值）。
+  （`region_gen`，按染色体预读、边消费边删）；mean 直接求和除以**区域全长**
+  `stop-start`（含 0 深度位点，即"每碱基平均深度"口径），`-m` median 用
+  `CountStat` 直方图（65536 桶，超出 65535 的深度计入末桶，高深度时中位数
+  是近似值）。
 * **thresholds**：`write_thresholds` 对每个 region 逐碱基统计"深度 ≥ 各阈值"的碱基数；
   阈值经 `threshold_args` 排好序，内层 `if v < t: break` 提前跳出（`v < t` 后更大的阈值也
   必然不满足，避免扫完全部阈值）；无数据的染色体（`tid==-2`）直接输出全 0 行。
@@ -92,7 +98,8 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   "深度 ≥ X 的碱基占比"；先跳过深度索引 > 300 的 0 计数桶（`irev > 300 and
   v == 0`），再跳过累计占比 < 8e-5 的行。
 * **summary**：length / bases（= 深度总和，即总比对碱基数）/ mean / min / max；
-  空染色体 min 记 0；数值精度由 `MOSDEPTH_PRECISION` 控制（默认 2）。
+  空染色体 min 记 0；数值精度由 `MOSDEPTH_PRECISION` 控制（默认 2）；
+  指定 `--by` 时额外输出 `<chrom>_region` 与 `total_region` 两行（区域统计）。
 
 ## 4. 性能设计
 
@@ -119,7 +126,10 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   （如 `0 80 1` 后跟 `80 16569 0`），pgr runlist 只输出覆盖段（语义更紧凑）。
 * **quantized ≈ `pgr rg coverage -d`**：都按深度分组输出，mosdepth 按
   bin 合并、pgr 按精确深度。
-* **thresholds/regions ≈ `pgr runlist stat/statop`**：区域覆盖率统计。
+* **thresholds ≈ `pgr rg count`**：mosdepth 的 `thresholds.bed.gz`（每区域
+  "深度 ≥ 阈值"碱基数）与 pgr `rg count`（逐区间重叠计数）同为"per-region
+  计数"维度（见 `notes/design/rgr-tva-audit.md` 已认定）；regions 的 mean 统计
+  更接近 `pgr runlist stat`。
 
 ### 5.2 差异
 
@@ -137,6 +147,23 @@ target 区间 → `.rg`，只计块、不校正 mate），因此 pgr 侧无需�
 mate 校正；若未来要支持"直接读 BAM 算深度"（如 `pgr rg coverage` 直连
 samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins 不推进）是
 对齐基准。
+
+### 5.3 对 pgr 的借鉴价值
+
+* **mean 分母语义**：mosdepth 区域 mean 除以**区域全长**（含 0 深度位点），
+  是 WGS"每碱基平均深度"的标准口径；pgr 若给 `rg coverage` 加窗口统计，须
+  明确是"覆盖碱基平均"还是"全区域平均"，避免与 mosdepth/bedtools 口径不一致。
+* **region median 近似**：`CountStat` 桶截断（>65535 归末桶）使高深度区域
+  median 偏小；pgr 若实现区域 median，直方图桶数需按实际深度动态扩容或设大，
+  不宜用固定小桶数。
+* **per-region 计数直接复用 `rg count`**：thresholds 的"≥ 阈值碱基数"即
+  `rg count` 的覆盖度语义，pgr 无需 CIGAR 解析即可覆盖该功能面（见 5.1）。
+* **超深/超长染色体取舍**：mosdepth 数组法 O(染色体长度) 内存、无排序，适合
+  覆盖度密集的 WGS；pgr 事件法 O(区间数) 内存、需排序，稀疏区间更优。若 pgr
+  未来直读 BAM，CIGAR 事件语义是唯一新增的对齐点，其余可直接复用现有扫描线。
+* **整数格式化**：mosdepth 在输出热路径用 Milo Yip itoa 查表法（`fastIntToStr`）
+  规避通用 `$int`。pgr 的 `rg`/`runlist` 也输出大量 span 字符串，若基准显示格式
+  化成瓶颈，可参照同类查表法优化（先量化，当前未见瓶颈，勿提前引入依赖）。
 
 ## 6. 源码中值得注意的健壮性问题（对 pgr 的参考意义）
 
@@ -166,8 +193,10 @@ samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins �
 
 * `functional-tests.sh`：ssshtest 框架 + 真实小型 BAM（`tests/ovl.bam`、
   `tests/overlapping-pairs.bam`、`tests/nanopore.bam`），黄金断言覆盖 mate
-  重叠校正（默认 vs fast-mode 的 MT 深度）、CRAM 缺引用报错、缺失染色体、
-  乱序 BED、区域越界、插入长度过滤等；构建带
+  重叠校正（默认 vs fast-mode 的 MT 深度）、fragment-mode 全 fragment 输出
+  （`full-fragment-pairs.bam`）、quantized 标签/精度（`MOSDEPTH_Q*`/
+  `MOSDEPTH_PRECISION`）、CRAM 缺引用报错、缺失染色体、乱序 BED、区域越界、
+  插入长度过滤等；构建带
   `--boundChecks:on -d:useSysAssert -d:useGcAssert`（`tests/funcs.nim` 同参数）。
 * `tests/funcs.nim`（由 `tests/all.nim` 导入执行）：`depthstat` min、quantize
   参数解析、`linear_search`/`make_lookup`、threshold 解析、region 解析、BED

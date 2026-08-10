@@ -53,20 +53,24 @@ IO 层     bseq.c / gfa-io.c / format.c  FASTA/FASTQ/GFA/GAF 读写
 后处理层  gcmisc.c / cal_cov.c / asm-call.c 排序/过滤/覆盖度/变异调用
 ```
 
-各文件行数（粗略）：
+各文件行数（实际统计）：
 
-- `ggsimple.c`（700 行）— 增量图构建核心
-- `map-algo.c`（500 行）— 序列到图映射
-- `gfa-ed.c`（600 行）— GWFA 图编辑距离
-- `gchain1.c`（600 行）— 图 chaining DP
-- `gfa-io.c`（400 行）— GFA 读写
-- `gfa-base.c`（450 行）— GFA 基础操作
-- `miniwfa.c`（700 行）— mini WFA 实现
-- `lchain.c`（450 行）— 线性 chaining
-- `gfa-aug.c`（300 行）— 图增强
-- `gfa-bbl.c`（370 行）— Bubble calling
-- `shortk.c`（250 行）— K 最短路径
-- 其余文件均 < 300 行
+- `miniwfa.c`（834 行）— mini WFA 实现
+- `gfa-ed.c`（617 行）— GWFA 图编辑距离
+- `ggsimple.c`（570 行）— 增量图构建核心
+- `gchain1.c`（535 行）— 图 chaining DP
+- `gfa-base.c`（526 行）— GFA 基础操作
+- `map-algo.c`（502 行）— 序列到图映射
+- `lchain.c`（441 行）— 线性 chaining
+- `gfa-io.c`（395 行）— GFA 读写
+- `gfa-bbl.c`（372 行）— Bubble calling
+- `main.c`（301 行）— 命令分发
+- `format.c`（291 行）— GAF/LC 输出
+- `gfa-aug.c`（260 行）— 图增强
+- `shortk.c`（251 行）— K 最短路径
+- 其余均 < 250 行（`index.c` 230 / `gcmisc.c` 223 / `ggen.c` 182 / `algo.c` 194 / `cal_cov.c` 139 / `asm-call.c` 147 / `options.c` 134）
+
+**CLI 预设**（`-x`，main.c + options.c）：`lr`（默认，k=17/w=11，长读映射）、`asm`（k=19/w=10，asm-to-ref）、`sr`（k=21/w=10，短读）、`ggs`（=asm 且自动开启 `--ggen` 增量图生成）。图生成相关默认参数见 `mg_ggopt_init`（options.c）：`min_var_len=50`、`min_map_len=100k`、`min_mapq=5`。索引默认 `bucket_bits=14`；`-c`（CIGAR）在 ggsimple 模式下会被警告推荐开启（main.c）。
 
 ---
 ## 3. 核心数据结构
@@ -75,8 +79,8 @@ IO 层     bseq.c / gfa-io.c / format.c  FASTA/FASTQ/GFA/GAF 读写
 
 定义在 `gfa-priv.h`，操作在 `gfa-base.c`：
 
-- `gfa_seg_t` 数组：节点（segment），字段 `seq`/`len`/`rank`/`snid`/`soff`
-- `gfa_arc_t` 数组：有向边，字段 `v_lv`（长度）/`ov`/`ow`（overlap）
+- `gfa_seg_t` 数组：节点（segment），字段 `seq`/`len`/`rank`/`snid`/`soff`/`name`，另含 `utg`（unitig 列表）与 `aux`（任意 tag 序列，`gfa_aux_t`）
+- `gfa_arc_t` 数组：有向边，字段 `v_lv`（高 32 位 = 头顶点 id，低 32 位 = arc 长度 `lv`，打包便于按头排序）/`w`（尾顶点）/`rank`/`ov`/`ow`（overlap），以及位域 `link_id:61`（一对对偶 arc 共享，指向 `link_aux[]`）/`strong`/`del`/`comp`。图拓扑完全由 `arc[]` 表示，另用 `idx[]` 做按头顶点的邻接索引（`gfa_arc_a`/`gfa_arc_n`）、`link_aux[]` 存 link 的 tag
 - `gfa_sseq_t` 数组：stable sequences（参考路径），字段 `name`/`rank`/`min`/`max`
 
 **顶点编码**：`v = seg_id << 1 | strand`，每个 segment 有正反向两个顶点。 `v^1` 取反向顶点，`v>>1`
@@ -98,13 +102,14 @@ rGFA 是 GFA 1.0 的扩展，给 segment 加三个 tag：
 
 ### 3.3 `mg_idx_t`（minimizer 索引）
 
-定义在 `mgpriv.h`，操作在 `index.c`：
+`mg_idx_t` 定义在 `minigraph.h`（非 mgpriv.h），操作在 `index.c`；`mg_idx_bucket_t` 定义在 `index.c` 内：
 
-- 分桶哈希表（`mg_idx_bucket_t`），桶数 `1<<b`
-- **特殊编码**：出现 1 次的 minimizer 直接存 value；出现多次的存位置数组 `p[]`
-- `gfa_edseq_t`：每个顶点的正反向序列缓存，供 GWFA 使用
+- 分桶哈希表（`mg_idx_bucket_t`），桶数 `1<<b`（`bucket_bits`，默认 14）
+- 两阶段构建：先用 `mg128_t` 数组 `a[]` 收集 (minimizer, position)，再经 `worker_post`（`kt_for` 并行）把每桶转成哈希表
+- **特殊编码**（`mg_idx_a2h`）：出现 1 次的 minimizer 直接在哈希 value 存位置，并置 key 的最低比特（`kh_key|1`）；出现多次的按位置写入排序数组 `p[]`，value 存 `start<<32|n`
+- `gfa_edseq_t`（`mg_idx_t` 的 `es` 字段）：每个顶点 `2i`/`2i+1` 存正向与反向互补两条序列缓存，供 GWFA 使用（`gfa_edseq_init`，gfa-ed.c）
 
-这种"出现 1 次特殊编码"的设计在 minimap2/minigraph 中一脉相承，省内存。
+这种"出现 1 次特殊编码"的设计在 minimap2/minigraph 中一脉相承，省内存。索引按 `k`/`w`/`bucket_bits` 构建（`mg_index_core`）；**建索引前会先把所有 segment 序列统一转大写**（`mg_index`，index.c#L215）；且 `mg_gfa_overlap` 一旦检测到任何非零 overlap 的 arc 就拒绝建索引。
 
 ### 3.4 `mg_gchains_t`（图链集合）
 
@@ -133,12 +138,9 @@ for each input assembly:
 **关键点**：每加入一个 assembly 都要**重建索引**（因为图变了）。这是 minigraph 线性但
 非增量的代价——索引不能复用。pgr 的 PAF 索引是静态的（构建一次查询多次），无此问题。
 
-**两条 ggsimple 路径**：`mg_ggen_aug`（ggen.c#L89-L100）按是否启用 `-c`（CIGAR）
-分派——无 `-c` 走 `mg_ggsimple`（基于锚点间隔的启发式打分，ggsimple.c#L107），
-有 `-c` 走 `mg_ggsimple_cigar`（ggsimple.c#L392，用 CIGAR 的逐碱基比对质量过滤插入
-区段，插入判别更精细）。main.c#L225 明确警告 "it is recommended to add -c for graph
-generation"。两路径最终都调 `gfa_augment` 落图（ggsimple.c#L301/#L562）。pgr 的
-PAF 天然带 CIGAR，对应的是"精细路径"。
+**两条 ggsimple 路径**：`mg_ggen_aug`（ggen.c#L89-L100）按是否启用 `-c`（CIGAR）分派——无 `-c` 走 `mg_ggsimple`（基于锚点间隔的启发式打分，ggsimple.c#L107），有 `-c` 走 `mg_ggsimple_cigar`（ggsimple.c#L392，用 CIGAR 的逐碱基比对质量过滤插入区段，插入判别更精细）。main.c#L225 明确警告 "it is recommended to add -c for graph generation"。两路径最终都调 `gfa_augment` 落图（ggsimple.c#L301/#L562）。pgr 的 PAF 天然带 CIGAR，对应的是"精细路径"。
+
+**共享机制（补齐）**：两路径都先调 `mg_gc_index`（ggsimple.c#L11）把每个 query 的 gchain 映射到 segment/query 两个区间索引（`mg_intv_index`，algo.c），并统计锚点密度 `a_dens`；随后用 `mg_mss_all`（algo.c#L40，Ruzzo-Tompa 线性时间最大评分段）识别"映射不良"的区段，做 `--gg-min-end-cnt`/`--gg-min-end-frac` 末端裁剪；之后逐候选过滤：长度差 < `min_var_len`、含 N 碱基、query/图两侧重叠数（`mg_intv_overlap`）≠ 1 的丢弃；对长度差较小的事件用 `mg_path2seq` 取 path 序列 + `mg_wfa_cmp`（algo.c#L177，miniWFA 精确比对）做一致性校验并探测 inversion（翻转后若高一致则拆成两次插入）。
 
 **粗框架哲学（≥100bp SV 过滤）**：minigraph 在第 3 步 `mg_ggsimple` 只把长度差 ≥ `min_var_len`
 的变异插入图（[ggsimple.c#L213](../../../minigraph-master/ggsimple.c#L213)，

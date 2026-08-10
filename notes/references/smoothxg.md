@@ -40,9 +40,9 @@ seqwish 诱导阶段留下的冗余 bubble 与碎片节点。它在 PGGB 中的�
    `max_path_jump`（path 上相邻 step 在图排序中的跳距）、`max_edge_jump`（边的跳距）切分出
    可 POA 平滑的 block。`toposplit_block` 用并查集按弱连通分量切分跨连通区的块。
 4. **块再切** — [breaks.cpp](../../../smoothxg-master/src/breaks.cpp)
-   `break_blocks`：在 VNTR 边界进一步切分 block，避免把高拷贝重复塞进同一个 POA。用
-   mash 距离聚类 + 自相关（sautocorr）检测重复周期，参数包括 `min_copy_length`/`max_copy_length`/
-   `min_autocorr_z`/`autocorr_stride`。
+   `break_blocks`：把块内超过 `max_poa_length` 的序列切短（VNTR 重复检测决定切分粒度），
+   再按序列一致性（WFA edit-based + mash 距离双通道）把异源序列拆到不同块，避免把高拷贝
+   重复或低相似序列塞进同一个 POA。详见 §4.3。
 5. **平滑与拼接** — [smooth.cpp](../../../smoothxg-master/src/smooth.cpp)
    `smooth_and_lace`：对每个 block 跑 `smooth_abpoa` 或 `smooth_spoa` 生成 POA 子图（含 consensus
    path），把子图 zstd 压缩存进 `block_graphs` 向量；同时记录 `path_mapping`（path fragment →
@@ -154,6 +154,11 @@ ConditionalSetOrClearBitsWithoutBranching）代替直接的 `|` 运算。两者�
 > **源码注释坑**：`make_pos_t` 开头的注释写 "top bit is reserved for is_rev flag"，但
 > 实际实现（`pos = offset<<1` 后把 is_rev 写进 bit 0）用的是**低位**——注释与代码矛盾。
 > 读源码时勿被注释误导，以 `is_rev() { return pos & 1; }` 为准。
+
+pos.cpp 还提供完整的位置操作集：`incr_pos`/`decr_pos`（含按 `by` 步进的重载）、`rev_pos_t`
+（翻转方向）、`pos_to_string`（`offset` + `+/-`），以及 `aln_pos_t`（`pos` + `aln_length`
+打包，用于链式化锚点区间）——主流程只用到 `make_pos_t`/`offset`/`is_rev`，其余多是为
+chain 模块等预留/共用的辅助。
 
 注意 chain.hpp 里有另一个 `seq_pos_t`，方向位在**最高位**（MSB），与 `pos_t` 不兼容——
 这是 chain 模块遗留的独立编码，主流程不用。
@@ -278,21 +283,38 @@ if (path_rank(last) != path_rank(step)
 SGD 把不相关的节点排到一起，toposplit 也能按连通性把它们拆开。`pgr paf to-gfa` 当前
 用 BFS 传递闭包找同源片段，本质等价于"隐式的 toposplit"——BFS 自然只连通同源节点。
 
-### 4.3 breaks：VNTR 边界切分
+### 4.3 breaks：超长切分 + VNTR 检测 + 一致性聚类
 
 [breaks.cpp](../../../smoothxg-master/src/breaks.cpp) 的 `break_blocks`
-在 `smoothable_blocks` 的基础上进一步切分 block，主要解决两个问题：
+在 `smoothable_blocks` 的基础上进一步切分 block，实际包含**三个阶段**（并行逐 block 处理，
+用 WFA `mm_allocator` 分配器池加速 edit 比对，结果通过一个独立写线程按序写回新 blockset）：
 
-1. **VNTR（串联重复）** — 高拷贝重复会把 POA 吹爆（同一序列在 block 内出现几十次）。
-   `break_blocks` 用自相关（`sautocorr` 库）检测重复周期，`min_autocorr_z=5`、
-   `autocorr_stride=50` 控制检测灵敏度。检测到 VNTR 就在重复边界切分 block。
-2. **mash 聚类** — 对长序列（`> min_length_mash_based_clustering`，默认 200 bp）用 mash
-   距离聚类，把相似度低于 `block_group_est_identity` 的序列拆到不同 block。避免把
-   异源序列塞进同一个 POA。
+1. **超长切分（Cutting）** — 若块内某 path_range 长度超过 `max_poa_length`
+   （`-q`，默认 2×target POA length），把该 range 切成 `cut_length` 的小块。这是
+   `break_blocks` 的首要职责（标题注释即 "break ... to be shorter than our max sequence size"）。
+2. **VNTR（串联重复）检测** — 若 `break_repeats` 开启，对长度 ≥ `2*min_copy_length` 的
+   range 用自相关库 `sautocorr::repeat` 检测重复周期（参数 `min_copy_length`/`max_copy_length`/
+   `min_autocorr_z`/`autocorr_stride`，其中 `min_autocorr_z=5`、`autocorr_stride=50` 在
+   main.cpp 硬编码）。若多个 range 都检出重复，取平均重复长度的一半作为 `cut_length`
+   （`cut_length = round(mean(repeat_length)/2)`），从而把重复单元切分均匀；未检出则盲目按
+   `max_poa_length` 切。
+3. **一致性聚类（Splitting）** — 先对块内序列**去重**（正反链都算重复，即完全相同的
+   forward/reverse 序列合并为一个代表），再分两种模式聚类拆块：
+   - **WFA edit-based 聚类** — 用 WFA（wavefront）算 **gap-compressed identity**
+     （`wfa_gap_compressed_identity`，压缩连续 gap 后 matches/(matches+mismatches+indels)），
+     相似度低于 `block_group_identity`（`-I`）的序列拆到不同块。WFA 的 `max_distance_threshold`
+     做软上界，只对齐"有可能达到阈值"的序列对。
+   - **mash 聚类** — 对长度 ≥ `min_length_mash_based_clustering`（`-L`，默认 200 bp）的长序列
+     用 `rkmh` 算 mash 距离，估计 identity 低于 `block_group_est_identity`（`-E`，默认等于
+     `-I`）的拆块。该模式受 `min_dedup_depth_for_mash_clustering`（`-D`，默认 12000，0 关闭）
+     深度阈值控制。
+   两种聚类都只在去重后序列数 ≥ `min_dedup_depth_for_block_splitting`（`-d`，默认 0 关闭）
+   时才执行，过小的块直接保留。
 
-参数 `min_copy_length`（默认 1000）/`max_copy_length`（默认 20000）限定检测的重复单元
-长度范围。**对 pgr 的启示**：`pgr paf to-gfa` 当前不做 VNTR 检测，对高拷贝重复区
-可能产出过大的 POA 块。若实测有问题，可借鉴 smoothxg 的自相关 + mash 聚类方案。
+**对 pgr 的启示**：`pgr paf to-gfa` 当前不做 VNTR 检测，对高拷贝重复区可能产出过大的 POA
+块。若实测有问题，可借鉴 smoothxg 的 `sautocorr` 自相关测重复周期 + WFA/mash 双通道聚类。
+其中 **WFA gap-compressed identity** 比完整 DP 快得多，适合做大规模序列分群；mash（rkmh）
+估计 identity 则被 smoothxg 同时复用于块拆分和 adaptive POA 打分（见 §4.4）。
 
 ### 4.4 smooth：POA 平滑与拼接
 
@@ -302,8 +324,9 @@ SGD 把不相关的节点排到一起，toposplit 也能按连通性把它们拆
 - **`smooth_spoa`** — 用 SPOA 库对 block 跑 POA，输出 odgi 子图。支持 local/global 对齐模式
   （`-Z` 切换）、adaptive POA 参数（`-a` 按 block 内序列相似度调整打分）、padding
   （`-O` 在每端加 flanking 序列，默认 0.001 * 平均序列长度）。
-- **`smooth_abpoa`** — 用 abPOA 库（ SIMD 加速）替代 SPOA，接口与 `smooth_spoa` 对称。
-  `-A` 开启。
+- **`smooth_abpoa`** — 用 abPOA 库（SIMD 加速）替代 SPOA，接口与 `smooth_spoa` 对称。
+  `-A` 开启。注意 abPOA 用**banded 对齐**（smooth.cpp 中 `abpt->wb = 311` 的带宽），
+  且源码注释指出 abPOA 的 local 模式有 bug，实际运行时在 abPOA 下倾向使用 global。
 - **`smooth_and_lace`** — 编排函数：并行对每个 block 调 `smooth_spoa`/`smooth_abpoa`，
   把结果子图 zstd 压缩存进 `block_graphs[block_id]`，同时写 `path_mapping` 记录 path
   fragment → block_id 映射。若 `merge_blocks` 开启，还处理跨 block 的 consensus 合并
@@ -314,6 +337,18 @@ graph_t，保留 consensus path（`consensus_name`）。**关键认识**：POA �
 每条原 path 在子图里都有一条对应的 path，consensus 是额外加的一条 path。拼接阶段通过
 `path_mapping` 知道"原 path 的哪段在哪个子图的哪条 path 上"，从而把子图的 step 翻译回
 输出图。
+
+**adaptive POA 打分细节**（`-a`）：对块内序列去重后用 `rkmh` 两两估计 identity，取
+**30% 分位**作为 `est_identity_threshold`（70% 的序列对 identity 不低于此值），再按
+threshold 落在 ≥0.99 / 0.98 / 0.97 / 0.95 / 0.90 的梯度查表替换整组 POA 打分参数
+（如 ≥0.99 用 `1,19,39,3,81,1`，≥0.90 用默认 `1,4,6,2,26,1`）。这解释了 main.cpp 里
+`-p/--poa-params` 默认值与 4/6 参数语义（4 个=affine gaps，6 个=convex，abPOA 下 4 个时
+`q,c` 置 0）。
+
+**consensus 时序**：consensus path **只在最后一轮迭代**加入（main.cpp 中
+`current_iter == num_iterations-1` 才用非空 `consensus_base_name`），默认前缀为
+`Consensus_`（`-Q/--consensus-prefix` 可改）；`-V/--vanish-consensus` 则完全不放
+consensus path。
 
 ### 4.5 consensus_graph：共识图构建
 
@@ -332,6 +367,12 @@ graph_t，保留 consensus path（`consensus_name`）。**关键认识**：POA �
 投影"——把泛基因组图简化成参考路径 + 大变异。`pgr paf to-vcf` 走类似思路（POA
 consensus → VCF），但输出格式不同。
 
+**解耦的运行模式**：共识图构建可以从"平滑主流程"中**独立拆出**单独跑——用
+`-F/--smoothed-in` 读一份已平滑好的 GFA，再配 `-H/--consensus-from` 从文件读 consensus path
+名（这两者必须同时给出，main.cpp 有校验），即可直接调 `create_consensus_graph`，完全跳过
+prep → blocks → smooth 流水线。这使"平滑"与"出共识图"两个阶段可分开部署/复用中间产物，
+pgr 若做流水线化（类似 impg 的 stage 化）可借鉴这种"后处理可单独消费前序产物"的分层。
+
 ### 4.6 工具模块
 
 - **[utils.cpp](../../../smoothxg-master/src/utils.cpp)** —
@@ -340,7 +381,10 @@ consensus → VCF），但输出格式不同。
   取模，要求 d 是 2 的幂）。
 - **[tempfile.cpp](../../../smoothxg-master/src/tempfile.cpp)** —
   线程安全临时文件管理，`mkdtemp` + `mkstemp`，程序退出时由静态 `Handler` 对象的析构函数
-  自动清理（非显式 `atexit()` 注册）。
+  自动清理（非显式 `atexit()` 注册）。注意其默认临时目录是**当前工作目录（`getcwd`）而非
+  `/tmp`**：`tempfile::get_dir` 无 `TMPDIR` 等环境变量时直接回落 `getcwd`，且 main.cpp 在
+  未给 `-b/--base` 时也显式 `set_dir(getcwd)`。这意味着超大图处理会往 cwd 写入大量临时
+  文件（prep GFA、mmmultimap 块集、path_mapping、XG 序列索引等），磁盘空间与权限需留意。
 - **[progress.hpp](../../../smoothxg-master/src/progress.hpp)** —
   `ProgressMeter` 异步进度条，原子计数 + 后台线程每 500ms 打印。
 - **[zstdutil.cpp](../../../smoothxg-master/src/zstdutil.cpp)** —
@@ -400,6 +444,13 @@ smoothxg 同时支持 SPOA 和 abPOA 两个 POA 引擎，通过 `-A` 切换：
 - **`path_mapping: mmmulti::set<path_position_range_t>`** — 记录原 path 的每段映射到哪个
   block 的哪条 path。拼接时按 `(base_path, start_pos)` 排序，顺序遍历，对每个 fragment
   调 `block.for_each_step_in_path(target_path, ...)` 把 step 翻译到输出图。
+
+**内存采样细节**：拼接阶段不会一次把所有 block 图都解压进内存——按 block 数设采样率
+`sample_rate = block_count>12M ? 4 : (block_count>6M ? 2 : 0)`，只有被采样到的 block 解压驻留
+（`graphs[idx]`），其余保留 zstd 压缩态，在 lace 遍历到某 block 时经 `load_block` **按需解压**
+并随即用完即弃。这是 smoothxg 在"拼接阶段"对内存的第二道控制（第一道是 §3.1 的
+`mmmulti::map` 外存块集）。**对 pgr 的启示**：若 pgr 做全图归一化，`id_mapping`（节点 id
+平移）配合同样的"按需解压 block"是低内存拼接的可行模板。
 
 **关键认识**：拼接阶段有个 `assert(false)` 兜底——如果原 path 的某段没被任何 block 覆盖
 （`start_pos - last_end_pos > 0`），直接 assert 失败。这说明 smoothxg 要求**全图覆盖**：
@@ -461,11 +512,18 @@ if (orig_seq != smoothed_seq) {
    `handy_parameter` 统一解析。pgr 的 CLI 参数若涉及大文件大小，可借鉴此工具函数。
 3. **`ProgressMeter` 异步进度条** — 原子计数 + 后台线程每 500ms 打印，不阻塞主线程。
    pgr 的长任务（如 `pgr paf index`）可借鉴此模式。
-4. **`tempfile` 的 atexit 自动清理** — `mkdtemp` + `atexit` 注册清理函数，程序退出自动
-   删临时目录（实际是静态 `Handler` 析构，非显式 `atexit()`）。pgr 当前用
-   `tempfile::TempDir`（Rust 生态）已有类似能力，但 smoothxg 的 C++ 实现思路值得了解。
+4. **`tempfile` 的退出自动清理** — 静态 `Handler` 对象析构时删临时文件与目录（非显式
+   `atexit()`）。pgr 当前用 `tempfile::TempDir`（Rust 生态）已有类似能力。但值得注意 smoothxg
+   把临时目录默认设在**当前工作目录**（`getcwd`）而非 `/tmp`——对于会产生大量中间大文件
+   的任务，pgr 若沿用 `tempfile` crate 的默认系统临时目录即可，无需照搬 cwd 方案。
 5. **padding 机制** — POA 块边界加 flanking 序列避免对齐不完整。`pgr paf to-gfa`
    若遇边界问题可借鉴。
+6. **WFA 波形对齐做 edit-based 聚类** — `break_blocks` 用 WFA（wavefront）算
+   gap-compressed identity 做序列分群，配合 `mm_allocator` 分配器池按线程复用缓冲，
+   比完整 DP 快得多。pgr 若需给 POA 分块做一致性分群，可评估移植 WFA 或等价波形算法。
+7. **rkmh/mash 估计 identity 复用** — smoothxg 用同一套 mash 估计同时支撑"块拆分阈值"
+   与"adaptive POA 打分"，一处计算多处受益。pgr 的 `libs/poa/` 与分块逻辑若都需相似度，
+   可考虑共享该估计器。
 
 ### 6.3 不建议借鉴的设计
 

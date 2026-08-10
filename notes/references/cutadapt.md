@@ -11,7 +11,7 @@
 - **算法来源**：注释明确说明与 **BWA 的 `bwa_trim_read`** 相同（`qualtrim.pyx:29-33`）。这与经典 Mott 算法同源（BWA `-q` 即 Mott 算法），累计和取最小。
 - **变体**：`nextseq_trim_index`（NextSeq polyG 暗循环）、`poly_a_trim_index`（poly-A/poly-T）、`expected_errors`（Edgar 2015 期望错误数）。
 
-> **范围说明**：pgr 若实现 `fq trim-qual`，应移植 `quality_trim_index`（Mott/BWA 累积质量法）作为 `--method mott`，与继承自 sickle 的滑窗（`--method sliding`）并存，见 §4。
+> **范围说明 / 落地状态**：本文初稿时 pgr 的 `fq trim-qual` 还是设计提案；现已实现于 `src/cmd_pgr/fq/trim_qual.rs` + `src/libs/fq/trim.rs`，`quality_trim_index`（Mott/BWA 累积质量法）作为 `--method mott`，与继承自 sickle 的滑窗（`--method sliding`）并存。§4 已从"设计提案"改写为"已实现对照 + 剩余借鉴点"。
 
 ## 2. 核心算法：`quality_trim_index`（Mott/BWA 累积质量法）
 
@@ -83,7 +83,7 @@ class QualityTrimmer(SingleEndModifier):
 
 ### 3.2 CLI 参数（`cli.py:268`）
 
-- `-q, --quality-cutoff [5'CUTOFF,]3'CUTOFF`：可指定单个（默认只修 3' 端）或 `5,3` 两个值。
+- `-q, --quality-cutoff [5'CUTOFF,]3'CUTOFF`：可指定单个（默认只修 3' 端）或 `5,3` 两个值。注：cutoff 为 `0` 时该端禁用修剪（`cli.py:1059` 的 `cutoff != "0"` 判断）。
 - `--quality-base N`：Phred 偏移，默认 33（Sanger）。
 - `-Q`：R2 的独立 cutoff（配对，默认继承 R1）。
 - 双端时 `-q 5` 未给 R2 则 R2 复制 R1 的修剪器（`cli.py:1065`）。
@@ -104,57 +104,57 @@ cutadapt 的 read 修饰器按**固定顺序**依次对 read 生效，`make_pipe
 
 **注意：质量修剪在去接头之前**（`cli.py:947-967`，`make_quality_trimmers` 先于 `make_adapter_cutter`），与直觉相反——先按质量把低质量区剪掉，再做接头比对，这样接头搜索不受低质量 3' 尾干扰。pgr 移植纯质量修剪时无此依赖，但若日后加 `--method` 组合（如质量修剪 + 去接头）应保持"先质量后接头"的顺序。
 
-## 4. 对 pgr 的启示：`fq trim-qual`
+## 4. 对 pgr 的启示：`fq trim-qual` 与 `fq clean`
 
-### 4.1 移植核心：Mott/BWA 累积质量法
+> **落地状态**：pgr 的 `fq trim-qual` 已实现（`src/cmd_pgr/fq/trim_qual.rs` + `src/libs/fq/trim.rs`），本文 §2 的 `quality_trim_index` 以 `Method::Mott` 落地为 `--method mott`。本节从初稿的"设计提案"改写为"已实现对照 + 剩余借鉴点"。
 
-`quality_trim_index` 算法体量极小（约 50 行 Cython），Rust 移植预计 40–60 行，无复杂数据结构，是标准的"单遍累积 + 局部最大"：
+### 4.1 已落地：`mott_cut`（`libs/fq/trim.rs`）
+
+`Method::Mott` 在 `trim_interval`（`libs/fq/trim.rs:263`）中调用 `mott_cut`（`libs/fq/trim.rs:192`），与 Cython 版 `quality_trim_index` 逐行对应，约 30 行，仍是"单遍累积 + 局部最大"：
 
 ```rust
-/// Return `(start, stop)` of the good-quality segment (Mott/BWA bwa_trim_read).
-/// `qual` is the ASCII quality string; `base` is the Phred offset (default 33).
-fn quality_trim_index(qual: &[u8], cutoff_front: i32, cutoff_back: i32, base: u8) -> (usize, usize) {
-    let n = qual.len();
-    let score = |q: u8, cutoff: i32| cutoff - (q as i32 - base as i32);
-    // 5' end
-    let (mut start, mut s, mut max_qual) = (0, 0i32, 0i32);
-    for i in 0..n {
-        s += score(qual[i], cutoff_front);
-        if s < 0 { break; }
-        if s > max_qual { max_qual = s; start = i + 1; }
-    }
-    // 3' end (reverse)
-    let (mut stop, mut s, mut max_qual) = (n, 0i32, 0i32);
-    for i in (0..n).rev() {
-        s += score(qual[i], cutoff_back);
-        if s < 0 { break; }
-        if s > max_qual { max_qual = s; stop = i; }
-    }
+fn mott_cut(qual: &[u8], base: u8, cutoff_front: f64, cutoff_back: f64) -> (usize, usize) {
+    // 5' end: s += cutoff_front - (q - base); s<0 break; s>max_s => start=i+1
+    // 3' end(reverse): 对称，s<0 break; s>max_s => stop=i
     if start >= stop { (0, 0) } else { (start, stop) }
 }
 ```
 
-### 4.2 与滑窗共存（`--method`）
+与 Cython 原版的差异：
 
-根据 [sickle.md](./sickle.md) §4.5 的结论，`fq trim-qual` 建议提供两种质量修剪算法：
+- **int → f64**：cutadapt 的 `-q` 是整数 cutoff；pgr 的 `--qual-threshold` 是 `f64`，score 累积用 f64，阈值语义更宽（可给小数）。数值上等价于整数版。
+- **单阈值两端共用**：`trim_interval` 把 `--qual-threshold` 同时作为 front 与 back cutoff；`--no-fiveprime` 时 front 置 `0.0` 禁用 5' 修剪。**未实现** cutadapt 的 `5,3` 独立 cutoff（见 §4.3.1）。
+- **零 panic 校验**：`process_record` 先调 `validate_quality`（`trim.rs:245`），把质量字符限制在 `[base, base+93]`，越界即 `bail!` 报错——正是初稿 §4.4 的建议，已落实。
+- **区间判定一致**：`start >= stop → (0,0)`；`trim_interval` 再按 `--length-threshold` 决定丢弃整条。
+- **`--polyg-right`（polyg_end, `trim.rs:227`）**：3' 端数连续 G 跑，达标才剪（见 §4.3.2 与 cutadapt 的差异）。
 
-- `--method sliding`（默认）：忠实移植 sickle/Trimmomatic 滑窗语义，直观通用。
-- `--method mott`：移植 `quality_trim_index`，可修中间低质量区，作为更精细的备选。
+### 4.2 与滑窗共存（已实现）
 
-两者都以相似的方式结合 `--qual-threshold`/`--length-threshold` 与长度过滤。
+CLI 已提供 `--method sliding`（默认）与 `--method mott`（`trim_qual.rs:71-77`），对应 §2.2 的两类算法，验证了 [sickle.md](./sickle.md) §4.5 的结论。两者共用 `--qual-threshold`/`--length-threshold` 与长度过滤。
 
-### 4.3 值得借鉴的设计
+### 4.3 其余值得借鉴但尚未落地的点
 
-1. **Cython/常数级优化**：cutadapt 用 Cython 手写质量修剪热路径（避免 Python 逐字符开销）。pgr 用 Rust 原生，天然高效，无需额外处理。
-2. **5'/3' 独立 cutoff**：`-q 5,3` 允许两端不同阈值，比 sickle 的单阈值灵活。pgr 可支持 `--qual-front`/`--qual-back` 或 `--quality-cutoff FRONT,BACK`。
-3. **`--quality-base` 可配置**：默认 33，但保留覆盖能力（Solexa +64 等）。
-4. **NextSeq polyG 变体**：`nextseq_trim_index` 把 G 质量强制为 `cutoff-1`，简单优雅地处理 NovaSeq/NextSeq 的暗循环 G 尾巴。若 pgr 面向现代测序平台，值得作为 `--nextseq` 选项移植。
-5. **期望错误数过滤**（`expected_errors`）：现代长读/高保真数据常用整条读的期望错误数而非逐碱基质量做过滤，可作为 `fq trim-qual` 之外的 `fq` 过滤功能参考。
+1. **5'/3' 独立 cutoff**：cutadapt `-q 5,3` 允许两端不同阈值；pgr `mott_cut` 目前单阈值（加 `--no-fiveprime` 整体禁 5'）。若需"前端高严格、后端低严格"，可加 `--qual-front/--qual-back` 或 `--quality-cutoff FRONT,BACK`。
+2. **cutadapt 的 NextSeq polyG（`nextseq_trim_index`）未移植**：pgr 的 `--polyg-right`（`polyg_end`）是 **BBDuk 式简单实现**——从 3' 端数连续 G 跑，长度达标才剪；`fq clean` 的 `--trim-poly-g-right` 同理。cutadapt 则是把 G 的质量强制设为 `cutoff-1` 后**嵌入累积算法**，能处理"夹着少量错配/低质量非 G 段"的 G 尾。对"纯连续 G 尾"两者等价，对"含噪声的 G 尾"cutadapt 式更鲁棒。若 pgr 面向 NovaSeq/NextSeq 平台，可评估移植 nextseq 式。
+3. **poly-A 位置相关错误率（`poly_a_trim_index`）**：cutadapt 按"已扫到的尾巴长度"限制错误率（`errors*5 <= i+1` / `n-i`），比"整条按错误数"更精细；pgr `clean` 的 `--trim-poly-a` 走 BBDuk `trimpolyA`，语义不同。
+4. **`--max-ee` 期望错误数过滤未落地为独立选项**：pgr 的 `expected_errors`（`trim_adapter.rs:907`、`clump.rs:607`）是 BBTools 式（`sum(10^(-Q/10))`，`prob[128]` 查表），用于 dedup/clump 排序，**不是** cutadapt 的 Edgar 2015 用户级过滤。长读场景可把 `--max-ee` 作为 `fq filter` 的过滤选项参考。
+5. **`--quality-base` 可配置**：pgr 的 `--quality-base`（`33/64/auto`）比 cutadapt 更强——除显式覆盖外，还通过 BBDuk flip-flop 启发式（`detect_quality_base`, `trim.rs:88`）自动探测编码。
 
-### 4.4 与 pgr 现有约束的应对
+### 4.4 与 `fq clean` 的关系（重要澄清）
 
-- `quality_trim_index` 对质量字符越界**不校验**（Cython 直接做 `qual[i] - base`，可能得负值），cutadapt 靠 `expected_errors` 里才校验。pgr 的硬约束是零 panic，移植时应在读取质量时校验字符落在 `[base, base+41]` 或报告错误，而非静默产生负质量。
-- cutadapt 的模块是修改共享 `read` 对象（`read[start:stop]` 返回新切片），pgr 用 noodles 的 `SequenceRecord`，注意切片语义（左闭右开）一致即可。
+pgr 目前有**两条质量修剪路径，算法来源不同**：
+
+- `pgr fq trim-qual`：滑窗（sickle）+ Mott（cutadapt 本文算法），纯质量修剪，单/双端，可配 `--outfile-2/--outfile-single`。
+- `pgr fq clean`：整体是 **BBDuk（bbduk.sh）** 移植（`libs/fq/trim_adapter.rs`），其 `--qtrim` 取 `r/l/rl/w/f`——这是 **BBDuk 的质量修剪模式**（`r`=右侧逐碱基、`w`=滑窗等，对应 `trimq`/`qtrim-window`），**不是** cutadapt 的 Mott。即 `clean` 的质量修剪不来自 cutadapt。
+
+因此 cutadapt 对 pgr 的算法价值**已集中在 `trim-qual --method mott`**；接头/适配器去除部分 pgr 走 BBDuk k-mer 路线（`clean --ref` + `--k`），未采用 cutadapt 的 `-a/-g/-b` 适配器匹配（BWA/seed 半全局比对）。
+
+### 4.5 边界与实现注意
+
+- `quality_trim_index` 对质量越界**不校验**（Cython 直接 `qual[i] - base`，可能得负值），cutadapt 只在 `expected_errors` 里校验。pgr 的 `validate_quality` 已补齐（零 panic 硬约束）。
+- 左闭右开切片 `read[start:stop]` 与 pgr `SeqRecord::sequence()[start..end]` 语义一致。
+- cutadapt `-q 0` 禁用修剪（`cli.py:1059` `cutoff != "0"`）；pgr 以 `--no-fiveprime` / 阈值 0 近似，语义可对齐。
+- pgr 用 `f64` 阈值而非整数，注意与 cutadapt 精确逐碱基复现时，`f64` 累积与整数累积在极端大 read 上可能有浮点尾差，但常规阈值下等价。
 
 ---
 

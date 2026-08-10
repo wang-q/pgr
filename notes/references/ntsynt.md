@@ -143,6 +143,9 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
    - 对两端都是"度 3 + 部分锚定"的边：若 source→target 恰好有**两条**简单路径
      （一条直边 + 一条 3 节点路径），删掉中间节点（`path[1]`），把直边权重提到 max。
    - 效果：消除单点噪声（重复/错误 minimizer 造成的分叉），把"真实共线"的直连边权重拉满。
+   - **门控**：受 `--simplify-graph` 控制——`ntsynt_run.py` 直接调用默认**关**，但顶层/管线默认
+     **开**（除非 `--no-simplify-graph`）；细化每轮 `w_rounds` 也会再简化一次
+     （`ntsynt_synteny.py:504-505`）。
 4. **filter_graph_global**：删 `weight < n` 的边（`ntsynt_synteny.py:312`）。
 
 ### 3.3 路径发现与共线性块提取
@@ -288,6 +291,17 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 7. **两层 CLI 是反面教训**：ntSynt 用 snakemake 把"参数推导 + 管线编排"与"算法阶段"硬拆成
    两层、且参数改名 + `-n` 同名冲突，跨层调试困难。pgr 应保持单层 `pgr <cmd>` 接口，把
    "按分歧推导默认值"做成 `libs/` 里的纯函数，供 CLI 直接调用。
+8. **与 `design/pgi-ntsynt.md` 交叉印证（方法前提与边界）**：pgr 侧阶段 0 PoC（mg1655 ×
+   nissle1917）实测：两基因组**共享 syncmer 位置 99.8%+ 都落在 PAF 覆盖区**内（k 降到 16 也仅
+   ~0.2% 在覆盖外）。这印证了 ntSynt 方法的前提——**共享 k-mer/minimizer 只存在于低分歧、已有
+   比对覆盖的区域**；共享 minimizer 图不会"发现新共线性"，而是把已捕获的保守区以 **N>2 多基因组
+   块**的形式一次性给出。故 pgr 移植 ntSynt 的**价值不在覆盖而在形态**：
+   - 提供 `align pgi`（pairwise → chainnet）之外的**直接多基因组块视图**；
+   - 复用其"断块（`max_difference` > `--bp`）/定向 / 共线合并（broken_reason 分类）"逻辑，作为
+     `pgr` 多基因组 synteny 命令的块语义；
+   - 若仅要多基因组块，可**基于 pgi 共享 syncmer + 现成 PAF** 做"图外"块合并（无需重建整张
+     minimizer 图），比完整移植 ntSynt 轻量得多。高分歧基因组共享 minimizer 稀疏，ntSynt 本身
+     也退化，不应当作"覆盖提升"手段。
 
 ---
 

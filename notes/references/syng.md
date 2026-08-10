@@ -86,14 +86,14 @@ typedef struct {
      return ((k * sh->factor1) >> sh->shift1);
    }
    ```
-   - `factor1` 是奇数（`| 0x01`），由 `srandom(seed)` 生成，`shift1 = 64 - 2*k`。
+   - `factor1` 是奇数（`| 0x01`），由 `srandom(seed)` 生成，`shift1 = 64 - 2*k`（`seqhashCreate` 同时算 `factor2`/`shift2`，但 `kHash` 只用 `factor1`/`shift1`）。
    - **seed 是实验调优来的**：`seqhash.c:301-365` 的 `#ifdef H_EXPLORE` 工具暴力遍历 seed
      `1..999999`（`for (h = 1; h < 1000000; ++h)`），对一段高度重复序列（poly-a/c/g/t +
      12 种二周期重复，每段 32nt × 16 段共 512bp）用全 k-mer 迭代器采样（每 32 个取一个），
      记录采样哈希的最小值并**最大化该最小值**（分布最均匀、无低值塌缩）的 seed。syng 默认
-     `seed=7`（`syncmerset.c:17 syncmerParamsDefault`、`seqhashCreate` 调用均用 7），很可能
+     `seed=7`（`syncmerset.c:17 syncmerParamsDefault`、`syng.c:432` 的 `seqhashCreate` 调用均用 7），很可能
      即由此工具搜出。pgr 的 `hash_factor` 用 splitmix64 由 seed 生成 factor
-     （[syncmer.rs:147](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L147)），雪崩性质良好、
+     （[syncmer.rs:159](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L159)），雪崩性质良好、
      任意 seed 都均匀，故无需此调优步骤。
    - 这是一种 fast universal hashing，比 Murmur/Fx 更轻量，且对短 k-mer 足够均匀。最终实现的哈希选择见 §5.1.3（DNA 用此 2-bit 乘加移位，蛋白用 `RapidHash` 字节哈希）。
 3. **正反向同步滚动**（`seqhash.c:67` `advanceHashRC`）：
@@ -133,7 +133,7 @@ typedef struct {
 
 `syncmerset.[ch]` 在 syncmer 迭代器之上构建去重集合，`kmerhash.[ch]` 是底层哈希表。pgr 当前用 `rapidhash::RapidHashSet<u64>` 做去重，无需移植这套 ONEcode 持久化机制。但有两点设计值得记录：
 
-- **1-based 索引 + 负号表示反向**（`kmerhash.h:22-23`）：`kmerHashAdd` 返回 `index > 0` 表示新增正向，`index < 0` 表示命中反向互补。pgr 的 `MinimizerInfo.strand` 字段可复用此思路。
+- **1-based 索引 + 负号表示反向**（`kmerhash.h:19-22`）：`kmerHashAdd` 返回 `index > 0` 表示新增正向，`index < 0` 表示命中反向互补。pgr 的 `MinimizerInfo.strand` 字段可复用此思路。
 - **canonical 定向**（`kmerhash.c:57` `isCanonical`）：k-mer 存储时统一取向（kmer < revcomp(kmer)），比较时只需正向比对。这与 pgr `seq_sketch` 的 `.canonical()` 一致。
 - **同聚物过滤**：`syng.c` 建立 SyncmerSet 时预先把 4 条同聚物（poly-a/c/g/t，长度 `w+k`）插入
   `KmerHash`（索引 `1/2/-2/-1`），主流程跳过 `|sync| ≤ 2` 的命中（注释 "don't record
@@ -156,6 +156,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
 
 - [src/cmd_pgr/dist/mini.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/mini.rs) — minimizer 草图 → `pgr dist mini`（原 `dist seq` 的 minimizer 模式）
 - [src/cmd_pgr/dist/hv.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/hv.rs) — `--sampler syncmer` → `load_hv_from_fasta_syncmer`；否则 `load_hv_from_fasta` → `pgr dist hv`
+- [src/cmd_pgr/pgi/build.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/pgi/build.rs) — `pgr pgi build` 用 closed syncmer 作为稀疏 k-mer 索引种子：默认 `--smer 8 --window 5`（与 FastGA GIX 参数一致）、`-k 40`，**锚定在窗口最小 s-mer 端点**（syng 式 closed syncmer），而非 GIX 的 window-start match-mer。这是 syncmer 算法在 pgr 中除 `dist hv` 采样外的第二处落地（索引/比对侧），说明同一 `seq_syncmer_set`/`syncmer_dna` 核心可同时服务"草图距离"与"稀疏种子"两类用途
 - `set_distances` / `calc_distances` / `mash_distance`（不变，与采样器无关）
 - `--kmer`/`--window` 默认值由 `args::resolve_kmer_window` 统一分流（两命令共用）
 
@@ -163,7 +164,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
 
 - pgr 的 `JumpingMinimizer`（`hash.rs:43`）先对全文所有 k-mer 预算哈希（`hash_kmers`），再做"跳跃式"选最小——O(n) 内存且语义是经典 minimizer。
 - pgr 的另一条路径用 `minimizer_iter` crate（`hash.rs:111`、`seq_sketch`），已是滚动窗口式。
-- syng 的 syncmer 迭代器是 O(w) 内存的滚动式（环形缓冲区，无需预算全部哈希）。**已优化（2026-08-03）**：`dna_canonical_hashes` 改为流式迭代器，`closed_syncmers_stream` 用单调 deque + 长度为 `window` 的环形缓冲做端点判定，DNA/蛋白路径均不再预算全部 s-mer 哈希（内存 O(window)）。`closed_syncmers_from_hashes` 现在是流式核心的薄包装，语义与输出完全一致（strand-symmetry / bounded-gap / density 测试全绿，pgi build 的 single-pass 对照测试亦通过）。
+- syng 的 syncmer 迭代器是 O(w) 内存的滚动式（环形缓冲区，无需预算全部哈希）。**已优化（2026-08-03 及后续）**：`dna_canonical_hashes` 改为流式迭代器（`syncmer.rs:187`），`closed_syncmers_stream` 采用**分块前缀/后缀最小值**的滑动窗口最小方案（simd-minimizers 思路的标量版，`syncmer.rs:92-97` 注释明确 "no monotonic deque needed"）：用大小为 `window` 的块前缀/后缀最小值求窗口最小，另配一个环形缓冲 `ring` 保留最近 `window` 个原始条目（哈希 + extra）以做"端点最小"判定——DNA/蛋白路径均不再预算全部 s-mer 哈希（内存 O(window)）。`closed_syncmers_from_hashes` 现在是流式核心的薄包装，语义与输出完全一致（strand-symmetry / bounded-gap / density 测试全绿，pgi build 的 single-pass 对照测试亦通过）。
 
 ## 5. 对 pgr 的启示与实现计划
 
@@ -185,7 +186,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
    }
    // syncmer 长度 = smer + window
    ```
-3. **哈希函数选择**：syng 用乘加移位（`k * factor1 >> shift1`）。最终实现按双轨选择——DNA 路径采用 syng 式 2-bit packed 乘加移位（`k_hash = x * factor >> (64-2k)`，[syncmer.rs:184-186](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L184)，`factor` 用 splitmix64 由 seed 生成，与 syng 的 `libc random()` 值不同但同样均匀），蛋白路径复用 `RapidHash` 作用于 s-mer 字节串。DNA 不用 `--hasher`（2-bit 路径自带哈希），蛋白沿用 `--hasher`（rapid/fx/murmur）。
+3. **哈希函数选择**：syng 用乘加移位（`k * factor1 >> shift1`）。最终实现按双轨选择——DNA 路径采用 syng 式 2-bit packed 乘加移位（`k_hash = x * factor >> (64-2k)`，[syncmer.rs:198](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L198)，`factor` 用 splitmix64 由 seed 生成，与 syng 的 `libc random()` 值不同但同样均匀），蛋白路径复用 `RapidHash` 作用于 s-mer 字节串。`--hasher` 在 syncmer 路径被**整体忽略**：DNA 用 2-bit 自带哈希，蛋白也固定用 `RapidHash`（`seq_syncmer_set` 硬编码，`dist hv` 的 syncmer 分支 `hv.rs:137-145` 不传 `--hasher`，`load_hv_from_fasta_syncmer` 亦无 hasher 参数）——`--hasher`（rapid/fx/murmur）只作用于 minimizer/frachash 路径。
 4. **canonical 处理**：syng 同时维护 `h` 与 `hRC` 取 min。pgr 的 `seq_sketch` 已通过 `.canonical()` 做了等价事；移植 syncmer 时需在迭代器内部完成（因为判定"端点最小"必须用 canonical 哈希），不能依赖外部 crate 的后处理。
 
 5. **氨基酸适配（硬约束）**：pgr 当前 minimizer 同时服务 DNA 和蛋白（[dist/mini.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/mini.rs)，蛋白 `-k 7 -w 2`、DNA `-k 21 -w 5`），靠的是字节串哈希（`rapid`/`fx`/`murmur`）对任意字母表工作。但 syng 的 syncmer 实现 **DNA 强绑定**：2-bit 编码（仅 4 碱基）、`patternRC` 反向互补、canonical 三处都假设 DNA。**蛋白没有反向互补链概念**，因此蛋白 syncmer 反而更简单——去掉 canonical 即可。移植必须双轨：DNA 路径保留 canonical（链无关性对 `pgr dist hv` 的距离稳定性必要），蛋白路径用字节哈希、不做 canonical。

@@ -31,6 +31,8 @@
 | `types.rs` | 189 | SequencesSketch / GenomeSketch / AniResult |
 | `inference.rs` | 121 | λ 的矩估计/二分（nb 路径） |
 | `cmdline.rs` | 126 | clap 参数 |
+| `constants.rs` | 14 | 共享常量：`.bcsp`/`.bcdb` 后缀、CUTOFF、MIN_ANI、MAX_DEDUP_*、VAR_CUTOFF 等 |
+| `main.rs` | 28 | 入口；coverage 恒以 `contain(args, true)` 走 pseudotax |
 
 ## 3. FracMinHash 采样（seeding.rs）
 
@@ -72,6 +74,13 @@
     `ScalableCuckooFilter`。注意 cmdline 默认 `fpr=0.0001`（非 0），故即便
     dedup 开启，默认走的也是**近似 cuckoo filter** 而非精确 `FxHashSet`；
     而 `--no-dedup` 默认 `true` 使 dedup 整体关闭，二者叠加=默认完全不去重。
+  - **fpr 只作用于双端路径**：单端路径 `sketch_sequences_needle` 恒走精确
+    `FxHashSet`（`dup_removal_lsh_full_exact`），忽略 `--fpr`。
+  - 双端路径中 read2 的 kmer 若已在 read1 中被采样（`temp_vec1.contains(km)`）
+    则跳过，避免同对 read 内部重复计数。
+  - **coverage 对裸 fastq 的内部 sketch 与 sketch 命令相反**：`get_seq_sketch`
+    对 raw reads 调 `sketch_sequences_needle(..., no_dedup=false)`——去重**开启**
+    （单端精确路径），而 `fairy sketch` 默认关闭。
 - **单端上限**：`MAX_DEDUP_COUNT=4`，`c < 4` 才查去重（高拷贝序列的
   计数不再被门控）。双端无上限。
 - 其余：`mean_read_length` 逐条 moving average；`MAX_DEDUP_LEN` 常量
@@ -81,17 +90,20 @@
 
 - **contig sketch**（`sketch_genome_individual`，每 contig 独立，contain.rs
   恒走此路径）：FracMinHash 采样 → **重复 kmer 去重被 `|| true` 短路禁用**
-  （见 §8 quirk，contig 上重复出现的 kmer 并不会被丢弃）→ 仅
-  `min_spacing=30`（间距 <30nt 的相邻 kmer 丢弃）→ `genome_kmers:
-  Vec<u64>`；`gn_size` = contig 长度。可预存 `.bcdb`。
-  （注意：同文件的 `sketch_genome` 合并版才真正去重，但 coverage 不用它。）
+  （见 §8 quirk，contig 上重复出现的 kmer 并不会被丢弃）→ 仅 `min_spacing=30`（间距 <30nt 的相邻 kmer 丢弃，`--min-spacing` 可调）→
+  `genome_kmers: Vec<u64>`；`gn_size` = contig 长度。可预存 `.bcdb`。
+  （但本版本 `sketch` 命令**只生成 `.bcsp`，从不生成 `.bcdb`**；coverage
+  仅**读取**预存的 `.bcdb`/`.sylqueries` contig sketch——`.syl*` 后缀表明可与
+  sylph 的 sketch 互通。同文件的 `sketch_genome` 合并版才真正去重，
+  但 coverage 不用它。）
 - **查询**：对每个 contig 遍历 `genome_kmers` 在样本表中查 multiplicity
   → `covs` 向量；`contain_count` = 命中数。过滤：`gn_kmers.len() ≥
   min_number_kmers`（默认 8）且 `covs` 非空。
 - **ANI**：`naive_ani = (contain/total)^(1/k)`；随后用 λ 校正
   （`ani_from_lambda`：`contain/(1-e^-λ)/total` 再开 k 次方）。
   **输出阈值 0.95**（pseudotax 分支，main 恒走；普通分支为 0.9）
-  ——与 wiki 的说法一致，但 0.9 分支实际不可达。
+  ——与 wiki 的说法一致，但 0.9 分支实际不可达；阈值可用
+  `--minimum-ani`（0-100，`-a`）覆盖。
 - **覆盖度估计**（`get_stats`）：
   1. `median_cov` = covs 中位数；median<30 时按 `Poisson(median)` CDF
      < 0.9999999999 剪掉高倍噪声（`max_cov`）；
@@ -105,18 +117,23 @@
   <50 次成功则输出 NA。
 - **pseudotax**（恒生效）：`winner_table` 把共享 kmer 按 ANI 最高的 genome
   重新分配，二次 `get_stats`；`estimate_true_cov` 再乘
-  `read_length/(read_length-k+1)` 与 `1/(seq_id^k)` 校正。
-- **输出**：默认 MetaBAT2 格式（contigName/contigLen/totalAvgDepth +
-  每样本 cov/var），`--concoct-format`/`--aemb-format` 去方差列。
+  `read_length/(read_length-k+1)` 与 `1/((seq_id/100)^k)` 校正
+  （`seq_id` 默认 99.5，即 kmer identity ≈ `0.995^k`）。
+- **输出**：默认 MetaBAT2 格式（contigName/contigLen/totalAvgDepth + 每样本
+  cov/var）。`--concoct-format` 与 `--aemb-format` 均去掉 contigLen、
+  totalAvgDepth、每样本 var 三列：concoct 保留表头（contigName + 各样本名），
+  aemb **无表头**只输出每样本 cov。`--full-contig-name` 保留空格后的全名。
 
 ## 6. 内存与并行
 
 - sketch：每样本一张 FxHashMap（论文：土壤样本约 4GB/样本；1/50 采样下
   内存 ≈ 采样 kmer 数 × (8+4) 字节 + 哈希表开销）；`--ram-barrier`
   （隐藏）是**软限制**：虚拟内存超限时 `sleep` 阻塞等回收，不保证上限。
-- coverage：默认 `step=1` → 同一时刻只有 1 个样本 sketch 驻留
-  （genome sketches 全量常驻）；pseudotax 时 `step = threads/2 + 1` 个样本
-  并行。论文数字：10 样本索引 9min + 查询 7min vs BWA 40h。
+- coverage：`step` 决定同一时刻驻留内存的样本 sketch 数（genome sketches
+  全量常驻）。非 pseudotax 分支 `step=1`；pseudotax 分支
+  `step = threads/2 + 1`。因 main 恒走 pseudotax，**CLI 下默认实际是
+  `step=threads/2+1`**，`step=1` 分支不可达；`-s/--sample-threads` 可覆盖。
+  论文数字：10 样本索引 9min + 查询 7min vs BWA 40h。
 
 ## 7. 对 pgr 的启示
 
@@ -137,6 +154,10 @@
 | 判定 | truedepth/depthAL 分位 + toss | median ≥ cutoff（在线） | 中位数 + 泊松剪枝 + λ 校正 |
 | 内存 | 外部桶（mem_cap 约束） | 固定但随装载率失真 | 与采样率反比（1/c） |
 
+5. **fairy 不含 graph 构建**：它完全是「稀疏采样 sketch → 计数 → 查询」这条
+   丰度/覆盖度估计路线，没有 de Bruijn 或其它图结构（与 pgr fa/装配类图算法
+   无对应关系）。对 pgr 的借鉴价值在**稀疏采样 + 查询表**这一范式，而非图算法。
+
 ## 8. 源码 quirks
 
 - `--no-dedup` 默认 `true` 且无反开关（clap SetTrue 语义）→ **去重实际
@@ -150,5 +171,12 @@
   问题在 canonical 编码层。
 - 非 ACGT 一律编码为 A，含 N 的序列会产生人为 kmer。
 - `pair_kmer` 的 k=16 与主 k=21/31 无关，仅作 read 指纹。
-- coverage 经 main.rs 恒走 pseudotax 分支 → 默认 ANI 阈值实际是 0.95；
-  `contain()` 里 0.9 的分支在 CLI 下不可达。
+- coverage 经 main.rs 恒走 pseudotax 分支 → 默认 ANI 阈值实际是 0.95、
+  `step=threads/2+1`；`contain()` 里 0.9 阈值、`step=1` 的分支在 CLI 下均不可达。
+- **冗余去除失效**：`derep_if_reassign_threshold` 调用被注释，`-R/
+  --redundancy-threshold` 目前不生效。
+- **AVX2 只支持 k=21/31**：`extract_markers` 一旦检测到 AVX2 即无条件调用
+  avx2 版，k 非 21/31 时 `panic!()`（`use_40` 分支）；非 x86/无 AVX2 走标量
+  `fmh_seeds` 则无此限制。
+- **`.bcdb` 只读不写**：本版本 `sketch` 仅生成 `.bcsp`，contig sketch 需
+  外部提供（兼容 sylph 的 `.sylqueries`）。

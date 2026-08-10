@@ -37,10 +37,12 @@
   `dist = max(tbeg1,tbeg2) − min(tend1,tend2)`，要求 `dist ∈ [min_gap, max_gap]`。
   **不检查链向**：混合方向的锚点对（target 顺序相反）只要间距达标同样成 box。
 - box 区间（`-e`=max_ovl，默认 1000）：
-  - query：`[qend1 − max_ovl, qbeg2 + max_ovl]`（钳到锚点自身边界）；
-  - target：从"上游锚点内端 − max_ovl"到"下游锚点外端 + max_ovl"
-    （用 `bbpos1<bepos2` 等条件分支兼容两锚点 target 顺序，方向相反时 box 覆盖
-    反链区域）。
+  - query：上游锚点 query 末端 − max_ovl 到下游锚点 query 起点 + max_ovl
+    （即 `[max(abpos1, aepos1−max_ovl), min(aepos2, abpos2+max_ovl)]`，钳到锚点自身边界）；
+  - target：同向时从上游锚点内端(bepos1) − max_ovl 到下游锚点内起点(bbpos2) + max_ovl
+    （同样钳位）；用 `bepos1<bepos2` / `bbpos1>bbpos2` 条件分支兼容两锚点 target
+    相对顺序，**方向相反（反链）时 box 覆盖两锚点之间的反链区域**——即代码并不
+    要求两锚点 target 顺序与 query 一致。
   - 同时输出四侧**实际重叠长度**（qbol/qeol/tbol/teol，锚点短于 max_ovl 时钳位），
     供 alnfill 校验区间越界。
 - **最小 box 去嵌套**：AORDER 按面积升序排序 → rtree 只插入"内部不含已插入节点"
@@ -54,7 +56,7 @@
 | 参数 | 默认 | 含义 |
 |------|------|------|
 | `-l` | 100 | 最小 gap（小于此不补，含 target 侧 dist）|
-| `-m` | 1M | 最大 gap（大于此不补；parse_num 支持 K/M/G 后缀）|
+| `-m` | 1M | 最大 gap（大于此不补；`-l`/`-m`/`-f` 均走 `parse_num`，十进制 K/M/G）|
 | `-e` | 1K | 两侧锚点内收重叠量（播种缓冲）|
 | `-f` | 0.5 | 去冗余时单侧允许的最大被覆盖比例（按 mlen 计）|
 | `-a` | off | 关闭 reciprocal best 去冗余 |
@@ -62,19 +64,21 @@
 
 ## 3. alnfill：跑 LastZ（alnfill.c，530 行）
 
-- **整库入内存**：`make_sdict_from_fa`（sdict.c:131）把两个 FASTA 全部序列
-  `strdup` 进内存——2 Gbp 级基因组 RAM 需求很高；pgr 侧用 2bit/loc 区间提取
-  可避免。
+- **整库入内存**：`make_sdict_from_fa`（sdict.c:131）用 kopen（bgzip 感知）读入
+  全部序列并 `strdup` 保存——2 Gbp 级基因组 RAM 需求很高；且每条序列长度
+  **不能 >4 Gb**（`>UINT32_MAX` 直接报错退出）。pgr 侧用 2bit/loc 区间提取可避免。
 - 读 interval 文件：跳过 `#` 头行；解析 10 列（≥6 列可用）；用 ovl 列做越界校验
-  （`qbeg ≥ qbol`、`qend+qeol ≤ qlen`、target 同理），非法区间跳过。
-- 每线程一套 mkstemp 临时文件；对每个 interval：
+  （`qbeg ≥ qbol`、`qend+qeol ≤ qlen`、target 同理），非法区间跳过；
+  **若 qname/tname 在已加载的 FASTA 中找不到则直接报错退出**（非跳过）。
+- 每线程一套临时文件（mkstemp 生成一个模板名，派生出 `_A.fna`/`_B.fna`/`_O.paf`
+  三个具名临时文件，另有一个被 unlink 的匿名输出缓冲文件）；对每个 interval：
   1. 提取 `ref[tbeg,tend)`、`qry[qbeg,qend)` 写临时 FASTA（`>name` + 原序列名）；
-  2. 跑 `lastz --format=PAF:wfmash --ambiguous=iupac tfile qfile --output=pfile`
+  2. 跑 `lastz --format=PAF:wfmash --ambiguous=iupac --output=<pfile> <tfile> <qfile>`
      —— **target 在前**；除格式与 IUPAC 外全是 lastz 默认（无打分预设）；
   3. 读回 PAF 逐行**坐标回移**（paf_parse1）：ql/tl 换全长、qs/qe += qbeg、
      ts/te += tbeg，**第 9 列起（n_match/blk/mapq/CIGAR 等）原样拷贝**（PAF 第 9 列
      是 n_match 而非 CIGAR，CIGAR 在 `cg:` 标签里）；
-  4. 删临时文件。
+  4. 删三个具名临时文件。
 - 结果收集：各线程的匿名临时文件最后按线程序 cat 到 stdout；README 建议与
   FastGA PAF 直接 cat，**无去重**。
 
@@ -111,3 +115,28 @@
   对长锚点链场景效果需实测。
 - lastz 默认打分无预设，远缘/低相似 gap 的灵敏度受限。
 - 全基因组读入内存，超大基因组（>24 Gb，论文 newt 场景）不现实。
+
+## 6. 可迁移到 pgr 的通用算法（不限于补 gap）
+
+以下技术散落在 alnfill 各模块，均已对照源码核实，pgr 的 chain/net/align 生态可
+按需吸收（具体取舍见 §4）：
+
+1. **rangeset 区间合并 + 覆盖统计**（alngap.c:104-182）：排序数组 + 二分
+   （`find_last_small`/`find_first_large`）求"与已保留区间集的总重叠量"，再原位
+   合并新区间（`rangeset_add`）。这是高效的区间覆盖查询，可用于 pgr 的锚点
+   去冗余/重复区覆盖统计，语义等价于"单侧被覆盖 ≤ mlen×f"。
+2. **rtree 最小 box 选择**（alngap.c:299-406 + rtree.c）：按面积升序插入二维
+   包围盒，`rtree_exist_node_inside` 剔除"包含更小 box"的 box，只保留最小者。
+   这正是 chain 里"只补不可被更小锚点覆盖的单 gap"的几何版，pgr chain 的 gap
+   筛选可复用同一思路（用现有 coitrees 区间树即可，无需引入 rtree）。
+3. **哨兵 + 相邻锚点对**（alngap.c:349-354）：每组 (q,t) 序列对首尾各加一个
+   零长哨兵，使染色体首端/尾端的 gap 也被枚举；相邻配对用双指针滑窗而非二重
+   全遍历。pgr 的 holes/chain 枚举 gap 时可照此处理端部。
+4. **进程内逐字段坐标回移**（alnfill.c:97-134）：不重写整行，只对 PAF 前 8 列
+   定点替换（ql/tl 换全长、qs/qe/ts/te 加偏移），第 9 列起原样透传。pgr 在
+   `pgr align fill` 中回移 lastz 输出时可复用该"列级重写"而非逐列重建 PSL。
+5. **多线程临时文件编排**（alnfill.c:431-496）：每线程一套独立临时文件，结果
+   写入各自匿名缓冲，最后按线程序合并到 stdout——避免跨线程排序/加锁。
+   与 pgr 惯用 rayon 并行、单写 outfile 不同，但"按线程隔离中间文件"的思路
+   可迁移到并行子进程调用的场景（如并行跑 lastz 批次）。
+

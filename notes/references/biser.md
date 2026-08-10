@@ -3,9 +3,12 @@
 > 源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
-> **与 pgr 的关系**：pgr 的 SD 管线（`pgr sd`，检测用外部比对路线 `--engine pgi|lastz`
-> 替代 BISER 原生 search/align）实现与设计决策见 [[../design/sd.md]]；本文档仅分析
-> BISER 本身。
+> **与 pgr 的关系**：pgr 的 SD 管线（`pgr sd`）已按 BISER 的阶段结构落地为
+> `search → align → cluster → decompose → cover`（外加 `cross` 与 `run`）。检测阶段用 pgr
+> 自身引擎替代 BISER 原生 search/align：`--engine pgi` 为**原生**（pgr 自研种子链对齐，
+> 默认 k=40 + syncmer 8/5），`--engine lastz` 为**外部** lastz；`cluster`/`decompose`/`cover`
+> 则直接复刻 BISER 的算法与常量。CLI 与设计决策见 `docs/sd.md` 与 [[../design/sd.md]]；
+> 本文档仅分析 BISER 本身。
 
 ## 1. BISER 概览
 
@@ -33,10 +36,15 @@ biser -o <output> -t <threads> <genome1.fa> [genome2.fa ...]
    生成 hard-masked 基因组。
 2. `search`: 对每条染色体做 putative SD detection。
 3. `align`: 对 putative SD pairs 做局部比对与边界精修。
-4. `cross_search` / `cross_align`: 多基因组时，将每个基因组的 SD 映射到其他基因组。
+4. `cross_search` / `cross_align`: 多基因组时，将每个基因组的 SD 映射到其他基因组
+   （先对每个基因组的已比对 hits 跑 `extract` 子命令，把 SD 覆盖区域抽成 `<sp>.bed.regions.txt`
+   作为后续扫描的 query 区间；`cross_search` 只对无序对 `g1 < g2` 各执行一次）。
 5. `cluster` / `decompose`: 聚类重叠 SD 并分解为 elementary SDs（`cluster` 在
    `decompose` 阶段内部先执行）。
 6. `translate`: 将 hard-masked 坐标映射回原基因组坐标。
+
+> `--no-decomposition` 可跳过阶段 5（此时不生成 `.elem` 文件）；`biser test`（内部 `hello`
+> 子命令）做构建自检。`extract` 是 cross_search 内部的辅助子命令，不单独出现在主流程列表里。
 
 **输出格式**:
 
@@ -223,7 +231,8 @@ search 按（染色体, chunk）逐段处理：Python 侧按 `--max-chromosome-s
   `0.118|G|`，`w=16`），且“每个窗口内必有指纹”的保证被破坏（相邻指纹间距实测最大 94，约 50% 的
   间距 > `w+1`）。
 - 窗口填满 (`i - KMER_SIZE + 1 >= WINNOW_SIZE`) 后，队首 hash 即为一个 fingerprint；只有
-  fingerprint 变化时才进入 plane-sweep/索引插入，避免同一 hash 连续处理。
+  fingerprint 变化时才进入 plane-sweep/索引插入，避免同一 hash 连续处理（首个 k-mer 因
+  `len(index) == 0` 特判总是被处理）。
 
 **Plane-sweep 链表 `update_list()`**: 维护按 `(chr, first)` 排序的 `ListNode` 链表， 每个节点保存：
 
@@ -495,6 +504,13 @@ P(X ≤ k) = B(k, n, p)
 
 ## 5. 对 pgr 的启示
 
+> **pgr 集成现状**：pgr 的 `sd` 子命令族（`src/cmd_pgr/sd/`，见 `docs/sd.md`）已按 BISER
+> 的阶段结构落地为 `search → align → cluster → decompose → cover`（外加 `cross` 与 `run`）。
+> 其中 `cluster`/`decompose`/`cover` 直接复刻了 BISER 的算法与关键常量——区间重叠 union-find
+> 聚类、k=10 + 50 bp gap + 100 bp 下限的 k-mer 链式分解、贪心 set-cover 标 `CORE`；而 `search`
+> 阶段用 pgr 自研 `pgi` 种子链引擎（原生，默认 k=40 + syncmer 8/5）或外部 `lastz`
+> （`--engine lastz`）替代了 BISER 的 ordered Jaccard + plane-sweep。下文按“对 pgr 的借鉴点”组织。
+
 1. **SD 同一性标准采用 T2T-CHM13 定义**: PGR 采用 > 1 kbp、> 90% 同一性的 SD 定义（见 4.2.1），
    不追求 BISER 默认的 75% 同一性（30% 错误率）场景。BISER 的 ordered Jaccard + plane-sweep
    虽然支持低同源性检测，但该能力不在 PGR 当前需求范围内；若未来确需检测古老重复，可再参考其
@@ -504,8 +520,9 @@ P(X ≤ k) = B(k, n, p)
    §3.3.1）。这与 pgr sketching 的有损采样不同，
    但为“在保敏感度的前提下降低索引规模”提供了可借鉴的参数化方法。pgr 现已落地 closed syncmer
    （`src/libs/syncmer.rs`）：同属有界间隔采样（连续点距 ≤ `2(w-1)`、密度约 `2/(w+1)`），且
-   canonical 哈希使其链向对称，Jaccard/Mash 距离偏差小于 minimizer （Edgar 2021）；未来原生 BISER
-   search 可优先以其替代 winnowing。
+   canonical 哈希使其链向对称，Jaccard/Mash 距离偏差小于 minimizer （Edgar 2021）。这一替代在
+   pgr 的 `pgi` search 引擎中已实际生效（默认 k=40 + syncmer 8/5 作种子采样），从而规避了
+   BISER winnowing 实现密度减半/覆盖不完整的缺陷。
 3. **Priority Search Tree 用于 chaining**: `chain.codon` 中的 PST 实现是一个清晰的 `O(n log n)`
    chaining 模板，可迁移到 pgr 的 PAF/anchor chaining 场景中。
 4. **多阶段 pipeline 的薄壳设计**: BISER 将复杂算法放在 Codon 核心（`biser/codon/`），Python

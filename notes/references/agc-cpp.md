@@ -10,6 +10,18 @@
 > LZ-diff（§LZ-diff 算法详解）、段级参考压缩流程（§压缩算法流程）、k-mer minimizer 参考选择。
 > CArchive / collection 元数据 / 前缀编码等容器与编码细节**不移植**。
 
+> **pbit 集成状态（2026-08 核对源码后更新）**：
+> - ✅ **已实现**：LZ-diff（`src/libs/pbit/lz_diff.rs` + `segment.rs` 封装，
+>   Prepare/PrepareIndex/Encode/Decode 与 AGC 对应，作为 PAF/CIGAR 未覆盖段的兜底）、
+>   Identity（v1010，`DeltaEncoding::Identity` 零载荷指向参考区间）、段级参考压缩流程。
+> - ❌ **未移植**：AGC 的 k-mer splitters / minimizer 参考选择、fallback minimizers（`-f`）、
+>   自适应模式（`-a`）——pbit 用 **PAF 驱动**（`cg:Z`/CIGAR）把样本段路由到参考，与 AGC
+>   "k-mer 切点定位 + LZ-diff 估计选段"不同源。
+> - ❌ **未移植**：CArchive 多流容器、varint/前缀编码、footer 索引、delta part 打包
+>   （多条拼接统一 ZSTD）——pbit 每条 delta 独立 flate2，part 打包仍为"记录，未实现"。
+> - 💡 可借鉴：AGC 参考段存储按周期性 best_frac 决定 plain-ZSTD(19) / tuples-ZSTD(13)，
+>   pbit 参考层是"标准 2bit 不二次压缩"，若未来想压参考可参考此周期检测思路。
+
 ## 架构总览
 
 ```
@@ -59,31 +71,46 @@ C++ AGC 用**位置参数**（非 `-i`/`-r` flag），`-i` 在 create/append 中
 
 ```
 create 流程:
-1. 读取参考 FASTA → 分段（~segment_size bp/段）
-2. 每段作为一个 "group" 的参考 (group_id 递增, in_group_id=0)
-   → C++: ZSTD 压缩存储到 archive stream（V1/V2: `seg-{gid}-ref`, V3: `x{base64(gid)}r`）
-     * 先检测序列周期性 best_frac：若 < 0.5 用 bytes2tuples 转换 + ZSTD(level 13, marker=1)，
-       否则 plain ZSTD(level 19, marker=0)；压缩后追加 1 字节 marker 供解码判断
-   → pbit: write_2bit_record 写标准 2bit 记录（保留 mask，不二次压缩）
-3. 对每个输入样本:
-   a. 读取 FASTA → 分段
-   b. 对每段:
-      - 计算 k-mer minimizer → 在所有 group 的参考中找最佳匹配
-      - 若最佳匹配的参考段在反向上更好 → is_rev_comp=true, 反向互补
-      - 用 LZ-diff 编码差异 → delta
-      - 若 delta 为空（与参考相同）→ 复用参考 (in_group_id=0)
-      - 若 delta 与已有 delta 相同 → 复用 (in_group_id 指向已有)
-      - 否则 → 新增到 group (in_group_id++)
-   c. 每 `contigs_in_pack`（`-b` 参数）条 delta 用 0xff 分隔符拼接为一个 part，
-      ZSTD 压缩（level 17）后存入 delta stream（支持按 part 随机访问）
-4. 存储元数据 (collection) → C++: archive stream; pbit: flate2 压缩到 Sample Index
-5. C++: 存储 file_type_info → archive stream
-6. 序列化 footer
+0. Create() 先确定 splitters（partition k-mers）：
+   - 扫描参考基因组（= 第一个输入文件，main.cpp 把 input_names.front() 作 reference_file_name）
+   - 收集全部 k-mer（kmer_length，默认 31，canonical），排序去重取 singletons
+   - 沿参考序列按 ~segment_size（默认 60,000 bp）间距选取 splitters 存入 hs_splitters
+     （存 `splitters` stream；自适应模式还会把 duplicated k-mers 存到 v_duplicated_kmers）
+1. 打开输出 archive，注册 16 个 raw group（no_raw_groups=16，各放一个 0x7f 空 raw 段占位），
+   存放无法归到参考的原始段（v_segments[0..16]，`ss_delta_name`）
+2. 逐样本压缩（参考是第一个样本，同样进入此流程；-c 可把多个基因组拼成单样本）：
+   a. 读 FASTA，按 splitters 把 contig 切成段（切点 = 出现在 splitter 集合的 k-mer，
+      段长约 segment_size）
+   b. 对每段（段首 kmer_front、段尾 kmer_back）选参考组：
+      - 两端都有切点 → 直接以 (kmer_front, kmer_back) 为 key 查 map_segments（k-mer 对 → group_id）
+        （若 front > back 说明是反向 → is_rev_comp=true，段反向互补后再编码）
+      - 只有一个切点 → find_cand_segment_with_one_splitter：对候选参考段做 LZ-diff
+        编码长度估计（CSegment::estimate，带 bound 提前终止），选最小者
+      - 无切点/匹配失败 → find_cand_segment_using_fallback_minimizers（`-f` fallback_frac 控制）：
+        段内若干 minimizer k-mer 投票找候选参考段
+      - 找不到 → 成为新段（新 group）
+   c. CSegment::add 对既有 group 的段做 LZ-diff 编码 → delta：
+      - delta 为空（与参考整段相同）→ in_group_id=0 指向参考
+      - delta 与 v_lzp 中已有相同 → 复用序号
+      - 否则新增 delta（in_group_id++）
+   d. 新 group 的参考段（首个样本段，no_seqs==0 → lz_diff->Prepare + store ref stream）：
+      - 先算周期性 best_frac（4..32 移位匹配，阈值 0.5）：若 <0.5 用 bytes2tuples 转 tuple +
+        ZSTD(level 13, marker=1)，否则 plain ZSTD(level 19, marker=0)；压缩尾追加 1 字节
+        marker 供解码判断
+      → pbit 对应：write_2bit_record 写标准 2bit 记录（保留 mask，不二次压缩）
+   e. 每 `contigs_in_pack`（`-b`，默认 50）条 delta 用 0xff 分隔符拼接为一个 part，
+      ZSTD(level 17) 存入 delta stream（按 part 随机访问）
+3. 存储元数据：collection（V3: samples/contigs/details 前缀编码 + ZSTD）、`params`、
+   `splitters`、`segment-splitters`（map_segments 映射）、`file_type_info` → archive stream
+   （pbit 对应：collection → flate2 压到 Sample Index）
+4. 序列化 footer
 ```
 
-> **pbit 与 C++ 的关键差异**：group = 参考段（与 C++ 一致），但 pbit 的 Reference Index 按
-> `contig_name` 分组记录各段偏移（供 `SequenceReader` 按 contig 名拼接多段），C++ 无此需求（按
-> k-mer splitter 对索引 group）。
+> **要点**：参考段不是"create 时一次性把整条参考基因组切成 group"，而是**参考作为第一个
+> 样本**被压缩、其各段作为新 group 的参考**惰性创建**（map_segments 记录 (front,back)→group_id）。
+> 参考选择靠 splitters 定位，不是对每个样本段做全参考扫描。pgr 的 Reference Index 若按
+> contig 名分组索引段偏移（供 `SequenceReader` 拼接多段），可借鉴其"切点定位 + 段表路由"
+> 结构，但 pbit 已用 PAF 驱动路由，无需 AGC 的 minimizer 扫描。
 
 ### 段级复用：Identity（delta 为空）与 delta 去重（segment.cpp）
 
@@ -108,20 +135,21 @@ else:
   只有空 delta 才指向 0。pbit v1010 用 `DeltaEncoding::Identity` 显式表达空载荷，
   并按 `(encoding, is_rev_comp, raw_length)` 去重共享条目（pbit 的 delta 表按参考组
   存储，无需"id 0 = 参考"的隐式约定）。
-- **局限性**：Identity 仅覆盖"段 == 整条参考"（AGC 段通常 ~2 kb）；段与参考**部分相同**
+- **局限性**：Identity 仅覆盖"段 == 整条参考"（AGC 段默认 ~60 kb，`-s` 可调）；段与参考**部分相同**
   仍走 LZ-diff match 指令。pbit v1007 的 CIGAR 混合编码把"参考任意子区间"纳入
   CIGAR，因此 pbit v1010 的 Identity 比 AGC 更强：**任意参考区间**全等即零载荷
   （`ref_start/ref_end` 由段描述符携带）。
 
 ### delta part 打包（contigs_in_pack，`-b` 参数）
 
-delta 不逐条独立压缩，而是攒 `contigs_in_pack`（`-b pack_cardinality`，默认 128）条，
+delta 不逐条独立压缩，而是攒 `contigs_in_pack`（`-b pack_cardinality`，默认 50）条，
 用 `0xff` 分隔符拼接成一个 part，整块 ZSTD（level 17）写入 delta stream
-（`store_in_archive` / `get` 按 `part_id = id_seq / contigs_in_pack` 随机访问，解压后
-再按 `0xff` 切出 `seq_in_part_id`）。raw 特殊段（`add_raw`，如空段占位）同机制。
+（`store_in_archive` / `get` 按 part 随机访问：delta 用 `part_id = (id_seq-1) / contigs_in_pack`、
+`seq_in_part_id = (id_seq-1) % contigs_in_pack`，解压后按 `0xff` 切出；raw 特殊段 `get_raw`
+用 `id_seq / contigs_in_pack`）。raw 特殊段（`add_raw`，如空段占位）同机制。
 
 设计动机：单条 delta 通常几十~几百字节，独立压缩要摊薄压缩器头/窗口开销；part 打包
-把多条小 delta 合并压缩，压缩率更高，随机访问粒度退化为 part（一次解压 128 条）。
+把多条小 delta 合并压缩，压缩率更高，随机访问粒度退化为 part（一次解压 `contigs_in_pack`（默认 50）条）。
 
 **pbit 借鉴建议（记录，未实现）**：pbit 目前每条 delta 独立 flate2（10 字节头 +
 gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate2；若未来 delta 单条
@@ -135,17 +163,17 @@ gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate
 
 **数据结构**：
 
-- `reference`: 2-bit 编码的参考序列。FASTA 转换表 `cnv_num`（`agc_basic.h`）：A=0,C=1,G=2,T=3,N=4，其他 IUPAC(R/Y/S/W/K/M/B/D/H/V/U)=5-14，无效字符=30。LZ-diff 内 `invalid_symbol=31` 仅用作参考序列尾部 padding 哨兵（`prepare_gen` 追加 key_len 个 31）
+- `reference`: 2-bit 编码的参考序列。FASTA 转换表 `cnv_num`（`agc_basic.h`）：A=0,C=1,G=2,T=3,N=4，其他 IUPAC 码 R=5,Y=6,S=7,W=8,K=9,M=10,B=11,D=12,H=13,V=14,U=15（**范围 5–15**，大写/小写共用同一张表），无效字符=30。LZ-diff 内 `invalid_symbol=31` 仅用作参考序列尾部 padding 哨兵（`prepare_gen` 追加 key_len 个 31）
 - `ht16` / `ht32`: 开放寻址哈希表，存储参考中 k-mer 的位置
-    - 哈希函数为 **MurMur64Hash**（`lz_diff.cpp` 内 `MurMur64Hash mmh`，`ht_pos = mmh(x) & ht_mask`），线性探测最多 `max_no_tries=64` 槽；表大小取 2 的幂（`while (ht_size & (ht_size-1)) ht_size &= ht_size-1; ht_size <<= 1`），负载因子 0.7
+    - 哈希函数为 **MurMur64Hash**（定义于 `utils.h`，MurMurHash3 风格 fmix64；`lz_diff.cpp` 中实例化 `mmh`，`ht_pos = mmh(x) & ht_mask`），线性探测最多 `max_no_tries=64` 槽；表大小取 2 的幂（`ht_size / 0.7` 后 `while (ht_size & (ht_size-1)) ht_size &= ht_size-1; ht_size <<= 1`），负载因子 0.7
     - `short_ht_ver`: 参考长度 / hashing_step < 65535 时用 16-bit
     - `USE_SPARSE_HT`: 每 4 位取一个 key（hashing_step=4），减少表大小
-- `key_len = min_match_len - hashing_step + 1`（默认 min_match_len=18 → key_len=15）
+- `key_len = min_match_len - hashing_step + 1`。注意两处默认不一致：`CLZDiffBase` 构造函数默认 `min_match_len=18`（→ key_len=15），但 AGC CLI 默认 `min_match_length=20`（`application.h`）→ **实际 key_len=17**；`hashing_step=4` 由 `USE_SPARSE_HT`（`lz_diff.h`）定义
 - `key_mask`: 2×key_len 位的掩码
 
 **编码格式**（V2，当前版本）：
 
-- **Literal**: `'A' + code`（单字节，code 0-20：0-3 为 ACGT，4 为 N，5-14 为其他 IUPAC 码；`is_literal` 判定 `'A'`..`'U'`）
+- **Literal**: `'A' + code`（单字节；实际碱基 code 0-15：0-3 为 ACGT，4 为 N，5-15 为其他 IUPAC 码；`is_literal` 检测 `'A'`..`'A'+20`（即 `'A'`..`'U'`），预留到 20 但不全用）
 - **特殊 literal `'!'`**: 表示 "与参考同位置相同"，解码时取 `reference[pred_pos]`
 - **Match**: `<diff_pos>,<len-min_match_len>.` 或 `<diff_pos>.`（到序列末尾的匹配，len=~0u）
     - `diff_pos = ref_pos - pred_pos`（有符号，ASCII 十进制）
@@ -245,6 +273,9 @@ while i + key_len < text_size:
     - V1: `collection-desc`
     - V2: `collection-main` + `collection-details`
     - V3: `collection-samples` + `collection-contigs` + `collection-details`
+- `params` — 压缩参数（kmer_length, min_match_len, pack_cardinality[, segment_size if ≥V2]）
+- `splitters` — 参考 partition k-mers（determine_splitters 选出，供压缩/追加时切段）
+- `segment-splitters` — map_segments 映射（(front,back) k-mer 对 → group_id，供解码把样本段路由到 group）
 
 ### 元数据结构（collection.h）
 
@@ -279,10 +310,20 @@ struct segment_desc_t {
 > （build `20260326.1`），即源码自报 v3.2.2；各 `.cpp/.h` 头注释版本号 `3.2`（2024-11-21）。
 > 记笔记/对照 pgr 移植时以 `defs.h` 为准。
 
-> **CLI 补充**：`create` 除表格所列外还有 `-a`(adaptive)、`-c`(concatenated genomes)、
-> `-d`(不存 cmd-line)、`-f`(fall-back minimizers 比例)、`-t`(线程)。其中 `-a` 自适应压缩
-> 与 `-f` 与参考选择相关，pgr 的 Reference Index 设计可参考其"minimizer 找参考 + 局部
-> fall-back"思路（细节在 application.cpp / agc_compressor.cpp）。
+> **CLI 补充**：
+> - `create` 除表格所列外还有 `-a`(adaptive)、`-c`(concatenated genomes)、`-d`(不存
+>   cmd-line)、`-f`(fall-back minimizers 比例)、`-i`(含 FASTA 文件名列表的文件)、
+>   `-t`(线程)、`-v`(verbosity)。`append` 无 `-b/-s/-k/-l`（沿用归档内参数）。
+> - **默认值（`application.h`）**：`-k` 31（17–32）、`-s` segment_size 60000（100–1e6）、
+>   `-l` min_match_length 20（15–32）、`-b` pack_cardinality **50**（1–1e9）、
+>   `-f` fallback_frac 0（0–0.05）、`-t` = 核数/2。
+> - `getcol` 另有 `-f`(fast, 更耗内存)、`-l`(line length)；`getset`/`getctg` 另有
+>   `-p`(关 prefetch)、`-s`(streaming, 更省内存)；`getctg` 支持
+>   `contig` / `contig@sample` / `contig:from-to` / `contig@sample:from-to` 定位。
+> - 其中 `-a` 自适应压缩与 `-f` 与参考选择相关：`-a` 用参考外的 duplicated k-mers 生成
+>   新参考段、提高阈值（短段≥0.9×段长 / 长段≥0.2×段长才复用）；`-f` 控制 fall-back
+>   minimizers 比例。pgr 的 Reference Index 设计可参考其"切点定位 + 局部 fall-back"思路
+>   （细节在 application.cpp / agc_compressor.cpp），但 pbit 已用 PAF 驱动路由。
 
 ## 参考资料
 

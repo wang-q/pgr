@@ -23,8 +23,8 @@
 |---|---|---|
 | 哈希 | `src/oxli/kmer_hash.cc` | 2-bit 滚动哈希、Murmur、cyclic 三种 |
 | 存储 | `include/oxli/storage.hh` | BitStorage / NibbleStorage / ByteStorage / QFStorage |
-| 表 | `src/oxli/hashtable.cc` | Counttable 建表、consume、median_at_least |
-| 绑定 | `khmer/_oxli/graphs.pyx` | Countgraph / SmallCountgraph / QFCounttable |
+| 表 | `src/oxli/hashtable.cc` + `include/oxli/hashtable.hh` | `Hashtable` 基类 + `Counttable`/`SmallCounttable`/`Nodetable`/`QFCounttable` 派生：建表、`consume_string`、`median_at_least` |
+| 绑定 | `khmer/_oxli/graphs.pyx` | `Countgraph`(←CpCounttable) / `SmallCountgraph` / `QFCounttable` |
 | 脚本 | `scripts/normalize-by-median.py` | diginorm 流程（422 行，逻辑很薄） |
 
 ## 3. k-mer 哈希（kmer_hash.cc / kmer_hash.hh）
@@ -43,7 +43,12 @@
 - **可选哈希**：MurmurHash3_x64_128（seed 0，正反链各一次，
   canonical = `f ^ r`，自互补特判）；cyclic hash（fwd+rev 求和）。
   表内寻址一律 `khash % tablesize`，tablesize 取**素数**
-  （`get_n_primes_near_x`），避免取模热点。
+  （`get_n_primes_near_x(n, x)`：从 `x-1` 起向下数奇数、逐个判素数，
+  返回**不高于 x 的 n 个素数**；x 过小可能不足 n 个）。素数表规避
+  `%` 与 2 的幂取模的碰撞聚集热点。
+- **约束**：CLI 层强制 `k ≤ 32`（超出报错退出，`create_countgraph`/
+  `create_nodegraph`）、`n_tables ≤ 20`（默认需 `--force` 才能越过）——
+  k 上限来自 u64 2-bit 编码，n_tables 上限是经验值。
 
 ## 4. 计数存储（storage.hh）：Count-Min Sketch
 
@@ -53,22 +58,35 @@
   `add(khash)` 对每张表 `khash % tablesize` 处原子 +1；
   `get_count` 取各表最小值（标准 CMS 的 min 语义）。
 - **饱和处理**：所有表都满（255）时，若 `_use_bigcount` 则改走
-  `_bigcounts`（`unordered_map<u64, u16>`，上限 65535）。
+  `_bigcounts`（`KmerCountMap = unordered_map<HashIntoType,u16>`，
+  即 `BoundedCounterType = unsigned short`，上限 `MAX_BIGCOUNT=65535`）。
   **默认关闭**——`Storage()` 构造把 `_use_bigcount` 置 false，
   normalize-by-median 的 argparse 没有 `bigcount` 属性，不会开启；
   只有 `load-into-counting.py`/`abundance-dist.py` 显式 `-b` 默认 True。
+  两个并发细节：`add` 写 bigcount 前用 `__sync_bool_compare_and_swap`
+  自旋锁保护；`get_count` 仅在 `min_count == max_count`（已饱和）时才去
+  `_bigcounts` 里查，未饱和时零开销。
 - 其他存储：`BitStorage`（nodegraph，1-bit 存在性）、
-  `NibbleStorage`（SmallCountgraph，4-bit，max 15）、`QFStorage`（计数商过滤器）。
-- 每字节桶数 `_buckets_per_byte`：countgraph=1、smallcountgraph=2、nodegraph=8。
-  **内存 = n_tables × tablesize bytes**（countgraph 情形）。
+  `NibbleStorage`（SmallCountgraph，4-bit，max 15）、`QFStorage`
+  （计数商过滤器 CQF，khmer 3.0 试验特性，每槽约 1.3 字节，
+  内存不能像 CMS 那样预先严格固定）。
+- 每字节桶数 `_buckets_per_byte`（`khmer/__init__.py` 字典）：
+  countgraph=1、smallcountgraph=2、nodegraph=8、qfcounttable=1/1.26。
+  注意 `calculate_graphsize` 给出的 `tablesize` 单位是**桶**（entries），
+  实际内存 = `n_tables × tablesize / _buckets_per_byte` bytes；countgraph
+  因 `_buckets_per_byte=1` 才简化为 `n_tables × tablesize`。
 
 ## 5. 参数与内存（khmer_args.py）
 
 - 默认：`k=32`、`-N/--n_tables=4`、`-x/--max-tablesize=1e6`（太小，脚本会警告）、
-  `-M/--max-memory-usage` 上限、`--small-count` 切 4-bit 表。
-- 自动配置公式（`estimate_optimal_with_K_and_f`）：
-  fp ≈ `(1 - e^{-n/H})^Z`（n = unique k-mer 数，H = 单表 size，Z = 表数）；
-  给定内存时 `Z = ln2 · mem/n`，给定 fp 时反推 H。
+  `-M/--max-memory-usage` 上限、`--small-count` 切 4-bit 表
+  （SmallCountgraph/NibbleStorage，max 15）。
+  `-M` 用 `memory_setting` 解析：支持裸数字/科学计数/`K|M|G|T` 后缀，
+  **十进制 1000 进制、不带尾 `B`**。
+- 自动配置公式（`estimate_optimal_with_K_and_M` / `_and_f`，二者共用
+  fp 估计 `fp ≈ (1 - e^{-n/H})^Z`，n = unique k-mer 数，H = 单表 size，
+  Z = 表数）：给定内存时 `Z = ln2 · mem/n`（`estimate_optimal_with_K_and_M`），
+  给定目标 fp 时反推 H（`estimate_optimal_with_K_and_f`）。
 - `-C/--cutoff` 默认 20，即 median k-mer 覆盖度阈值；范围 [0, 256)。
 
 ## 6. normalize-by-median 语义（脚本 + hashtable.cc）
@@ -107,6 +125,19 @@ if not all(read.median_at_least(cutoff) for read in batch):
 4. **1TB 决策不变**：CMS 路线内存固定但精度随装填率下降（且 k=32 时
    khmer 的 2-bit 编码本身不占大内存，占内存的是计数表）；精确路线仍走
    pgr 自己的 `.pkt` + sort-merge。khmer 只补全"近似"一侧的细节。
+5. **canonical 化与 pgr `.pkt` 同族**：khmer `uniqify_rc = min(f, r)` 取
+   正/反向互补两条 **packed 2-bit 数值**的较小者；pgr `.pkt` 的 canonical
+   key 取"正/反向互补 2-bit 编码中**字典序**较小者"。在固定字母表下
+   （左侧碱基是 packed 整数的高位），序列字典序 == packed 数值序，二者
+   是**同一 canonical 化逻辑**（都取 fwd/rev 编码较小的那条）。pgr 的
+   `.pkt` 与 khmer 在"选择哪条链"上结论一致，可互为一致性参照；区别只在
+   pgr 精确排序去重、khmer 用哈希进概率表。
+6. **当前 pgr 状态核实（2026-08 审计）**：`pgr fq norm` 现走**精确
+   canonical KmerTable** + bbnorm 逐 read 判定（truedepth/depthAL 分位数
+   + toss），计数表非近似（见 `notes/audit/audit-fq.md`、
+   `notes/design/anchr-trim-replace.md` §M6）；`pgr kmer table` 走精确
+   `.pkt` 排序表。因此 khmer 的 CMS/median 判定只作为"未来若新增近似路径"
+   的参考，当前精确路线下不直接落地——与 §9 结论一致。
 
 ## 8. 与 pgr 现有设施对照
 

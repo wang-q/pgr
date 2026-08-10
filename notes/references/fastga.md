@@ -170,7 +170,7 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 
 源自 daligner 的 wave-front 对齐：
 
-- **forward_wave / reverse_wave**（align.c:336 起）：沿对角线扩展 wave，维护
+- **forward_wave / reverse_wave**（align.c:352 / align.c:878）：沿对角线扩展 wave，维护
   - `V[k]`：对角线 k 的最远到达点（furthest reaching point）；
   - `M`：最近 TRIM_LEN 列的匹配数（位向量 1-bit 计数）；
   - `T`：隐含对齐最后列的位向量（用于轨迹）；
@@ -205,7 +205,16 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
   端点与 δ 可重建整条比对，**重建 O(n+δd)**（逐面板用 Wu et al. 1990 的
   skewed-wave）。1 万 bp 比对 ≈ 100 字节（与 ɛ 无关，CIGAR 要到 ɛ<1/100
   才同规模）；ALN→PAF 展开约 1 亿 aligned bases/s。
-- `.1aln` 头：`1 3 aln 2 1`、`!` 记录 FastGA 版本与参数、`<` 引用两个 GDB。
+- **trace spacing 默认 `TSPACE = 100`**（FastGA.c:46 `#define TSPACE 100`；
+  `New_Align_Spec(1.-ALIGN_RATE,100,...)`，FastGA.c:3760）——即每约 100 个对齐列采一个
+  trace point。
+- `.1aln` 头：schema 行 **`1 3 def 2 1`**（alncode.c:20 `alnSchemaText`，早前笔记误记为
+  `1 3 aln 2 1`，已更正）、`!` 记录 FastGA 版本与参数（`oneAddProvenance`）、`<` 引用
+  两个 GDB（`oneAddReference`，第三个引用是 cpath）、`t` 行记录 tspace（alncode.c:265-266）。
+- **记录编码**（alncode.c `Write_Aln_Overlap`/`Write_Aln_Trace`）：每条比对一个 `A` 行
+  （6 个 int：aread/abpos/aepos/bread/bbpos/bepos）+ 互补时 `R` 行 + `D` 行（diffs）；
+  trace 用 `T` 行（逐 trace point 的坐标增量，取 trace 奇数下标）+ `X` 行（对应区间
+  diff 数，偶数下标）交替编码。
 - **排序**：按 source1 contig # → source2 contig # → source1 start 排序，便于线性扫描。
 - ALNtoPAF / ALNtoPSL（多线程）在**线性时间**把轨迹展开为 PAF/PSL（含 CIGAR：
   `-pafx` = `=`/`X`，`-pafm` = `M`；`-pafs/S` = CS 字符串）。
@@ -260,8 +269,12 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 
 ## 6. 输出格式
 
-- **PAF**（默认）：12 列标准 PAF；`-pafx` 追加 `cg:Z:`（`=`/`X`/`I`/`D`），
+- **PAF**（默认）：12 列标准 PAF + **恒附加两个 SAM tag**（ALNtoPAF.c:466/474）：
+  `dv:f:`（query 相对 target 的分歧度 fraction）与 `df:i:`（最优比对差异数）——这是
+  FastGA 自带的轻量分歧度口径，见 §7 第 6 条；`-pafx` 再追加 `cg:Z:`（`=`/`X`/`I`/`D`），
   `-pafm` 用 `M`，`-pafs/S` 追加 CS 字符串。
+  注意 README 明确 `-m/-x/-s/-S` 会令 ALNtoPAF 时间 ×10、输出体积 ×~100（CIGAR/CS 展开
+  开销）——pgr 的 PAF CIGAR 懒加载（BGZF vpos）正可规避此成本。
 - **PSL**（`-psl`）：UCSC PSL 格式，可直接喂给 `pgr pl chainnet` / `pgr psl chain`。
   负链块约定：qStart/qEnd 用正链帧、内部 qStarts 用 RC 帧（`ALNtoPSL.c` 对 COMP
   记录按 `blen − pos` 反算）。
@@ -291,10 +304,16 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
   chain/net 部分吸收（但重复区域仍可能不对称）。`-S` 可消除顺序依赖，但 README
   明确"**synteny 场景不建议**，仅理解两基因组重复结构时用"——pgr 的 `align pgi`
   （synteny 用途）因此不实现 `-S`（见 [[../design/pgi-align.md]] §7.4）。
+6. **轻量分歧度 tag**：ALNtoPAF 恒输出的 `dv:f:`（分歧度 fraction）/`df:i:`（差异数）
+  两个 SAM tag（ALNtoPAF.c:466/474）是很轻量的分歧度口径，无需展开 CIGAR 即可随
+  PAF 携带。pgr 的 PAF 输出（`pgr align` / paf 工具族）若需在比对时顺带标注分歧度，
+  可参考该编码——比每次都解析 `cg:Z:` 便宜得多。
 
 ## 8. 版本与许可
 
 - 当前 FASTGA-main 对应 V1.5（2025-12-30），含 ONEcode ANO 文件支持。
+- 注意 FastGA.c:14 内部 `#define VERSION "0.1"` 是过时的占位字符串，不代表发布版本
+  （README/发布版本为 V1.5），读源码勿据此判断版本。
 - **版本核对（2026-08-05）**：本机安装版二进制（`~/.cbp/bin/FastGA`）帮助为
   `[-vkMS] [-L:<log:path>] [-T<int(8)>] [-P<dir($TMPDIR)>] [<format(-paf)>]`——
   支持 `-S`/`-M`/`-L`，与仓库源码 V1.5（`ARG_FLAGS("vkMS")`）一致；`-S` 语义见

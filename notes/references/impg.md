@@ -95,7 +95,7 @@ impg 的 22 个子命令并非平级，而是按**数据流方向**构成四层�
   （[`AlignmentOpts`](../../../impg-0.4.1/src/main.rs#L4067)）
   只有文件 路径、`--index-mode`、`--unidirectional`、`--trace-spacing`
   等参数，**没有** min_aln/min_match_len/min_mapq 等过滤开关；
-  [`Impg::from_multi_alignment_records`](../../../impg-0.4.1/src/main.rs#L11561)
+  [`Impg::from_multi_alignment_records`](../../../impg-0.4.1/src/impg.rs#L1531)
   把输入 PAF/1ALN/TPA **全量**装入。比对质量的挑选责任在生成 PAF 的上游工具（wfmash/sweepga），
   不在 impg——这是"比对即图"哲学的体现：索引保留所有边，挑选推迟到查询。
 - **挑选发生在查询层** — 真正的"挑选比对"由
@@ -477,9 +477,14 @@ pub struct Impg {
 节点 metadata 是 `QueryMetadata`。`RwLock` + `Arc`允许查询时无锁共享。
 
 **bidirectional 索引**（`--unidirectional` 反向开关）：
-`from_multi_alignment_records` 默认对每条 A→B record 额外生成一条 B→A entry
-（[main.rs#L11094](../../../impg-0.4.1/src/main.rs#L11094)），
+[`Impg::from_multi_alignment_records`](../../../impg-0.4.1/src/impg.rs#L1531)
+默认对每条 A→B record 额外生成一条 B→A entry（L1580-1601），
 使"query_A 在 target_B 树上"与"query_B 在 target_A 树上"各有一条记录，查询时无需反向计算。
+生成方式（**不对 CIGAR 做任何变换**）：仅交换 query/target 坐标并在 metadata 上打
+`REVERSED_BIT`（bit 62），CIGAR 文件偏移保持不变；且**跳过自比对**（`query_id == target_id`，
+L1580）避免重复 entry。真正的 CIGAR 翻转推迟到查询时（见 §3.2 `get_cigar_ops`）。
+作者注释给出设计动机（main.rs#L4104）："every alignment A->B creates implicit reverse mapping
+B->A, **guaranteeing all genomes are bridges for transitive queries**"——每个基因组都是传递查询的枢纽。
 代价是索引大小翻倍。`--unidirectional` 关闭此行为，索引减半但反向查询需额外扫描。
 pgr paf query 已借鉴此设计 落地 `reverse_trees` 双向索引（仅 `+` 链建 mirror，负链不建；见
 [paf-pangenome.md §4.5](../../../notes/paf-pangenome.md)）。
@@ -515,13 +520,14 @@ op 码的精确编码（`CigarOp::new`，impg.rs#L79-91）：`=`=0、`X`=1、`I`
 - **PAF**：直接从原文件 `data_offset` 处读取 `cg:Z:` 标签的字节。
 - **1ALN/TPA**：从 tracepoint 解码，需要 `trace_spacing` 与（可能的）目标序列做 BiWFA 还原。
 
-**双向索引的 CIGAR 处理** —
-[`invert_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L144)是
-bidirectional 索引（§3.1）的配套机制：生成 B→A mirror entry 时，需把 A 视角的 CIGAR 转换为
-B 视角。两步变换：(1) `I`↔`D` 交换（query 的 insertion 变成 target 的 deletion）；(2) 仅当
-`strand == Reverse` 时反转 CIGAR 数组（负链比对在反向互补坐标上读取，op 顺序需逆序）。`=`/`X`/
-`M` 保持不变。这是 pgr mirror index 设计可借鉴的细节——pgr paf query 的 `reverse_trees`仅 `+` 链建 mirror
-（见 [[paf-pangenome.md]] §4.5），若未来扩展到负链 mirror 需实现等价变换。
+**双向索引的 CIGAR 处理** — 索引构建时**不**对 CIGAR 做任何变换（只交换坐标 + 打 `REVERSED_BIT`，
+见 §3.1）；CIGAR 翻转在查询时按需完成：[`get_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L542)
+对 `metadata.is_reversed()` 的 entry 调用 [`invert_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L144)
+把 A 视角的 CIGAR 转换为 B 视角。两步变换：(1) `I`↔`D` 交换（query 的 insertion 变成 target 的
+deletion）；(2) 仅当 `strand == Reverse` 时反转 CIGAR 数组（负链比对在反向互补坐标上读取，op 顺序
+需逆序）。`=`/`X`/`M` 保持不变。**注意 `invert_cigar_ops` 全仓库仅 `get_cigar_ops` L543-544 一处调用**
+——这是"索引时存偏移 + 查询时惰性翻转"设计的落地。这是 pgr mirror index 设计可借鉴的细节——pgr paf query 的
+`reverse_trees` 仅 `+` 链建 mirror（见 [[paf-pangenome.md]] §4.5），若未来扩展到负链 mirror 需实现等价变换。
 
 ### 3.3 `SortedRanges` 与区间合并
 
@@ -774,7 +780,7 @@ self-PAF（all-vs-all），但提供 4 层参数控制"挑选哪些对比对"，
     - **`--num-mappings <m:n>`**（默认 many:many）— 限制 query:target 维度映射数（如 `1:1` 只留
       最佳映射），在 sweepga plane-sweep 过滤阶段裁剪。
     - **`--sparse-factor 0.0`**
-      （[`SeqwishOpts`](../../../impg-0.4.1/src/main.rs#L2076)，默认
+      （[`SeqwishOpts`](../../../impg-0.4.1/src/main.rs#L2073)，默认
       0.0=保留全部）— 在 seqwish 图归纳阶段丢弃一定比例的 input matches。另外**Partition 的 `--selection-mode`**（longest/total/sample/haplotype，
 
 [partition.rs#L714-L906](../../../impg-0.4.1/src/commands/partition.rs#L714)）

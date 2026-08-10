@@ -1,6 +1,6 @@
 # sickle: 基于滑动窗口的 FASTQ 自适应质量修剪
 
-> 整理于 2026-08，源自对 `sickle-master/`（v1.33）源码的分析。目的：pgr 的 `fq` 命令目前只有 `to_fa`（FASTQ→FASTA）与 `interleave`（双端交错）两个子命令，**没有质量修剪功能**。本文分析 sickle 的滑动窗口自适应修剪算法，为 pgr 未来可能的 `fq trim` 提供算法参考。本文聚焦算法与 CLI 设计，`kseq.h` 等 I/O 基础设施仅作背景（pgr 用 noodles 已覆盖）。
+> 整理于 2026-08，源自对 `sickle-master/`（v1.33）源码的分析。目的：sickle 的滑动窗口质量修剪算法是 pgr `fq trim-qual`（`src/libs/fq/trim.rs`）中默认 `--method sliding` 的直接算法来源。本文分析 sickle 的滑动窗口自适应修剪算法、CLI 与配对逻辑，并记录 pgr 移植时的取舍与两者差异。`kseq.h` 等 I/O 基础设施仅作背景（pgr 用 noodles 已覆盖）。
 
 ## 1. 简介
 
@@ -13,7 +13,7 @@
 - **质量编码**：支持 Sanger / Illumina / Solexa（Solexa 为线性近似）。Illumina 1.3–1.7 用 `+64`，CASAVA ≥ 1.8 即 Sanger（`+33`）。
 - **格式细节**：输出时可把 `+` 行后的重复 header 替换为单个 `+`（CASAVA ≥ 1.8 默认格式）；支持 gzip 输入/可选 gzip 输出；`-n` 可在首个 N 处截断。
 
-> **范围说明**：pgr 不需要复现 sickle 的 C 实现。若实现 **`fq trim-qual`**（按质量分数修剪，见 §4），应移植其**滑动窗口修剪算法**（`sliding.c`，约 100 行 C）。`kseq.h` 的流式读取由 noodles 替代，`getopt` CLI 由 clap 替代。
+> **范围说明**：pgr 已在 `fq trim-qual` 中移植了 sickle 的滑动窗口修剪算法（`--method sliding`，见 §4），无需复现其 C 实现或 `kseq.h`/`getopt` 层。本文同时对比 pgr 与 sickle 的实现差异，并记录 pgr 在滑动窗口之外新增的算法（Mott、poly-G）与 CLI 取舍。
 
 ## 2. 核心概念 (Key Concepts)
 
@@ -26,7 +26,7 @@
 | SOLEXA | 64 | 58 | 112 | **近似**，真实转换为非线性 |
 | ILLUMINA | 64 | 64 | 110 | CASAVA 1.3–1.7 |
 
-质量值 = `ASCII 码 - offset`。`get_quality_num`（`sliding.c:10`）读取时校验质量字符是否落在 `[min, max]` 区间，越界即报错退出（**这是硬校验，pgr 移植时应保留友好报错而非 panic**）。
+质量值 = `ASCII 码 - offset`。`get_quality_num`（`sliding.c:10`）读取时校验质量字符是否落在 `[min, max]` 区间，越界即 `fprintf` 报错并 `exit(1)`（`sliding.c:21-28`）——**这是硬校验**。pgr 移植时保留为友好报错而非 panic（见 §4.4）。
 
 > 注意：`sickle se` / `pe` 的 `-t` 只接受 `solexa|illumina|sanger` 三值，`PHRED` 类型未在命令行暴露。
 
@@ -53,8 +53,8 @@
 
 **关键实现细节**（pgr 移植时需注意）：
 
-- **滑动用差分而非重算**：`window_total -= 首碱基; window_total += 新碱基`，O(1) 滑动整个窗口（`sliding.c:107-111`）。pgr 可用滑动窗口和值或前缀和实现。
-- **`window_start+window_size > qual.l` 作为"最后窗口"判定**：注意循环条件已是 `i <= qual.l - window_size`，故迭代内该条件实际恒为假（`qual.l - window_size + window_size > qual.l` 为假）。这是一段**冗余/死代码**（`sliding.c:92`），3' 修剪实际只由 `window_avg < qual_threshold` 触发。移植时只需等价于"平均质量低于阈值"。
+- **滑动用差分而非重算**：`window_total -= 首碱基; window_total += 新碱基`，O(1) 滑动整个窗口（`sliding.c:107-111`）。pgr 用相同的差分滑动实现。
+- **`window_start+window_size > qual.l` 作为"最后窗口"判定**：注意循环条件已是 `i <= qual.l - window_size`，故迭代内该条件实际恒为假（`qual.l - window_size + window_size > qual.l` 为假）。这是一段**冗余/死代码**（`sliding.c:92`），3' 修剪实际只由 `window_avg < qual_threshold` 触发。pgr 的 `sliding_cut` 移植时确实丢弃了该死条件（`trim.rs` 只保留 `avg < threshold`）。
 - **5' 切点是窗口内首个达阈值碱基，3' 切点是窗口内首个低于阈值碱基**：两者都返回**绝对位置**（基于原始序列），不是相对窗口偏移。
 - **边界行为**：5' 与 3' 切点可能重叠（如读段质量整体很差时 five > three），由第 6 步长度检查兜底丢弃。
 - **`-n` 截断在滑动窗口之后**：截断到首个 N 处，再走第 6 步长度检查。
@@ -110,43 +110,48 @@ qual[five..three]
 
 ### 4.1 现状对比
 
-pgr 的 `fq` 命令目前只有 `to_fa`（FASTQ→FASTA）与 `interleave`（双端交错），**没有质量修剪子命令**。sickle 填补的正是这个空白。
+pgr 的 `fq` 命令目前已拥有 `to-fa`、`interleave`、`norm`、`range`、`sample`、`split`、`clean`、`filter`、`clump`、`trim-qual` 等子命令（`src/cmd_pgr/fq/mod.rs`）。其中 **`trim-qual`**（`src/cmd_pgr/fq/trim_qual.rs`，实现位于 `src/libs/fq/trim.rs`）正是本笔记主题：**按质量分数修剪**，且默认算法即 sickle 式滑动窗口。
 
-### 4.2 潜在移植点：`pgr fq trim-qual`
+即：笔记最初撰写时"pgr 没有质量修剪功能"的现状已改变，sickle 填补的空白已由 `fq trim-qual` 实现。sickle 分析的价值从"未来移植参考"转为"对照 pgr 实际实现、澄清差异与取舍"。
 
-> **命名说明**：质量修剪子命令命名为 `fq trim-qual`（而非 `fq trim`），
-> 采用 "trim-<目标>" 家族命名（与 `fq trim-adapter` 配对），明确表示"按质量
-> 分数修剪"，避免与"去接头"(`trim`/trimming) 混淆。
+### 4.2 pgr `fq trim-qual` 对 sickle 的移植与差异
 
-若未来实现，可参考但不直接照搬：
+pgr `trim-qual` 核心 `sliding_cut`（`trim.rs:143`）忠实对齐了 sickle 的 `sliding_window`，但有以下差异：
 
-| sickle 概念 | pgr 移植建议 |
-| :--- | :--- |
-| 窗口 = 0.1×读长 | 可保留自适应窗口，或提供固定 `--window` 选项 |
-| 质量阈值 / 长度阈值 | 对应 `--qual-threshold` / `--length-threshold`（默认 20/20） |
-| 5' 修剪（可禁用） | `--no-fiveprime` 开关 |
-| 质量编码表 | 用 noodles 的 Phred 解码，或按 offset 表实现 |
-| 3' 修剪 + 丢弃 | 核心算法，`three - five < len` 则丢弃 |
-| `-n` 首个 N 截断 | 可选开关 |
-| `-M` 单碱基 N 保配对 | 双端交错模式特有，`interleave` 命令可复用 |
-| "singles" 文件 | 双端配对打破时单独输出 |
+| 维度 | sickle | pgr `trim-qual` |
+| :--- | :--- | :--- |
+| **窗口大小** | `(int)(0.1*l)`，为 0 则取全长 | `max(1, n/10)` |
+| **5'/3' 切点** | 窗口内首个达/低于阈值的绝对位置 | 相同 |
+| **差分滑动** | `window_total ±=` | 相同 |
+| **死条件** `window_start+window_size>l` | 存在（死代码） | 已删除 |
+| **5' 未找到 → 丢弃** | `found_five_prime==0 && !no_fiveprime` | `sliding_cut` 返回 `None` → `trim_interval` 丢弃 |
+| **质量编码** | 4 类型表（SANGER/SOLEXA/ILLUMINA + 未暴露 PHRED），`-t` 必填 | `--quality-base` 33/64/`auto`（默认 auto，BBDuk flip-flop 自动检测），无 SOLEXA 近似 |
+| **质量校验** | 越界 `exit(1)` | `validate_quality` 校验 Phred ∈ [0,93]，越界返回 `anyhow` 错误（不 panic） |
+| **N 截断 `-n`** | 有 | **无**（pgr 未移植） |
+| **额外修剪** | 无 | 新增 `--method mott`（Mott 累积质量）、`--polyg-right`（3' poly-G） |
+| **输出 `+` 行** | 单个 `+`，保留 name/comment | 相同 |
+| **配对输出** | `-M` 输出 N 保配对 / `-m -s` singles | 双端可 `--outfile-2` 分离或省略为交错；`--outfile-single` 收 singles；**无 `-M` 保配对模式**，失败端直接丢弃 |
 
-**算法体量**：核心 `sliding_window` 约 100 行 C（含质量校验）。Rust 移植后预计 60–100 行，无复杂数据结构，是标准"分隔 + 差分滑动窗口"。
+**值得注意的两个行为差异**：
 
-### 4.3 值得借鉴的健壮性设计
+1. **短读窗口大小**：对读长 `<10bp`，sickle 把窗口取为**读段全长**，pgr 取 `max(1, n/10)=1`。对默认长度阈值 20 而言此类读段通常早已被丢弃，故实际影响有限，但语义并不完全一致。
+2. **配对保配策略**：sickle 的 `-M` 模式会把失败读段输出为单碱基 `N` 以保持记录数/配对。pgr `trim-qual` **未实现**此模式——双端仅一端通过时通过端写入 `--outfile-single`，两端都失败则直接丢弃，记录数不保持。pgr 的 `interleave` 等命令不与 `trim-qual` 联动补齐该行为。
 
-1. **质量值越界即报错**（`sliding.c:21`）：不是静默裁剪。pgr 的项目硬约束是"任何用户输入都不应 panic"，此处应返回 `anyhow` 错误而非直接 `exit(1)`。
-2. **文件名去重校验**（`trim_paired.c:259,295`）：输入输出不可相同，防止覆盖输入——与 pgr 的 `ensure_outfile_distinct` 硬约束精神一致。
-3. **双端不匹配的容错**：文件长短不一时警告并只处理公共部分，不崩。
-4. **`+` 行 header 丢弃**：输出统一为单个 `+`，避免嵌套 header 不一致。
+### 4.3 值得借鉴的健壮性设计（pgr 已落实）
 
-### 4.4 与 pgr 现有约束的冲突点
+1. **质量值越界即报错**（`sliding.c:21`）：不是静默裁剪。pgr 项目硬约束是"任何用户输入都不应 panic"，此处已落实为 `validate_quality` 返回 `anyhow` 错误（`trim.rs:245`），而非 sickle 的 `exit(1)`。
+2. **文件名去重校验**（`trim_paired.c:259,295`）：输入输出不可相同，防止覆盖输入——pgr `trim_qual::execute` 用 `ensure_outfile_distinct`（`trim_qual.rs:125`）及输出文件两两去重落实。
+3. **双端不匹配的容错**：文件长短不一时警告并只处理公共部分，不崩——pgr `run_paired` 用 `warn_pair_mismatch` 实现，只警告一次（定义于 `trim.rs:457`）。
+4. **`+` 行 header 丢弃**：输出统一为单个 `+`，避免嵌套 header 不一致——pgr `write_record` 保留原 name/comment 但 `+` 行固定输出（`trim.rs:296-313`）。
 
-- sickle 用 `exit(1)` 处理错误，pgr 必须改为 `anyhow::Result` + 友好错误信息。
-- sickle 的质量校验是"越界即终止整条程序"，pgr 的零 panic 原则会更倾向于"记录错误并跳过/继续"，需在移植时决策。
-- sickle 的 SOLEXA 是线性近似，若 pgr 需要严格正确应实现非线性转换或明确标注近似。
+### 4.4 与 pgr 现有约束的差异点（移植取舍）
 
-### 4.5 现代质量修剪算法对比（2026 视角）
+- sickle 用 `exit(1)` 处理错误；pgr 一律用 `anyhow::Result` + 友好错误信息，且质量校验选择"报错终止整条读段所在流程"（`validate_quality` 对整个记录 `bail`），而非"记录错误并跳过/继续"——这是对零 panic 原则的落实，但与早期笔记"倾向于跳过"的预判不同。
+- sickle 的 SOLEXA 是线性近似；pgr 未实现 SOLEXA，只区分 Phred33/64，避免引入近似误差。
+- sickle 的质量类型由 `-t` 强制指定；pgr 默认 `auto` 自动检测（BBDuk flip-flop 启发式），更省心但也引入检测不确定性（`--quality-base` 可显式覆盖）。
+- pgr 未移植 sickle 的 `-n` 首个 N 截断，而是以 `--polyg-right` 填补 3' 端杂质（poly-G）场景——两者不重叠，是功能取舍而非替代。
+
+### 4.5 现代质量修剪算法对比（2026 视角）与 pgr 现状
 
 > 调研补充（2026-08）：**按质量分数修剪**（非去接头）在现代工具中仍是这几类算法，滑窗并未过时。sickle 的"旧"不在算法，而在缺乏多线程/自动接头/报告等工程能力；但这些对**纯质量修剪**不重要。真正不同的算法方向是 cutadapt 的 Mott 累积质量法（更精细）。
 
@@ -157,11 +162,11 @@ pgr 的 `fq` 命令目前只有 `to_fa`（FASTQ→FASTA）与 `interleave`（双
 | **Leading/Trailing** | Trimmomatic、fastp | 只切两端低于阈值的连续碱基，不处理中间 | 最保守，常配合滑窗使用 |
 | **逐读动态窗口** | fastp | 滑窗 + 基于读长的动态窗口，单遍 O(n) | 对短读优化，作者将复杂度从 O(n²) 降为 O(n) |
 
-**对 `fq trim-qual` 的建议**：
-- 滑窗仍是默认选择（忠实对齐 Trimmomatic `SLIDINGWINDOW` 语义，最通用）。
-- 可将 **Mott 算法**作为 `--method mott` 选项与滑窗（`--method sliding`）并存，提供更精细的修剪路径。
-- 现代工具差异主要在**多线程**与**单遍多操作**（质控统计+过滤+修剪一次扫描），这些 pgr 用 noodles + rayon 天然契合，不作为算法选型依据。
+**pgr 落地方案**：
+- 滑窗作为默认 `--method sliding`（忠实对齐 sickle / Trimmomatic `SLIDINGWINDOW` 语义，最通用）——已实现。
+- **Mott 算法**作为 `--method mott` 与滑窗并存，提供更精细的修剪路径——已实现（`trim.rs` `mott_cut`，移植自 cutadapt `qualtrim.pyx` 的 `quality_trim_index`），正是当初建议的"两种方法并存"。
+- 现代工具差异主要在**多线程**与**单遍多操作**（质控统计+过滤+修剪一次扫描）；pgr 用 noodles + rayon 天然契合。`fq clean`/`fq filter`（bbduk 风格）已实现"adapter 修剪 + 质量过滤"的组合，与 `trim-qual`（纯质量）分工互补（见 `docs/fq.md`）。
 
 ---
 
-*参考来源: [sickle GitHub](https://github.com/najoshi/sickle) | 本项目源码 `sickle-master/`（v1.33）*
+*参考来源: [sickle GitHub](https://github.com/najoshi/sickle) | 本项目源码 `sickle-master/`（v1.33） | pgr `src/libs/fq/trim.rs` + `src/cmd_pgr/fq/trim_qual.rs`*

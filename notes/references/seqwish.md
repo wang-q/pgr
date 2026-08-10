@@ -156,7 +156,7 @@ loop {
     id1 = self.find(id1); id2 = self.find(id2);
     if id1 == id2 { return id1; }
     // union-by-rank: r1 > r2（或 r1 == r2 且 id1 < id2）时交换，
-    // 使较小 rank 的根作为 id1 挂到 id2 下（等 rank 时 id 更大的成为新根）
+    // 使较小 rank 的根作为 id1 挂到 id2 下（等 rank 时交换使 id 较小的成为新根）
     let old = ((r1 as u128) << 64) | (id1 as u128);  // parent=id1, rank=r1
     let new = ((r1 as u128) << 64) | (id2 as u128);  // parent=id2, rank=r1
     // CAS 失败说明并发改写，重试整个 find+unite
@@ -267,6 +267,8 @@ phase 2 用 `DisjointSetsAsm`（无锁 CAS），`component_seqs.par_iter()` 并�
 
 [compact.rs](../../../seqwish-master/src/compact.rs) 的逻辑很直接：
 **对每个输入碱基，查 `path_iitree` 看它映射到图序列的哪一段，该段的起止就是节点边界。**
+（注：`compact_nodes` 的 `node_iitree` 与 `num_threads` 参数当前未被使用，分别以
+`_node_iitree`/`_num_threads` 命名保留签名；`links`/`gfa` 的 `num_threads` 同样未用。）
 
 ```rust
 // 对每条序列并行
@@ -378,9 +380,10 @@ overlap 段的 `(q, p)` 对，取 `input_char = seqidx.at(q)` 与
 说明输入序列有未被图覆盖的区段（可能有 novel 段未补全）。
 
 **Level 4 — 路径步长之和**（每序列）： 把 `path_v` 里每个 node_id 的长度
-（`select(id+1) - select(id)`）求和，必须等于 `seq_len`。失败信息最详细：
-`"path step length mismatch for {seq_name}: expected {seq_len} bp but path steps sum to {path_step_len} bp ({n_nodes} nodes, seen_bp={seen_bp}, nodes: {first3}...{last3})"`。
-`nodes` 字段在节点数 ≤10 时全列，否则只列前 3 + 后 3，避免错误信息过长。
+（`select(id+1) - select(id)`）求和，必须等于 `seq_len`。失败信息最详细（带 `[gfa] ` 前缀）：
+`"[gfa] path step length mismatch for {seq_name}: expected {seq_len} bp but path steps sum to {path_step_len} bp ({n_nodes} nodes, seen_bp={seen_bp}, nodes: {first3}...{last3})"`。
+`n_nodes` 取 `path_v.len()`；`nodes` 列表格式为 `id:len`，节点数 ≤10 时全列，否则只列前 3 + 后 3，
+避免错误信息过长。
 
 **校验顺序的设计**：Level 1→2 在遍历 overlap 段时同步做（一次循环），Level 3→4 在遍历结束后 做。
 Level 2 最贵（逐碱基比对），但因为 Level 1 已保证 overlap 唯一，Level 2 的内层循环不会 重复执行。

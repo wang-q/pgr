@@ -25,11 +25,12 @@
 | `quorum_error_correct_reads` | 读计数库 + FASTQ，逐 read 纠错，输出 FASTA |
 | `merge_mate_pairs` | 双端两个文件 → 交错（配对保序） |
 | `split_mate_pairs` | 交错 → `_1.fa`/`_2.fa` 两个文件 |
-| `query_mer_database` / `histo_mer_database` | 调试工具：查单个 mer 的 (count, quality)、输出计数直方图 |
+| `query_mer_database` / `histo_mer_database` | 调试工具（`check_PROGRAMS`，make check 构建、不随安装）：查单个 mer 的 (count, quality)、输出计数直方图 |
 
-入口脚本额外做：质量编码自动检测、k-mer 长度建议（默认 24）、内存大小
-估算（`-s`，Jellyfish 哈希槽位数，太小会报 "Failed: Increase the size
-parameter"）。
+入口脚本额外做：质量编码自动检测（读前 ~1000 条 read，取最小 quality
+char；遇 35/66 特殊 −2，校验须为 33/59/64）、k-mer 长度（默认 24，README
+注明上限 31）、哈希大小（`-s` 默认 200M，README 给估式 `(G + k·n) / 0.8`，
+估小会报 "Failed: Increase the size parameter"）。
 
 ## 3. 核心数据结构（`mer_database.hpp`）
 
@@ -94,25 +95,29 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 |---|---|
 | `count==0`（无任何延续） | `truncation`，截断该端 |
 | `count==1`（唯一延续） | 若与当前碱基不同 → `substitution`（替换） |
-| `count>1` 且原碱基计数 > min-count 且（≥ cutoff 或质量够） | 保留原碱基 |
-| `count>1` 且原碱基计数低 | **Poisson 碰撞检验**：`p = Σcounts × (先验错误率/3)`，`poisson_term(p, counts[ori]) < 阈值` 则视为随机碰撞、保留 |
-| 进入候选替换 | 对每个计数 > min-count 的候选检查**延续性**（替换后移一位，下一个 k-mer 的 level ≥ 当前）；选计数最接近 `prev_count` 的候选；平局时用 read 下一个碱基仲裁；仍多个候选 → 不纠 |
+| `count>1` 且 `counts[ori]` > min-count 且（≥ cutoff 或质量够） | 保留原碱基 |
+| `count>1` 且 `counts[ori]` > min-count 但（< cutoff 且质量不足） | **Poisson 碰撞检验**：`p = Σcounts × (先验错误率/3)`，`poisson_term(p, counts[ori]) < 阈值` → 视为随机碰撞、保留；否则落入候选替换 |
+| `count>1` 且 `counts[ori]` ≤ min-count，且 `level==0 && counts[ori]==0`（原碱基为错误、无高质量候选） | `truncation` |
+| 其余情况（含 N 碱基） | 进入候选替换：对每个计数 > min-count 的候选检查**延续性**（替换后移一位，下一个 k-mer 的 level ≥ 当前）；选计数最接近 `prev_count` 的候选；平局时用 read 下一个碱基仲裁；仍多个候选 → 不纠 |
 | 原碱基为 N 且无候选 | `truncation` |
 
 ### 4.3 `err_log`：窗口错误数限制（防过度纠错）
 
-所有 sub/trunc 事件按位置记录；**滑动窗口（`-w`，默认 k）内错误数 ≥
-`-e`（默认 k/2）即触发回退截断**（`remove_last_window` 丢弃窗口内事件并
-截断到窗口起点）。输出日志：`pos:sub:from-to`、`pos:3_trunc`（3' 端）、
+所有 sub/trunc 事件按位置记录；**滑动窗口（`-w`，quorum.in 不传时默认
+10）内错误数 ≥ `-e`（默认 3）即触发回退截断**（`remove_last_window` 丢弃
+窗口内事件并截断到窗口起点；`window()`/`error()` 仅当显式传 0 时才回退到
+k 与 k/2）。输出日志：`pos:sub:from-to`、`pos:3_trunc`（3' 端）、
 `pos:5_trunc`（5' 端）。
 
 ### 4.4 其他
 
 - `compute_poisson_cutoff`：未显式给 `-p` 时，从计数分布自动估计 cutoff
-  （distinct/total → coverage，`lambda = coverage × 先验错误率/3`，取
-  `poisson_term < 阈值` 的最小 x）。
-- `homo_trim`（`--homo-trim`）：3' 端 homopolymer 评分
-  （`(same<<1)-1` 累计），低于阈值则截断。
+  ——只统计**高质量** mer（编码值奇数且 ≥2），`coverage = total/distinct`
+  （总 k-mer / 去重数，即平均计数），`lambda = coverage × 先验错误率/3`，
+  取首个满足 `poisson_term < 阈值` 的 x 并**返回 x+1**。
+- `homo_trim`（`--homo-trim`）：从 corrected read 末端向前扫描，逐位累计
+  homopolymer 评分（`(same<<1)-1`：同碱基 +1、异 −1），记录累计最大值
+  位置；**仅当最大评分 ≥ 阈值才在该位置截断**（否则不截）。
 - `contaminant`：可选 Jellyfish 污染库（需与主库同 k），命中即丢弃
   （或 `--trim-contaminant` 截断）。
 
@@ -123,7 +128,7 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 | `-s` | Jellyfish 哈希槽位大小（必须容下全部 k-mer） |
 | `-k` | k-mer 长度（默认 24） |
 | `-q` / `-m` | 质量下限字符 / 高质量阈值偏移（高质量 = char ≥ q+m） |
-| `-w` / `-e` | 错误窗口大小 / 窗口内最大错误数 |
+| `-w` / `-e` | 错误窗口大小（默认 10）/ 窗口内最大错误数（默认 3）；显式传 0 时回退到 k / k/2 |
 | `--min-count` / `--skip` | 好 k-mer 最小计数 / 找 anchor 前跳过的碱基数 |
 | `--anchor` / `--anchor-count` | anchor 连续个数 / anchor k-mer 最小计数 |
 | `-p` | cutoff（显式覆盖 Poisson 自动估计） |
@@ -135,7 +140,9 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 - **pgr 现状**：`libs/kmer`（`KmerTable`：canonical 2-bit u128 key、精确
   计数、radix sort、rayon 并行）是**精确计数**路线；quorum/Jellyfish 是
   **哈希近似**路线（内存可控、自动扩容、带质量偏置）。pgr 目前**没有
-  read 纠错功能**。
+  read 纠错功能**，但已有 `pgr fq norm`（`src/libs/fq/norm.rs` +
+  `src/cmd_pgr/fq/norm.rs`）：基于精确 KmerTable + minq 高质量过滤的
+  **低深度 read 过滤**，正是 §6.1 所述"判定器"的现成雏形。
 - **可借鉴的算法点**（若 pgr 做纠错）：
   1. **质量加权计数**（高质量 k-mer 权重 3 起步、低质量不污染）——直接
      可移植到 KmerTable 的计数语义；
@@ -170,6 +177,10 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 - 简化空间：只做"read 内是否存在低计数且无延续的 k-mer 区域"判定，可能
   比完整 anchor+extend 更简单；但 anchor+Poisson+窗口限制的判定质量是
   用户满意的部分，移植时应保留其判定语义。
+- **pgr 现成落点**：`pgr fq norm` 已实现"按 k-mer 深度判定并过滤 read"
+  同类能力（精确计数表 + minq 高质量过滤 + 按 min-depth 丢 read），与本
+  场景高度契合；若需保留 quorum 的 anchor+extend+Poisson+窗口限制判定
+  语义，可在此基础上扩展而非重写。
 
 ## 7. 局限
 

@@ -14,9 +14,15 @@
 - **比对模式**（3 种）: 局部 Smith-Waterman（kSW）、全局 Needleman-Wunsch
   （kNW）、半全局 Overlap（kOV）。
 - **gap 罚分模式**（3 种）: linear、affine、convex（分段 affine，双罚分函数取 min）。
-- **CLI 默认罚分**（main.cpp）: `-m 5 -n -4 -g -8 -e -6 -q -10 -c -4`；`-l` 比对模式、
-  `-r` 结果模式（0=consensus、1=MSA、2=both、3=GFA、4=consensus+GFA）、`-d` DOT 输出、
+- **CLI 默认罚分**（main.cpp）: `-m 5 -n -4 -g -8 -e -6 -q -10 -c -4`；`-l` 比对模式
+  （0=local、1=global、2=semi-global）、`-r` 结果模式（0=consensus、1=MSA、
+  2=consensus+MSA、3=GFA、4=GFA+consensus 路径）、`-d <file>` DOT 图输出、
   `-s` strand-ambiguous、`--min-coverage`（仅 `-r 0` 生效）。
+- **输出细节**: `-r 2` 是先后输出 consensus 与 MSA 两份 FASTA（MSA 含 consensus 行）；
+  `-r 4` 仍是**同一份 GFA**，只是额外把 consensus 作为一条 `P` 路径写入（并非两个
+  独立输出）；`-d` 在结果循环结束后无条件调用 `PrintDot`（路径非空才写文件）；
+  GFA 的 `L` 边行形如 `L a + b + OM ew:f:W`（`OM` 为 CIGAR 域，`ew` 为边权重 tag），
+  consensus 节点/边以 `ic:Z:true` 标记；`-s` 逐序列分别比对正/反向链并取更优者。
 - **SIMD 支持**: SSE4.1 与 AVX2（README 自评 "marginally faster due to high
   latency shifts"）；[SIMDe](https://github.com/simd-everywhere/simde) 提供
   非 x86 可移植；运行时分派按 AVX2 > SSE4.1 > SSE2。
@@ -107,12 +113,13 @@ FASTA/FASTQ（bioparser 流式读取）
 - `Create(type, m, n, g[, e[, q, c]])`：gap open/extend 必须非正，否则抛异常。
 - **subtype 判定**: `g >= e` → linear；`g <= q || e >= c` → affine；否则
   convex。linear 时折叠 `e = g`；affine 时折叠 `q = g, c = e`。
-- `WorstCaseAlignmentScore(i,j)` 预检潜在溢出（`kNegativeInfinity = T::min()+1024`，
-  T∈{i16,i32}）：最坏分数 = `min(−(m·min(i,j)+gap(|i−j|)), gap(i)+gap(j))`，
-  `gap(len)=min(g+(len−1)e, q+(len−1)c)`（len==0 记 0）。SIMD `Prealloc` 据此选 lane 类型
-  （§5.4）。
-- 工厂先尝试 `CreateSimdAlignmentEngine`，SIMD 不可用（无指令集编译）时回退
-  `SisdAlignmentEngine`。
+- `WorstCaseAlignmentScore(i,j)`（基类方法，由各引擎在 `Align` 或 SIMD `Prealloc`
+  时调用以预检潜在溢出）：最坏分数 = `min(−(m·min(i,j)+gap(|i−j|)), gap(i)+gap(j))`，
+  `gap(len)=min(g+(len−1)e, q+(len−1)c)`（len==0 记 0）。溢出下界
+  `kNegativeInfinity = T::min()+1024`：SISD 引擎写死 int32；SIMD 引擎按 lane 类型
+  T∈{i16,i32} 泛型计算。SIMD `Prealloc` 据此选 lane 类型（§5.4）。
+- 工厂先尝试 `CreateSimdAlignmentEngine`；无 AVX2/SSE4.1/SIMDe 编译时
+  `SimdAlignmentEngine::Create` 返回空指针，工厂回退 `SisdAlignmentEngine`。
 
 ### 4.2 标量 DP（`src/sisd_alignment_engine.cpp`，928 行）
 
@@ -160,8 +167,13 @@ FASTA/FASTQ（bioparser 流式读取）
 
 ### 5.4 类型与架构选型
 
-- **动态 lane 类型**: `WorstCaseAlignmentScore` 低于 i32 下界 → 全程 i32 lane；
-  否则用 i16 lane（更宽、更快）。
+- **动态 lane 类型（分数越负需越宽 lane）**: `Prealloc`（用
+  `WorstCaseAlignmentScore(max_len+8, max_len·alphabet)` 近似）与每次 `Align`
+  （用实际 `sequence_len+8` × `graph.nodes().size()`）都做同一三档判定：
+  1. worst 低于 `int32::min()+1024` → i32 也装不下，抛 "possible overflow"；
+  2. 否则 worst 低于 `int16::min()+1024` → i16 会溢出，退用 **i32 lane**；
+  3. 否则（i16 可表示）→ 用 **i16 lane**（lane 数翻倍、寄存器吞吐更高）。
+  即 i16 是快路径、i32 是溢出兜底。
 - **编译期实例化**: `dispatch.cpp` 按 `__AVX2__` / `__SSE4_1__` / 默认 选
   `Architecture::kAVX2/kSSE4_1/kSSE2` 实例化模板。
 - **运行时分派**: `dispatcher.cpp` 用 cpu_features（或手写 cpuid）检测
@@ -233,6 +245,17 @@ POA 做 SIMD，分派应沿用 HV 式**（见 §7）。
 4. **参数语义对照**: subtype 判定规则（linear/affine/convex 折叠）与
    `WorstCaseAlignmentScore` 溢出预检是 pgr `ScalarAlignmentEngine` 尚未
    完整对齐的部分（Rust 版仅 affine 路径）。
+5. **i16/i32 动态 lane 选型（潜在吞吐优化）**: pgr `simd.rs` 目前统一用 i32 lane
+   （§7-1 为简化故意不选型）。若未来想要 i16 快路径（lane 数翻倍、寄存器吞吐更高），
+   可直接套用 spoa 的三档判定（§5.4）：按 `WorstCaseAlignmentScore` 阈值在 i16/i32
+   间切换，低于 i32 下界则抛溢出。注意 pgr 标量引擎的 `neg_inf` 语义须与 i16 lane
+   对齐（i16 的 min+1024 下界更窄，需先确认罚分参数不会触底）。这属于"分数越负越
+   需要宽类型"的通用套路，与 pgr HV 曾否决的"i16 变量移位"是两回事（后者败在移位
+   指令延迟，前者只换更宽的 lane 不改变移位次数）。
+6. **convex 分段 affine 罚分**: pgr 仅支持单一 affine（gap_open + gap_extend）。
+   spoa 的 convex 用两套 affine 罚分函数（g/e 与 q/c）逐格取 max（SISD 5 个状态矩阵
+   H/F/E/O/Q），可表达"短 gap 与长 gap 不同斜率"的更真实罚分；若未来处理长内含子/
+   大 gap 场景，这是 C++ 侧现成的扩展参考（pgr 只需在 `align.rs` 增加 O/Q 两状态）。
 
 ## 8. 移植与实现状态（原 `design/spoa_port.md`，2026-08-09 合并）
 

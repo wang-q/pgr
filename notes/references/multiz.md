@@ -38,7 +38,17 @@ multiz [R=?] [M=?] [L=?] [S=?] file1 file2 v [out1 out2] [nohead] [all]
     *   `1`: 第一个文件的参考固定，第二个文件的参考可相对滑动。
 *   `out1 out2`（可选）: 收集两个输入中未被使用的 block；缺省时合并结果与
     unused 都写 stdout。
-*   `nohead`: 不输出 MAF 头；`all`: 输出单行块（默认不输出）。
+*   `nohead`: 不输出 MAF 头；`all`: 输出单行块。
+    *   **源码怪癖（已实测）**：是否输出单行块由全局 `row2` 控制，条件为
+        `row2 == 0 || components->next != NULL`（`row2==0` 时连单行块也输出，
+        见 `multiz.c:69,75,255,260`）。`multi_util.c:22` 中 `row2` **默认就是
+        0**，而 `main` 对 `all` 的处理是 `row2 = 0`（`multiz.c:203-206`）
+        ——故 `all` 在 v11.2 里**实为空操作**，默认即输出单行块。实测：同一
+        输入在"无 `all`"与"有 `all`"两种调用下，单行 unused 块都照常输出。
+        这与 usage 文本声称的 "null: not to output single-row blocks" 相矛盾，
+        属源码文档/实现不一致（疑似 bug：若要"默认不输出单行块"，条件应反向
+        为 `row2 != 0` 之类）。pgr 直译时应以"默认输出单行块"为准，不为 `all`
+        单设语义。`fas-multiz.md` §2.6 沿用的"默认不输出"表述同样需按此更正。
 
 ### 1.2 核心算法一句话
 
@@ -79,9 +89,15 @@ multiz [R=?] [M=?] [L=?] [S=?] file1 file2 v [out1 out2] [nohead] [all]
 5. **yama**：带内 C/D/I DP。
 6. **v=1**：`mafBuild(AL_new, K+L, ...)` 直接重建（参考行 = A 剖面的 a1
    参考，经 DP 列映射放置）。
-7. **v=0**：先做一次不含参考的 yama（A=K 行），再把 a1 参考行（A2）与
-   合并结果 AL_new 做第二次 yama（LB/RB 由 `mapping` 建立），
-   `mafBuild(K+L+1)`——参考行也参与精修。
+7. **v=0**：先做一次不含参考的 yama（A=K 行）得 AL_new（K+L 行）；再做
+   第二次 yama 精修参考行——A2 = a1 参考行（1 行）、B2 = AL_new（K+L 行）。
+   **两套 LB/RB 并行建立**：一套由 A2↔AL_new（经 `mapping(A→AL_new)`，见
+   `mz_preyama.c:276`），另一套由 B2 = a2 参考行↔AL_new（经
+   `mapping(B→AL_new)`，`mz_preyama.c:308`），随后 `LB=MIN(LB,LB2)`、
+   `RB=MAX(RB,RB2)` 合并（`M3 != N3` 则 fatal），最后
+   `yama(A2,1,M3,AL_new,K+L,...)` → `mafBuild(K+L+1)`。即 a1 的参考被对齐进
+   结果，a2 的参考只通过边界约束参与——这是 pgr 若想实现"参考也参与精修"可
+   借鉴的模式（见 §3.3）。
 
 `mafBuild`：从 (K+L)×M_new 列矩阵重建 MAF 块——每行按参考坐标重算
 start/size，`nc->size == 0`（全 gap 行）丢弃，`score = mafScoreRange`。

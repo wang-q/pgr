@@ -21,7 +21,8 @@ Dashing 2 快最多 4.3×、峰值内存 ~1 GB。
 
 **算法三步**：
 
-1. **FracMinHash 采样**：保留 `h(x) ≤ M/S` 的 canonical k-mer（默认
+1. **FracMinHash 采样**：保留 `h(x) < M/S`（严格小于，`M=u64::MAX`、
+   `threshold = u64::MAX/scaled`）的 canonical k-mer（默认
    k=21、S=1500）。对大小差异悬殊的集合仍能给出**可校正**的
    Jaccard / containment 估计（MinHash 对大小悬殊集合有偏；偏差性质与
    校正见 [[../design/hv.md]] §2.6），代价是采样集更大。
@@ -65,6 +66,22 @@ fast 模式再快 1.8–2.7×。
   只算上三角；输出按 ANI 降序、过滤阈值（默认 85.0）；
 * 文件格式：整批 `Vec<FileSketch>` 直接 bincode（无 magic/版本）。
 
+**核对补充（2026-08-11 源码逐行）**：
+
+* **死参数教训**：`-m sketch_method` 在 sketch 实际路径是死参数——
+  `extract_kmer_hash` 恒用 `t1ha2_atonce`，未读 `sketch_method`
+  （`Sketch::insert_kmer` 才读它，但实际走的不是那条路）；`-Q quant_scale`
+  解析后未参与任何计算（量化位宽由 `[min,max]` 决定，见上）；dist 侧的
+  `-m fracminhash` / `-k` / `-d` 同样不参与距离计算。
+* **dist 参数来自文件而非 CLI**：`dist()` 从加载的 `FileSketch[0]`
+  读取 `ksize` / `hv_d`，并 `assert_eq!` 校验 ref 与 query 一致——CLI 传的
+  `-k/-d` 在 dist 侧无效（只有 `-a ani_threshold` 生效）。
+* **对称模式判据**：`path_ref_sketch == path_query_sketch`（同一路径，
+  文件级判等）才启用上三角；否则 ref×query 全对。
+* **编码批次细节**：AVX2 版 `num_chunk = hv_d/64`、按 4 seeds 一批，
+  每 chunk 每 seed 一次 `next_u64`（64 位 → 64 维），逐 16 轮 × 4 维写入
+  `hv`；与标量逐位一致（`test_simd_hd_enc` 断言相等）。
+
 **代码侧风险（对 pgr 有参考意义）**：
 
 * **i16 值域**：每维值域 [−N, N]，N > 32767 溢出；论文评测为细菌规模
@@ -81,11 +98,60 @@ fast 模式再快 1.8–2.7×。
   HV 编码（`encode_hash_hd_avx2`）仍在 CPU 做；`-D gpu` 需 feature 门控，
   未启用时仅 `error!` 提示不崩溃。
 
+**算法映射与 pgr 借鉴（2026-08-11 源码核对）**：
+
+* **编码算法 ↔ pgr 稠密 bit 是同构实现**：HyperGen 的稠密 ±1 累加
+  （WyRng 逐 seed、4 seeds×64 位 AVX2、i16）与 pgr `hash_hv_bit`
+  （RapidRng、块主序、i32）是**同一算法的两种实现**；差异只在 RNG
+  （WyRng vs RapidRng 跳步）、累加器（i16 vs i32，pgr 无溢出风险）与
+  循环组织（HyperGen 4-seeds 批 vs pgr 块主序 ILP 更优）。**HyperGen
+  论文的准确度结果可视为对 pgr 稠密 bit 路径的外部背书**（同构算法）。
+* **采样方法 ↔ pgr 的 FracMinHash 已落地**：HyperGen 用 FracMinHash
+  （canonical k-mer 保留 `h < u64::MAX/scale`）——与 pgr `dist seq
+  --sampler frachash` / `dist frac` 同一算法（scale 默认 pgr 1000）。
+  注意：`dist hv` 只支持 minimizer / syncmer（见
+  `cmd_pgr/args.rs` 的 `sampler_arg`），不带 FracMinHash；FracMinHash
+  在 `dist frac` / `dist seq` 入口。HyperGen 的端到端验证（§1 的 ANI
+  结论）正是 pgr"数值 ANI 用 FracMinHash"建议的外部佐证。
+* **距离公式同源**：HyperGen `J = dot/(‖A‖²+‖B‖²−dot)`、
+  `ANI = 1+ln(2J/(1+J))/k` ↔ pgr `calc_distances`（card=‖H‖²/D、
+  inter=H_A·H_B/D、jaccard、mash）——稠密路径同公式、同 Mash/ANI 换算。
+  pgr 稀疏 `.hv` 用余弦 + n_kmer（`inter = cos·√(n1·n2)`），语义不同，
+  HyperGen 无稀疏路径。
+* **批量模型不同**：HyperGen 目录 → 一个 `Vec<FileSketch>` bincode 文件、
+  dist 加载 ref/query 两文件算全对；pgr `.hv` 是单文件两两比较。前者
+  更贴近"整库一个 sketch"的部署，后者更灵活。
+
+**对 pgr 可借鉴的工程点**：
+
+1. **无损量化 + bitpack（最有价值）**：HyperGen 把 i16 HV 压到覆盖
+   `[min,max]` 的最小位宽（6→16 bit）+ 偏移，再按 256 元素块
+   `BitPacker8x` 压位串（读取时解压）。pgr `.hv` 存原始 i32（32 bit/维）：
+   `pgi to-hv` 稀疏路径每维值域小（±s·碰撞数），量化收益明显；稠密
+   bit 值域 ±N 也可按位宽压。4 万 cohort 的存储端值得评估（对应
+   design/hv.md §5.2 已有此条，这里是其源码依据）。
+2. **预存 L2 范数**：HyperGen sketch 时算好 `hv_norm_2` 存盘，距离阶段
+   省一次 O(D) 范数；pgr FASTA 侧 `calc_distances` 每次现算，`.hv` 侧
+   已用文件头 `n_kmer` 等价物。可把范数写进 `.hv` 头，省比较前的范数。
+3. **对称模式上三角 + 排序/阈值输出**：HyperGen 对称只算上三角、按 ANI
+   降序、过滤阈值；pgr `dist hv` 全对输出、未做对称裁剪/排序。大规模
+   两两（4 万 cohort）对称裁剪省一半。
+4. **GEMM 搜索是"宣称 vs 实现"缺口**：论文宣称的搜索 GEMM 加速仓库未
+   实现（只留注释掉的 `compute_compressed_hv_ani`）；pgr 已把搜索推进
+   得更远（HNSW / clade 路由，design/hv.md 证据附录）——pgr 在这一点
+   已超越参考实现。
+5. **GPU 只加速采样**：HyperGen CUDA 只产 k-mer 哈希集合
+   （`cuda_kmer_t1ha2`/`cuda_kmer_bit_pack_mmhash`），HV 编码仍在 CPU——
+   采样是异构加速的优先层。pgr 无 GPU，但 pgr 采样哈希 rapidhash 已比
+   t1ha2 快 ~1.76×（design/hv.md §2.2），采样层本身已占优。
+6. **死参数教训**（见上"核对补充"）：写 CLI 应避免"声明了却未生效"的
+   参数；pgr 当前各参数均有实际语义，无此类死参数，保持即可。
+
 ## 3. 对照表（HyperGen vs pgr）
 
 | 维度 | HyperGen | pgr 现状 |
 |---|---|---|
-| 采样 | FracMinHash（S=1500，canonical k=21） | minimizer / closed syncmer（FASTA 侧）；`.pgi` unique k-mers（索引侧） |
+| 采样 | FracMinHash（S=1500，canonical k=21） | minimizer / closed syncmer（`dist hv` FASTA 侧）；FracMinHash（`dist frac` / `dist seq --sampler frachash`）；`.pgi` unique k-mers（索引侧） |
 | 编码 | 稠密 ±1 累加 i16（WyRng，4 seeds×64 bits SIMD） | 稠密 bit/i8 累加 i32（RapidRng，跳步块主序）；稀疏 ±1（v2） |
 | 维度 | 4096 | 4096 默认（`dist hv` / `pgi to-hv`） |
 | 距离 | Jaccard→ANI（预存 L2 范数 + 点积） | jaccard / containment / mash 多口径；稀疏时余弦→inter |

@@ -91,7 +91,9 @@ ISSoEn2、Tn7243 等真实 IS 序列，与 MG1655 已知内容吻合。
 每 batch 的搜索阶段（runSearchStages，rmblast 引擎）：
   1. TRF 阶段：识别 Simple Repeats（PERFECT 参数，见下）
   2. rmblast 阶段：对 custom/species 库做高复杂度搜索（runStage）
-  3. 若干后续 stage（SINE/retro/cut 等）
+  3. 若干后续 stage（SINE/retro/cut 等）——注意：这是 **物种库（-species）模式**才有的
+     多阶段（按类分库逐步搜索）；`-lib` 自定义库模式在 PERFECT/DIVERGED 两次 TRF 后
+     只有 `general_search_parameters`（stage 001）一个 rmblast stage（`RepeatMasker:3612-3656`）
   → 产出该 batch 的批注 *.cat
   ▼
 合并所有 batch 的 *.cat → $file.cat（带头部，见下）
@@ -102,29 +104,45 @@ ProcessRepeats（外部脚本）：读 .cat，做 final 处理（合并重叠、
 
 - **batch 分片**：`fragmentSize=60000`、`overlapLen=2000`（`RepeatMasker:629,638`，`-frag` 可改）。
   batch 间 2000 bp 重叠，结束后 `adjustFragmentPositions` 修正批注坐标。
-- **GC 相关矩阵**：搜索用 `NpGC.matrix`，GC 背景默认 43%，单序列 >2000 bp 或 `-gccalc`
-  时用 batch 实测平均 GC（`runStage` 内 `chooseMatrices`，上限 `max_matrix_gc`）。
+- **GC 相关矩阵**：搜索矩阵名实为 `{div}p{GC}g.matrix`（如 `20p43g.matrix`），`div` 来自
+  `searchParams->{matrix}` 的 `\d+` 前缀、`GC` 由 `chooseMatrices` 按实测 GC 分档
+  （35/37/39/…/51/53g，`RepeatMasker:4229-4266`）。GC 背景默认 43%，仅当
+  `-gccalc` 或"单序列 && 长度>2000 bp"时用 batch 实测平均 GC（`RepeatMasker:2855-2881`，
+  上限 `max_matrix_gc`）。默认 `general_search_parameters`（-lib 走这个 recipe）为
+  `minscore=225、minmatch=[8,9,11,13]、matrix=20p##g.matrix、gap_init=-30、bandwidth=14、
+  masklevel=90、filterContained=0`（`RepeatMasker:2122-2138`），可供 pgr 复刻时对齐默认阈值。
 
 ### TRF 两套参数（TRF.pm + runTRFStage）
 
 RepeatMasker 把"简单/低复杂度重复"交给 TRF 分两阶段：
 
-| 阶段 | 用途 | match/mismatch/delta | pm/pi | minscore | maxperiod | minCopyNumber |
+| 阶段(searchParams) | 用途 | match/mismatch/delta | pm/pi | minscore | maxperiod | minCopyNumber |
 |------|------|----------------------|-------|----------|-----------|---------------|
 | `PERFECT` | 年轻串联重复（young） | 2 / 7 / 7 | 80 / 10 | 50 | 10 | 4 |
-| `OLD` | 古老串联重复（old） | 2 / 3 / 5 | 75 / 20 | 33 | 7 | 5 |
+| `DIVERGED` | 古老串联重复（old） | 2 / 3 / 5 | 75 / 20 | 33 | 7 | 5 |
 
 `runTRFStage` 用 `$searchParams eq "PERFECT"` 区分两套（`RepeatMasker:2665-2698`）；
-`lambda`（0.41/0.32）与 `mu` 数组用于把 TRF 分数折算成与 blast 可比的打分。
-`pgr rept masker` 的 TRF 两阶段（young/old）即对应这两套参数。
+注意第二阶段实际传入的字符串是 **`"DIVERGED"`**（`RepeatMasker:3356,4086`），并非表里的
+"OLD"——那是用途描述，源码只在 `eq "PERFECT"` 处分支，其余一律走"古老串联重复"分支。
+两阶段编号/chooseClass：PERFECT → stage 251、chooseClass `"simple"`（`RepeatMasker:3602-3603`），
+DIVERGED → stage 252、chooseClass `"masking"`（`RepeatMasker:3362-3363`）。
+`lambda`（0.41/0.32）与 `mu` 数组用于把 TRF 原始分折算成与 blast 可比的 bitScore
+（`RepeatMasker:2679-2697`）。`pgr rept masker` 的 TRF 两阶段（young/old）即对应这两套参数。
+
+**TRF 结果的后处理链**（`runTRFStage`，`RepeatMasker:2729-2785`）：先过
+`copyNumber > minCopyNumber` 阈值，再用 crossmatch 的 `simple1.matrix` 对每个 hit 重打分
+（gapOpen=-30、gapExt=-15、xDrop=500），simple1.matrix 分阈值 20，再经 lambda/mu 折算
+bitScore；仅 PERFECT 阶段额外做 `maskLevelFilter(1)`（因它要 excision，不允许重叠，
+`RepeatMasker:2780-2785`）。这是 pgr 复刻 TRF 时可直接对齐的阈值链。
 
 ### rmblast 搜索与 outfmt
 
 - **outfmt**：`-outfmt="6 score perc_sub perc_query_gap perc_db_gap qseqid qstart
   qend qlen sstrand sseqid sstart send slen kdiv cpg_kdiv transi transv cpg_sites"`
-  （`NCBIBlastSearchEngine.pm:611-613`，18 列，2.13+ 的 kdiv/cpg 列在此确实被 RM 使用——
+  （`NCBIBlastSearchEngine.pm:611-613`，默认无 alignment 时为 18 列；带 `-a` 生成 alignment
+  时 611 行在末尾追加 `qseq sseq` 成 20 列）。2.13+ 的 kdiv/cpg 列在此确实被 RM 使用——
   但仅用于计算 divergence，`pgr rept` 的 `parse_tab_row` 只取 qseqid/qstart/qend 三列做
-  区间，无需这些列）。
+  区间，无需这些列。
 - **过滤链**（`runStage`，`RepeatMasker:2918-2952`）：
   1. `search`：调 rmblastn + makeblastdb（对自定义库 `processCustomLib` 先建库）；
   2. `filterContainedResults`（可选，滤掉被更长 hit 包含的）；
@@ -136,10 +154,14 @@ RepeatMasker 把"简单/低复杂度重复"交给 TRF 分两阶段：
 
 ### .cat 批注格式（供 ProcessRepeats）
 
-`$file.cat` 头部为若干 `##` 行（版本/引擎/库/总长/非 N 长等统计）+ `## RAW Annotations:`，
-之后按 batch 追加原始批注（每行一个 hit）。`ProcessRepeats` 把 raw 批注做合并/打分/分级，
-最终 `divergence` 由 hit 的 mismatch/gap 与 Kimura 2-parameter 模型折算（`filterResults` 处
-`modifyDivergence`）。
+`$file.cat` 头部为若干 `##` 行（`## RepeatMasker version …`、`## RM Library: …`、
+`## Total Sequences/Length/NonMask(排除>20bp N/X 段)/NonSub(排除所有非 ACGT 碱基)`，
+batch 有重叠时还有 `## Batch Overlap Boundaries`，`RepeatMasker:1228-1250`）+ 结束标记
+`## RAW Annotations:`，之后按 batch 追加原始批注（每行一个 hit）。`ProcessRepeats` 把 raw
+批注做合并/打分/分级（`parseCATFile`→`processSequence`，片段合并 `cycleReJoin`，各类别专一
+处理器 `preProcessLINE/preProcessDNATransp/preProcessLTR/scoreSINEPair/scoreLTRPair` 等），
+最终 `divergence` 在 `filterResults` 处折算为 `100 * pctDiverge / (100 - pctInsert)`
+（`RepeatMasker:4588-4595`），由 `-div` 阈值过滤。
 
 ### 对 pgr rept 的启示
 
@@ -147,6 +169,20 @@ RepeatMasker 把"简单/低复杂度重复"交给 TRF 分两阶段：
   分片/ProcessRepeats/GC 矩阵那套工程外壳；但"TRF young/old 两套参数 + minCopyNumber 阈值"
   与"rmblast 区间去重 + divergence 过滤链"的顺序值得对齐，保证与 RM 金标准可比。
 - `.cat` 的原始批注格式（按 hit 逐行）与 pgr 的 PAF/区间中间表示可以互相转换，便于对拍。
+- **rmblast 版本特性开关**（`NCBIBlastSearchEngine.pm:setPathToEngine`）：2.13+ 启用
+  `hasTabFormat`（18 列 outfmt）+ `hasQueryThreading`，2.14.1+ 追加 `hasDBSoftMasking`
+  （允许库侧软屏蔽）。`pgr rept masker` 若直接消费 rmblastn，应至少要求 2.13+ 的 tab
+  输出；2.14.1+ 的 DB soft masking 对处理低复杂度库有参考价值。
+- **ProcessRepeats 的"分裂片段合并 + 家族亲缘评分"是 pgr 若要对拍 RM 的 .out/.tbl/.gff
+  才需要的重头戏**：`cycleReJoin` 把被 batch/剪切拆碎的同一元素碎片按 (Score,PctSub,
+  PctDel,PctIns) 四元组重连，`preProcessLINE/preProcessDNATransp/preProcessLTR` 与
+  `scoreSINEPair/scoreLTRPair/scoreLINEPair` 做各类别的双端元件拼接判定，
+  `joinDNATransposonFragments` 处理 DNA 转座子断裂。仅做"区间去重"无法复现 RM 的 final
+  注释语义；若 pgr 只做 masker 层面（区间输出）则不需要，但做 `.out` 金标准对拍时需要。
+- **makeblastdb 建库在运行时只发生在 processCustomLib（-lib）与 createLib（库合成）两处**，
+  NCBI 引擎实际只调 rmblastn + makeblastdb（`RepeatMasker:6549,7332`），其余四个二进制
+  （dustmasker/blastdbcmd/blastdb_aliastool/blastn）仅存于 configure 校验名单
+  （`RepeatMaskerConfig.pm:119-124` 的 `expected_binaries`），pgr 复刻引擎路径时无需理会。
 
 ## CentOS 7（glibc 2.17）部署兼容性（2026-08-07）
 

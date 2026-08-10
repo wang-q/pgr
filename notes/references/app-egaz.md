@@ -21,7 +21,7 @@
 
 | 类别 | 命令 | 功能 |
 |---|---|---|
-| 序列准备 | `prepseq` | faops filter(-N, 简化名, 可选 -a min) → split-name/about → chr.sizes → faToTwoBit → 可选 RepeatMasker → chr.fasta.fai（faops filter -U + samtools faidx）；`--gi` 用 perl 正则去 GI 号 |
+| 序列准备 | `prepseq` | faops filter(-N, 简化名, 可选 -a min) → split-name/about → 可选 RepeatMasker → chr.sizes → faToTwoBit → chr.fasta.fai（faops filter -U + samtools faidx）；`--gi` 用 perl 正则去 GI 号 |
 | | `partition` | 按大小分块（默认 `--chunk 10010000 --overlap 10000`，输出 `infile[start,end]` 1-based 坐标） |
 | | `maskfasta` | soft/hard masking（输入 fasta + runlist.yml，`--hard` 变 N） |
 | | `repeatmasker` | RepeatMasker 包装（--species Fungi 等） |
@@ -39,8 +39,8 @@
 ### 3.1 两两比对（LASTZ + UCSC）
 
 ```
-prepseq：faops filter -N -s（去 N、简化名）→ split-name/about → chr.sizes → chr.2bit
-  → 可选 RepeatMasker（--species Fungi）
+prepseq：faops filter -N -s（去 N、简化名）→ split-name/about
+  → 可选 RepeatMasker（--species Fungi）→ chr.sizes → chr.2bit → chr.fasta.fai
 lastz --set set01 -C 0：全基因组对 → [t]vs[q].N.lav
 lpcnam：LAV → PSL → axtChain(loose/1000) → chainAntiRepeat → chainMergeSort
   → chainPreNet → chainNet → netSyntenic → netChainSubset → chainStitchId
@@ -78,7 +78,7 @@ lpcnam（chain/net）95.9%、lpcnam --syn 94.9%、partition 95.9%。
 
 | egaz | pgr 对应 | 状态 |
 |---|---|---|
-| `lastz`（set01..07、-C 0、--isself） | `align lastz`（同套预设、`--self`） | ✅ 完整覆盖 |
+| `lastz`（set01..10 预设、均 C=2；doc 流程 `-C 0`；`--isself`/`--paired`/`--tp`/`--qp`） | `align lastz`（仅预设 set01..07 且硬编码 C=0；`--self`；Cactus 风格） | ◐ 核心覆盖，参数有差异（见 §5.1） |
 | `lpcnam`（UCSC 14 个 kent 命令链） | `pl chainnet`（psl→chain→net→axt→maf，`--syn`） | ✅ 字节级一致（verify-ucsc-pipeline.sh，pgr 共复现 16 个含 faToTwoBit/lavToPsl） |
 | `lav2psl` | `lav to-psl` | ✅ |
 | `lav2axt` / `normalize` | 无直接命令；流程可 lav→psl→chainnet→axt 替代 | ◐ 可组装 |
@@ -114,6 +114,27 @@ lpcnam（chain/net）95.9%、lpcnam --syn 94.9%、partition 95.9%。
 - `partition` 大基因组分块（`fa window` 参数映射）；
 - `lav normalize` 若确需，可评估移植（当前 lastz 输出无需归一化也能走
   `lav to-psl`）。
+
+### 5.1 `lastz` 包装差异与可借鉴点
+
+egaz 的 `lastz` 与 pgr `align lastz` 都是 lastz→LAV 的薄包装，但参数面并不完全对齐：
+
+- **预设集**：egaz `parameters.yml` 有 set01..set10（10 套，全部 `C=2`，即 lastz 内置链化）；
+  pgr 预设仅移植 set01..set07 且硬编码 `C=0`（关闭内置链化，等价 egaz doc 流程的 `-C 0`
+  覆盖，配合 kent chain/net）。set08..set10 是远缘物种的 `Q=distant` 变体，pgr 未移植，可补。
+- **`--paired`**：egaz 用 `String::Similarity` 按文件名相似度为每个 target 挑最相近的一个
+  query，做一对一（近缘菌株 chr 一一对应）比对；pgr 无此选项，只能全两两笛卡尔积。
+- **`--tp/--qp` 分块 + 自动 normalize**：egaz 在 target/query 被 `partition` 分块后，自动对每个
+  LAV 调 `normalize`（以 `chr.sizes` 的 tlen/qlen 重映射 a/b/e/l 坐标，移植自 kentUtils
+  blastz-normalizeLav），再喂 `lav2psl`。pgr `align lastz` 不触发此步；分块比对需自行
+  `fa window` 分块并按块重映射坐标。
+- **多序列文件**：egaz 静默取 target 文件第一条序列（其余丢弃）；pgr 严格要求单序列文件
+  （LAV 与 lastz `[multiple]` 不兼容），多 contig 直接报错——更安全。
+- **Cactus 风格**：pgr 额外带 `--querydepth=keep,nowarn:N`、`[nameparse=darkspace]`、
+  `--markend`、`--ambiguous=iupac`，面向 Cactus RepeatMasking 工作流，是 egaz 没有的。
+
+借鉴点：若要复现 Scer-self / 旁系同源场景，`--paired`（相似度挑对）可作为 `align lastz`
+的可选模式；分块 + normalize 目前由 `fa window` 分块 + 坐标重映射手工替代。
 
 不覆盖：blast 系（NCBI 外部工具）、raxml（phylogeny 已迁 necom）。
 若需复现，建议以 `doc/Scer.md` 的 S288c vs RM11_1a 为样板，用 pgr 命令链
