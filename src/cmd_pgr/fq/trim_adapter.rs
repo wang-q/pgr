@@ -25,6 +25,8 @@ Notes:
 * Input is one interleaved FASTQ or two files (R1, R2)
 * --parallel controls the worker pool (default: logical CPU count); output
   order is preserved regardless of thread count
+* --stats writes per-reference match statistics in the bbduk `stats=`
+  tab-separated format
 * Supports both plain text and gzipped (.gz) files
 
 Examples:
@@ -143,6 +145,12 @@ Examples:
                 .default_value("auto")
                 .help("Worker threads (default: logical CPU count)"),
         )
+        .arg(
+            Arg::new("stats")
+                .long("stats")
+                .num_args(1)
+                .help("Write per-reference match statistics (bbduk stats=)"),
+        )
 }
 
 /// Execute the trim-adapter command.
@@ -176,6 +184,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         ref_file: ref_file.clone(),
         quality_base: 33,
         max_bad_kmers: 0,
+        stats: args.get_one::<String>("stats").cloned(),
     };
     if !(2..=31).contains(&opts.k) {
         anyhow::bail!("--k must be in 2..=31, got {}", opts.k);

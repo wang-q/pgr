@@ -214,6 +214,8 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
 *   `--no-toss-broken-reads`: Keep surviving mates of discarded reads.
 *   `-p, --parallel <int|auto>`: Worker threads (default: logical CPU count);
     output order is preserved for any thread count.
+*   `--stats <file>`: Write per-reference match statistics in the bbduk
+    `stats=` format (tab-separated, `#Matched`/`#Name` header lines).
 
 ### Examples
 

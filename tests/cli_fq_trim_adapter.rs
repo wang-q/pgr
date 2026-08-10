@@ -87,6 +87,93 @@ fn command_fq_trim_adapter_filter_matches_bbtools_filter_golden() {
 }
 
 #[test]
+fn command_fq_trim_adapter_stats_match_bbtools() {
+    // --stats writes the bbduk `stats=` 3-column format; values verified
+    // byte-for-byte against BBTools 39.38 on the same input (the #File line
+    // carries the input path, so it is reconstructed here).
+    let out_dir = tempfile::tempdir().unwrap();
+    let stats = out_dir.path().join("trim.stats.txt");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            "tests/bbtools/Lambda/golden/clumpify.fq.gz",
+            "--ref",
+            "tests/bbtools/Lambda/illumina_adapters.fa",
+            "--stats",
+            stats.to_str().unwrap(),
+            "-o",
+            out_dir.path().join("out.fq").to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let expected = concat!(
+        "#File\ttests/bbtools/Lambda/golden/clumpify.fq.gz\n",
+        "#Total\t40000\n",
+        "#Matched\t767\t1.91750%\n",
+        "#Name\tReads\tReadsPct\n",
+        "Reverse_adapter\t382\t0.95500%\n",
+        "TruSeq_Universal_Adapter\t362\t0.90500%\n",
+        "Nextera_LMP_Read2_External_Adapter\t5\t0.01250%\n",
+        "PCR_Primers\t3\t0.00750%\n",
+        "PhiX_read2_adapter\t3\t0.00750%\n",
+        "pcr_dimer\t3\t0.00750%\n",
+        "Bisulfite_R1\t2\t0.00500%\n",
+        "I5_Adapter_Nextera\t2\t0.00500%\n",
+        "I5_Primer_Nextera_XT_and_Nextera_Enrichment_[N/S/E]501\t2\t0.00500%\n",
+        "I7_Nextera_Transposase_2\t1\t0.00250%\n",
+        "RNA_PCR_Primer_(RP1)_part_#_15013198\t1\t0.00250%\n",
+        "TruSeq_Adapter_Index_1_6\t1\t0.00250%\n",
+    );
+    assert_eq!(std::fs::read_to_string(&stats).unwrap(), expected);
+}
+
+#[test]
+fn command_fq_trim_adapter_filter_stats_match_bbtools() {
+    // Filter mode stats: no adapter kmers survive at k=27, so only headers.
+    let out_dir = tempfile::tempdir().unwrap();
+    let stats = out_dir.path().join("filter.stats.txt");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            "tests/bbtools/Lambda/golden/trim.fq.gz",
+            "--ref",
+            "tests/bbtools/Lambda/illumina_adapters.fa",
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--no-qtrim",
+            "--k",
+            "27",
+            "--mink",
+            "0",
+            "--minlen",
+            "0",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "--stats",
+            stats.to_str().unwrap(),
+            "-o",
+            out_dir.path().join("out.fq").to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let expected = concat!(
+        "#File\ttests/bbtools/Lambda/golden/trim.fq.gz\n",
+        "#Total\t36384\n",
+        "#Matched\t0\t0.00000%\n",
+        "#Name\tReads\tReadsPct\n",
+    );
+    assert_eq!(std::fs::read_to_string(&stats).unwrap(), expected);
+}
+
+#[test]
 fn command_fq_trim_adapter_removes_adapter_and_keeps_clean_read() {
     // A read whose 3' end is a known adapter is trimmed; a clean read is
     // untouched except the ftm multiple-of-5 normalization.

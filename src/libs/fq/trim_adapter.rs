@@ -9,8 +9,9 @@
 use crate::libs::fmt::fq::write_fq;
 use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use anyhow::{Context, Result};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Bits per base (DNA).
@@ -50,6 +51,34 @@ pub struct AdapterTrimOptions {
     /// Discard reads with more than this many matching k-mers (filter mode;
     /// used when `ktrim_right` is false).
     pub max_bad_kmers: usize,
+    /// Optional path for per-reference match statistics (`bbduk stats=`).
+    pub stats: Option<String>,
+}
+
+/// Thread-safe per-scaffold matched-read counters (BBDuk
+/// `scaffoldReadCounts`/`scaffoldBaseCounts`); index 0 is the dummy entry.
+struct MatchStats {
+    names: Vec<String>,
+    reads: Vec<AtomicU64>,
+    bases: Vec<AtomicU64>,
+    total_reads: AtomicU64,
+}
+
+impl MatchStats {
+    fn new(names: Vec<String>) -> Self {
+        let n = names.len();
+        Self {
+            names,
+            reads: (0..n).map(|_| AtomicU64::new(0)).collect(),
+            bases: (0..n).map(|_| AtomicU64::new(0)).collect(),
+            total_reads: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, id: u32, read_len: usize) {
+        self.reads[id as usize].fetch_add(1, Ordering::Relaxed);
+        self.bases[id as usize].fetch_add(read_len as u64, Ordering::Relaxed);
+    }
 }
 
 /// Precomputed bit masks for a k-mer size.
@@ -174,29 +203,44 @@ fn to_value(kmer: i64, rkmer: i64, length_mask: i64) -> i64 {
     (kmer.max(rkmer)) | length_mask
 }
 
-/// Builds the reference k-mer set (full k-mers + short end k-mers + hdist
-/// single-substitution variants), matching BBDuk's LoadThread.
-fn build_table(ref_file: &str, opts: &AdapterTrimOptions) -> Result<HashSet<i64>> {
+/// Builds the reference k-mer map (full k-mers + short end k-mers + hdist
+/// single-substitution variants), matching BBDuk's LoadThread. Each key maps
+/// to the first scaffold (in file order) that contributed it, like
+/// `map.setIfNotPresent`; `names[0]` is the dummy entry.
+fn build_table(
+    ref_file: &str,
+    opts: &AdapterTrimOptions,
+) -> Result<(HashMap<i64, u32>, Vec<String>)> {
     let mut reader = SeqReader::new(ref_file)
         .with_context(|| format!("Failed to open reader for {}", ref_file))?;
     let masks = Masks::new(opts.k);
     let rc = rcomp_table();
-    let mut table = HashSet::new();
+    let mut table = HashMap::new();
+    let mut names = vec![String::new()];
     let mut rec = SeqRecord::new();
     while reader.read_record(&mut rec)? {
-        add_ref_sequence(rec.sequence(), opts, &masks, &rc, &mut table);
+        let id = names.len() as u32;
+        let comment = rec.comment();
+        let name = if comment.is_empty() {
+            rec.name().to_string()
+        } else {
+            format!("{} {}", rec.name(), comment)
+        };
+        names.push(name);
+        add_ref_sequence(rec.sequence(), id, opts, &masks, &rc, &mut table);
     }
-    Ok(table)
+    Ok((table, names))
 }
 
 /// Stores all k-mers (and variants) of one reference sequence.
 #[allow(clippy::too_many_arguments)]
 fn add_ref_sequence(
     seq: &[u8],
+    id: u32,
     opts: &AdapterTrimOptions,
     masks: &Masks,
     rc: &[u8; 256],
-    table: &mut HashSet<i64>,
+    table: &mut HashMap<i64, u32>,
 ) {
     if seq.len() < opts.k {
         return;
@@ -222,13 +266,13 @@ fn add_ref_sequence(
             } else {
                 symbol_to_number(seq[i + 1])
             };
-            add_kmer(kmer, rkmer, k, extra_base, opts.hdist, masks, rc, table);
+            add_kmer(kmer, rkmer, k, extra_base, id, opts.hdist, masks, rc, table);
             if opts.mink > 0 && opts.mink < k {
                 if i == k - 1 {
-                    add_right_shift(kmer, rkmer, opts, masks, rc, table);
+                    add_right_shift(kmer, rkmer, id, opts, masks, rc, table);
                 }
                 if i == seq.len() - 1 {
-                    add_left_shift(kmer, rkmer, extra_base, opts, masks, rc, table);
+                    add_left_shift(kmer, rkmer, extra_base, id, opts, masks, rc, table);
                 }
             }
         }
@@ -242,20 +286,21 @@ fn add_kmer(
     rkmer: i64,
     len: usize,
     extra_base: i64,
+    id: u32,
     dist: usize,
     masks: &Masks,
     rc: &[u8; 256],
-    table: &mut HashSet<i64>,
+    table: &mut HashMap<i64, u32>,
 ) {
     let key = to_value(kmer, rkmer, masks.length_mask[len]);
-    table.insert(key);
+    table.entry(key).or_insert(id);
     if dist > 0 {
         for j in 0..4 {
             for i in 0..len {
                 let temp = (kmer & masks.clear_mask[i]) | masks.set_mask[i][j];
                 if temp != kmer {
                     let rtemp = rcomp(temp, len, rc);
-                    add_kmer(temp, rtemp, len, extra_base, dist - 1, masks, rc, table);
+                    add_kmer(temp, rtemp, len, extra_base, id, dist - 1, masks, rc, table);
                 }
             }
         }
@@ -264,70 +309,85 @@ fn add_kmer(
 }
 
 /// Short k-mers (mink..k) of the reference prefix (addToMapRightShift).
+#[allow(clippy::too_many_arguments)]
 fn add_right_shift(
     mut kmer: i64,
     mut rkmer: i64,
+    id: u32,
     opts: &AdapterTrimOptions,
     masks: &Masks,
     rc: &[u8; 256],
-    table: &mut HashSet<i64>,
+    table: &mut HashMap<i64, u32>,
 ) {
     for i in (opts.mink..opts.k).rev() {
         let extra_base = kmer & 3;
         kmer >>= BPB;
         rkmer &= masks.right_mask[i];
-        add_kmer(kmer, rkmer, i, extra_base, opts.hdist, masks, rc, table);
+        add_kmer(kmer, rkmer, i, extra_base, id, opts.hdist, masks, rc, table);
     }
 }
 
 /// Short k-mers (mink..k) of the reference suffix (addToMapLeftShift).
+#[allow(clippy::too_many_arguments)]
 fn add_left_shift(
     mut kmer: i64,
     mut rkmer: i64,
     extra_base: i64,
+    id: u32,
     opts: &AdapterTrimOptions,
     masks: &Masks,
     rc: &[u8; 256],
-    table: &mut HashSet<i64>,
+    table: &mut HashMap<i64, u32>,
 ) {
     for i in (opts.mink..opts.k).rev() {
         kmer &= masks.right_mask[i];
         rkmer >>= BPB;
-        add_kmer(kmer, rkmer, i, extra_base, opts.hdist, masks, rc, table);
+        add_kmer(kmer, rkmer, i, extra_base, id, opts.hdist, masks, rc, table);
     }
 }
 
-/// Exact table lookup (bbduk query hamming distance is 0 in this pipeline).
-fn get_value(kmer: i64, rkmer: i64, length_mask: i64, table: &HashSet<i64>) -> bool {
+/// Exact table lookup; returns the contributing scaffold id.
+fn get_value(kmer: i64, rkmer: i64, length_mask: i64, table: &HashMap<i64, u32>) -> Option<u32> {
     let key = to_value(kmer, rkmer, length_mask);
-    table.contains(&key)
+    table.get(&key).copied()
 }
 
 /// Counts matching k-mers of a read (BBDuk countSetKmers); stops early once
-/// the count exceeds `max_bad_kmers`.
-fn count_set_kmers(seq: &[u8], opts: &AdapterTrimOptions, table: &HashSet<i64>) -> usize {
+/// the count exceeds `max_bad_kmers`. Returns the count and the scaffold id
+/// of the `max_bad_kmers`+1-th hit (the one BBDuk records in stats).
+fn count_set_kmers(
+    seq: &[u8],
+    opts: &AdapterTrimOptions,
+    table: &HashMap<i64, u32>,
+) -> (usize, Option<u32>) {
     if seq.len() < opts.k || table.is_empty() {
-        return 0;
+        return (0, None);
     }
     let masks = Masks::new(opts.k);
     let mut kmer = 0i64;
     let mut rkmer = 0i64;
     let mut len = 0usize;
     let mut found = 0usize;
+    let mut recorded = None;
     for &b in seq {
         let x = symbol_to_number0(b);
         let x2 = symbol_to_complement_number0(b);
         kmer = ((kmer << BPB) | x) & masks.mask;
         rkmer = ((rkmer >> BPB) | (x2 << masks.shift2)) & masks.mask;
         len += 1; // forbidNs=false with hdist>0
-        if len >= opts.k && get_value(kmer, rkmer, masks.kmask, table) {
-            found += 1;
-            if found > opts.max_bad_kmers {
-                return found;
+        if len >= opts.k {
+            if let Some(id) = get_value(kmer, rkmer, masks.kmask, table) {
+                if found == opts.max_bad_kmers {
+                    recorded = Some(id);
+                }
+                found += 1;
+                if found > opts.max_bad_kmers {
+                    return (found, recorded);
+                }
             }
         }
     }
-    found
+    (found, recorded)
 }
 
 /// A read with its buffers, mimicking `stream.Read` trimming.
@@ -373,10 +433,14 @@ impl ReadBuf {
 }
 
 /// k-mer right trimming (bbduk `ktrim=r`). Returns bases trimmed.
-fn ktrim(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashSet<i64>) -> usize {
+fn ktrim(
+    read: &mut ReadBuf,
+    opts: &AdapterTrimOptions,
+    table: &HashMap<i64, u32>,
+) -> (usize, Option<u32>) {
     let min_len = 1.max(opts.k.min(opts.mink));
     if read.len() < min_len || table.is_empty() {
-        return 0;
+        return (0, None);
     }
     let masks = Masks::new(opts.k);
     let bases = read.seq.clone();
@@ -385,15 +449,21 @@ fn ktrim(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashSet<i64>) ->
     let mut len = 0usize;
     let mut min_loc: i64 = i64::MAX;
     let mut found = 0usize;
+    let mut id0 = None;
     for (i, &b) in bases.iter().enumerate() {
         let x = symbol_to_number0(b);
         let x2 = symbol_to_complement_number0(b);
         kmer = ((kmer << BPB) | x) & masks.mask;
         rkmer = ((rkmer >> BPB) | (x2 << masks.shift2)) & masks.mask;
         len += 1; // forbidNs=false with hdist>0
-        if len >= opts.k && get_value(kmer, rkmer, masks.kmask, table) {
-            min_loc = min_loc.min(i as i64 - opts.k as i64 + 1);
-            found += 1;
+        if len >= opts.k {
+            if let Some(id) = get_value(kmer, rkmer, masks.kmask, table) {
+                if id0.is_none() {
+                    id0 = Some(id);
+                }
+                min_loc = min_loc.min(i as i64 - opts.k as i64 + 1);
+                found += 1;
+            }
         }
     }
     if found == 0 && opts.mink > 0 && opts.mink < opts.k {
@@ -411,15 +481,20 @@ fn ktrim(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashSet<i64>) ->
             kmer |= x << (BPB * len as u32);
             rkmer = ((rkmer << BPB) | x2) & masks.mask;
             len += 1;
-            if len >= opts.mink && get_value(kmer, rkmer, masks.length_mask[len], table) {
-                min_loc = i;
-                found += 1;
+            if len >= opts.mink {
+                if let Some(id) = get_value(kmer, rkmer, masks.length_mask[len], table) {
+                    if id0.is_none() {
+                        id0 = Some(id);
+                    }
+                    min_loc = i;
+                    found += 1;
+                }
             }
             i -= 1;
         }
     }
     if found == 0 {
-        return 0;
+        return (0, None);
     }
     let before = read.len();
     if opts.ktrim_right {
@@ -427,7 +502,7 @@ fn ktrim(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashSet<i64>) ->
         let right = (min_loc - 1).max(0) as usize;
         read.trim_to_position(0, right, 1);
     }
-    before - read.len()
+    (before - read.len(), id0)
 }
 
 /// BBMergeOverlapper.mateByOverlapRatioJava (no-quality path, strict mode).
@@ -682,9 +757,16 @@ fn process_pair(
     r1: &mut ReadBuf,
     mut r2: Option<&mut ReadBuf>,
     opts: &AdapterTrimOptions,
-    table: &HashSet<i64>,
+    table: &HashMap<i64, u32>,
     prob: &[f32; 128],
+    stats: Option<&MatchStats>,
 ) {
+    if let Some(s) = stats {
+        s.total_reads.fetch_add(1, Ordering::Relaxed);
+        if r2.is_some() {
+            s.total_reads.fetch_add(1, Ordering::Relaxed);
+        }
+    }
     let minlen = opts.minlen;
     // forceTrimModulo (ftm) before k-mer trimming.
     if opts.ftm > 0 {
@@ -707,14 +789,24 @@ fn process_pair(
     let mut xsum = 0usize;
     if opts.ktrim_right {
         if !r1.discarded {
-            xsum += ktrim(r1, opts, table);
+            let len_before = r1.len();
+            let (x, id0) = ktrim(r1, opts, table);
+            xsum += x;
+            if let (Some(s), Some(id)) = (stats, id0) {
+                s.record(id, len_before);
+            }
             if r1.len() < minlen {
                 r1.discarded = true;
             }
         }
         if let Some(r2) = r2.as_deref_mut() {
             if !r2.discarded {
-                xsum += ktrim(r2, opts, table);
+                let len_before = r2.len();
+                let (x, id0) = ktrim(r2, opts, table);
+                xsum += x;
+                if let (Some(s), Some(id)) = (stats, id0) {
+                    s.record(id, len_before);
+                }
                 if r2.len() < minlen {
                     r2.discarded = true;
                 }
@@ -734,12 +826,24 @@ fn process_pair(
         }
     } else if !table.is_empty() {
         // Filter mode: discard reads with more than max_bad_kmers matches.
-        if !r1.discarded && count_set_kmers(&r1.seq, opts, table) > opts.max_bad_kmers {
-            r1.discarded = true;
+        if !r1.discarded {
+            let (c, id0) = count_set_kmers(&r1.seq, opts, table);
+            if let (Some(s), Some(id)) = (stats, id0) {
+                s.record(id, r1.seq.len());
+            }
+            if c > opts.max_bad_kmers {
+                r1.discarded = true;
+            }
         }
         if let Some(r2) = r2.as_deref_mut() {
-            if !r2.discarded && count_set_kmers(&r2.seq, opts, table) > opts.max_bad_kmers {
-                r2.discarded = true;
+            if !r2.discarded {
+                let (c, id0) = count_set_kmers(&r2.seq, opts, table);
+                if let (Some(s), Some(id)) = (stats, id0) {
+                    s.record(id, r2.seq.len());
+                }
+                if c > opts.max_bad_kmers {
+                    r2.discarded = true;
+                }
             }
         }
     }
@@ -837,17 +941,21 @@ pub fn trim_adapter<W: Write>(
     opts: &AdapterTrimOptions,
     parallel: usize,
 ) -> Result<()> {
-    let table = Arc::new(build_table(&opts.ref_file, opts)?);
+    let (table, names) = build_table(&opts.ref_file, opts)?;
+    let table = Arc::new(table);
+    let stats = Arc::new(MatchStats::new(names));
     let prob = prob_error();
     let opts = Arc::new(opts.clone());
     let quality_base = opts.quality_base;
     let pairs = crate::libs::fq::pairs::PairReader::new(infiles)?;
+    let opts_c = opts.clone();
+    let stats_c = stats.clone();
     crate::libs::par::ordered_map(
         pairs,
         parallel,
         move |pair| {
             let pair = pair?;
-            Ok(process_one(&pair, &opts, &table, &prob))
+            Ok(process_one(&pair, &opts_c, &table, &stats_c, &prob))
         },
         |t| {
             let Some(t) = t else {
@@ -859,7 +967,11 @@ pub fn trim_adapter<W: Write>(
             }
             Ok(())
         },
-    )
+    )?;
+    if let Some(path) = &opts.stats {
+        write_stats(path, infiles, &stats)?;
+    }
+    Ok(())
 }
 
 /// A surviving pair with trimmed sequence/quality buffers.
@@ -883,13 +995,14 @@ struct TrimmedPair {
 fn process_one(
     pair: &(SeqRecord, Option<SeqRecord>),
     opts: &AdapterTrimOptions,
-    table: &HashSet<i64>,
+    table: &HashMap<i64, u32>,
+    stats: &MatchStats,
     prob: &[f32; 128],
 ) -> Option<TrimmedPair> {
     let (rec1, rec2) = pair;
     let mut r1 = make_read_buf(rec1, opts.quality_base);
     let mut r2 = rec2.as_ref().map(|r| make_read_buf(r, opts.quality_base));
-    process_pair(&mut r1, r2.as_mut(), opts, table, prob);
+    process_pair(&mut r1, r2.as_mut(), opts, table, prob, Some(stats));
     if r1.discarded {
         return None;
     }
@@ -913,6 +1026,37 @@ fn process_one(
             }
         }),
     })
+}
+
+/// Writes bbduk-compatible 3-column `stats=` text.
+fn write_stats(path: &str, infiles: &[String], stats: &MatchStats) -> Result<()> {
+    let reads_in = stats.total_reads.load(Ordering::Relaxed);
+    let rmult = if reads_in > 0 {
+        100.0 / reads_in as f64
+    } else {
+        1.0
+    };
+    let mut rows: Vec<(String, u64, u64)> = Vec::new();
+    let mut rsum = 0u64;
+    for id in 1..stats.names.len() {
+        let reads = stats.reads[id].load(Ordering::Relaxed);
+        let bases = stats.bases[id].load(Ordering::Relaxed);
+        if reads > 0 {
+            rsum += reads;
+            rows.push((stats.names[id].clone(), reads, bases));
+        }
+    }
+    // StringCount.compareTo: bases desc, reads desc, name asc.
+    rows.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
+    let mut out = format!("#File\t{}\n", infiles.join("\t"));
+    out.push_str(&format!("#Total\t{reads_in}\n"));
+    out.push_str(&format!("#Matched\t{rsum}\t{:.5}%\n", rmult * rsum as f64));
+    out.push_str("#Name\tReads\tReadsPct\n");
+    for (name, reads, _) in rows {
+        out.push_str(&format!("{name}\t{reads}\t{:.5}%\n", rmult * reads as f64));
+    }
+    std::fs::write(path, out).with_context(|| format!("Failed to write stats file {path}"))?;
+    Ok(())
 }
 
 /// Writes a trimmed FASTQ record with the original header.

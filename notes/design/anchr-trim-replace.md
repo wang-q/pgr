@@ -62,7 +62,7 @@
 | M0 golden | 完成 | `tests/bbtools/Lambda/golden/`（39.38 + ordered=t + seed=1，全链确定性已验证） |
 | M1 `fq clump` | **完成，逐字节一致** | `cli_fq_clump.rs` 对照 `clumpify.fq.gz`；dedupe 模式（`--dedupe --dupesubs 0`）已实现，与 threads=1 golden 一次性逐字节验证（golden 未入库，语义由合成测试覆盖，见 §4.4 M1 注） |
 | M2 `fq split`/`fq sample` | **完成，逐字节一致** | `cli_fq_split.rs`/`cli_fq_sample.rs` 对照 repair/reformat golden |
-| M3-M5 `fq trim-adapter` | **完成，逐字节一致** | `cli_fq_trim_adapter.rs` 对照 trim/filter golden |
+| M3-M5 `fq trim-adapter` | **完成，逐字节一致** | `cli_fq_trim_adapter.rs` 对照 trim/filter golden；`--stats` 输出 bbduk `stats=` 3 列格式，与 39.38 逐字节一致（#File 路径行除外，见 §6.5） |
 | M7 kmercountexact | **完成，逐字节一致** | `pgr kmer hist --khist-text/--peaks`（logScale + CallPeaks 全移植）对照 R.khist.txt/R.peaks.txt |
 | M6 bbnorm cutoff | **完成（精确表语义）** | `pgr fq norm`（精确 canonical 表 + bbnorm per-read 判定逻辑：truedepth/depthAL 分位数 + toss 条件）；与 bbnorm bits=16 近似计数在 min=3 边界差 ~21 对（39846 vs 39888），属设计稿已声明的"先精确 KmerTable"路线 |
 | M8 集成 | **完成（原语路线）** | 只提供可组合原语（clump/split/sample/trim-adapter/fq norm/hist），**不内置 pl trim 流水线**——编排属于 anchr，pgr 不做"别人的活"（2026-08-10 修正，`pl trim` 已移除）；anchr 模板把 `bbduk.sh` 等调用换成 pgr 命令、用管道串联避免中间 gz |
@@ -272,7 +272,8 @@ bucket 强制外部桶路径；指定 `--buckets` 等价于隐含 bucket 模式�
   输出**解压后逐字节一致**（name、顺序、序列、质量、行宽/换行等格式细节；
   gz 压缩字节不要求一致；顺序由 M1 clumpify 保证）；
 - `khist.txt`/`peaks.txt` 逐字节一致（已达成）；`trim.stats.txt`/
-  `filter.stats.txt`/cardinality 统计文本未复刻（下游 anchr 未解析，§6.5）；
+  `filter.stats.txt` 统计文本已复刻（`pgr fq trim-adapter --stats`，3 列
+  格式与 39.38 逐字节一致，见 §6.5）；
 - 端到端墙钟时间显著下降（8 个 JVM 进程 → Rust 单进程流式）；
 - 中间文件可选（管道模式不落盘）。
 
@@ -288,8 +289,15 @@ bucket 强制外部桶路径；指定 `--buckets` 等价于隐含 bucket 模式�
 3. ~~接头修剪语义~~ → 已定：完全复刻（tbo/tpe/hdist 全部移植，逐字节一致）。
 4. 中间文件策略：流水线管道串联（pgr 命令流式、不落 gz）是否可接受？
    （2026-08-10 已定：接受管道串联，不内置 `pl trim`。）
-5. 统计文本：`trim.stats.txt`/`filter.stats.txt`/cardinality 是否需要与
-   BBTools 逐字节一致（下游 anchr 是否解析）？
+5. 统计文本（2026-08-10 已实现）：`pgr fq trim-adapter --stats <file>` 输出
+   bbduk `stats=` 3 列格式（`#File`/`#Total`/`#Matched`/`#Name` + 每参考序列
+   行），排序 = StringCount（bases 降序、reads 降序、name 升序），每 read
+   记首个命中 kmer 的 scaffold（ktrim 的 `id0` / countSetKmers 的
+   maxBadKmers 命中），bases = 命中时 read 全长；Lambda trim/filter 两模式
+   与 39.38 逐字节一致（`#File` 行是输入路径，天然路径相关）。**注意**：
+   anchr `2_trim.tera.sh` 确实解析 `trim.stats.txt`/`filter.stats.txt`
+   （保留 `#Matched`/`#Name` 行 + 第 3 列 >0.1/0.01 的数据行），早期
+   "下游未解析"的判断有误——这也是本项必须做字节级一致的原因。
 6. ~~golden 存放~~ → 已定：复制进 `tests/bbtools/Lambda/`（含 gz 化的
    golden 与 README）。
 
