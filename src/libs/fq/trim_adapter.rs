@@ -747,7 +747,16 @@ fn qtrim_right(read: &mut ReadBuf, trimq: u8, prob: &[f32; 128]) -> usize {
     };
     let before = read.len();
     if right > 0 {
-        read.trim_to_position(0, read.len().saturating_sub(right + 1), 1);
+        // TrimRead.trimByAmount(r, 0, right, 1, false): when the requested
+        // trim would leave fewer than 1 base, clamp to len-1 (or 1 for
+        // len=1, which empties the read).
+        let len = read.len();
+        let right_trim = if right >= len { 1.max(len - 1) } else { right };
+        if right_trim > 0 {
+            let keep = len - right_trim;
+            read.seq.truncate(keep);
+            read.qual.truncate(keep.min(read.qual.len()));
+        }
     }
     before - read.len()
 }
@@ -1083,13 +1092,29 @@ fn write_record<W: Write>(
 
 /// Builds a working read buffer with phred (offset-subtracted) quality.
 fn make_read_buf(rec: &SeqRecord, quality_base: u8) -> ReadBuf {
+    let seq = rec.sequence().to_vec();
+    let mut qual: Vec<u8> = rec
+        .quality_scores()
+        .iter()
+        .map(|&q| q.saturating_sub(quality_base))
+        .collect();
+    change_quality(&seq, &mut qual);
     ReadBuf {
-        seq: rec.sequence().to_vec(),
-        qual: rec
-            .quality_scores()
-            .iter()
-            .map(|&q| q.saturating_sub(quality_base))
-            .collect(),
+        seq,
+        qual,
         discarded: false,
+    }
+}
+
+/// Applies bbduk's default `changequality` normalization on load: N bases
+/// get quality 0 and ACGT bases are raised to a minimum quality of 2.
+fn change_quality(seq: &[u8], qual: &mut [u8]) {
+    for (i, &b) in seq.iter().enumerate() {
+        let q = &mut qual[i];
+        if b == b'N' || b == b'n' {
+            *q = 0;
+        } else if matches!(b, b'A' | b'C' | b'G' | b'T' | b'a' | b'c' | b'g' | b't') && *q < 2 {
+            *q = 2;
+        }
     }
 }

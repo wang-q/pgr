@@ -243,3 +243,54 @@ fn command_fq_trim_adapter_parallel_output_matches_single_thread() {
     assert_eq!(std::fs::read(&t1).unwrap(), golden);
     assert_eq!(std::fs::read(&t8).unwrap(), golden);
 }
+
+#[test]
+fn command_fq_trim_adapter_changequality_and_qtrim_empty_edge() {
+    // bbduk's default `changequality=t` raises ACGT bases to quality 2 and
+    // forces N bases to quality 0; qtrim then clamps a fully-trimmed read to
+    // len-1 bases (1 bp for long reads, 0 bp for a 1 bp read). Verified
+    // byte-for-byte against BBTools 39.38 with ktrim=f tbo=f tpe=f qtrim=r
+    // trimq=15 minlen=0 maxns=-1 ftm=0.
+    let input = concat!(
+        "@r1\n",
+        "AAAAAAAAAAAAAAAAAAAA\n",
+        "+\n",
+        "!!!!!!!!!!!!!!!!!!!!\n",
+        "@r2\n",
+        "A\n",
+        "+\n",
+        "!\n",
+    );
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            file.path().to_str().unwrap(),
+            "--ref",
+            "tests/bbtools/Lambda/illumina_adapters.fa",
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--minlen",
+            "0",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        concat!(
+            "@r1\nA\n+\n#\n", // ACGT quality 0 raised to 2, trimmed to 1 bp
+            "@r2\n\n+\n\n",   // 1 bp read fully trimmed to empty
+        )
+    );
+}

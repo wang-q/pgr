@@ -61,8 +61,8 @@
 |---|---|---|
 | M0 golden | 完成 | `tests/bbtools/Lambda/golden/`（39.38 + ordered=t + seed=1，全链确定性已验证） |
 | M1 `fq clump` | **完成，逐字节一致** | `cli_fq_clump.rs` 对照 `clumpify.fq.gz`；dedupe 模式（`--dedupe --dupesubs 0`）已实现，与 threads=1 golden 一次性逐字节验证（golden 未入库，语义由合成测试覆盖，见 §4.4 M1 注） |
-| M2 `fq split`/`fq sample` | **完成，逐字节一致** | `cli_fq_split.rs`/`cli_fq_sample.rs` 对照 repair/reformat golden |
-| M3-M5 `fq trim-adapter` | **完成，逐字节一致** | `cli_fq_trim_adapter.rs` 对照 trim/filter golden；`--stats` 输出 bbduk `stats=` 3 列格式，与 39.38 逐字节一致（#File 路径行除外，见 §6.5） |
+| M2 `fq split`/`fq sample` | **完成，逐字节一致** | `cli_fq_split.rs`/`cli_fq_sample.rs` 对照 repair/reformat golden；2026-08-10 晚复核 sample：6 组 target/seed（含超总量边界）+ 单端输入，与 39.38 `reformat.sh samplebasestarget` 逐字节一致（FastRandomXoshiro/allowUpsample=false/per-pair 决策全对上） |
+| M3-M5 `fq trim-adapter` | **完成，逐字节一致** | `cli_fq_trim_adapter.rs` 对照 trim/filter golden；`--stats` 输出 bbduk `stats=` 3 列格式，与 39.38 逐字节一致（#File 路径行除外，见 §6.5）；2026-08-10 晚复核：19 组 trim 变体（k/mink/hdist/minlen/trimq/ftm/maxns/tbo/tpe/qtrim/组合）+ 3 组 filter k 变体 + 质量边界，与 39.38 `bbduk.sh ordered=t` 逐字节一致；修复 changequality 与 qtrim 空 read 边界（见下） |
 | M7 kmercountexact | **完成，逐字节一致** | `pgr kmer hist --khist-text/--peaks`（logScale + CallPeaks 全移植）对照 R.khist.txt/R.peaks.txt |
 | M6 bbnorm cutoff | **完成（精确表语义）** | `pgr fq norm`（精确 canonical 表 + bbnorm per-read 判定逻辑：truedepth/depthAL 分位数 + toss 条件）；与 bbnorm bits=16 近似计数在 min=3 边界差 ~21 对（39846 vs 39888），属设计稿已声明的"先精确 KmerTable"路线 |
 | M8 集成 | **完成（原语路线）** | 只提供可组合原语（clump/split/sample/trim-adapter/fq norm/hist），**不内置 pl trim 流水线**——编排属于 anchr，pgr 不做"别人的活"（2026-08-10 修正，`pl trim` 已移除）；anchr 模板把 `bbduk.sh` 等调用换成 pgr 命令、用管道串联避免中间 gz |
@@ -82,6 +82,16 @@
 * clumpify/reformat 默认 seed 下行为可复现，但 golden 显式 `seed=1`/`sampleseed=1`；
 * `trim.fq` 与 `filter.fq` 的 golden 输入链必须用同一份 clumpify 输出（repair.sh
   的 `out=R1.fq.gz` 会覆盖同名输入，golden 生成时用隔离目录）。
+* bbduk 默认 `changequality=t`（读入即做）：ACGT 碱基质量 <2 的提到 2、
+  N 碱基强制 0——发生在 minbasequality/maxNs 等判定**之前**；pgr 原实现
+  只加回 ASCII 偏移，默认参数下被 maxns=0 掩盖，`maxns=-1` 时暴露
+  （修复：`make_read_buf` 读入时钳制）。
+* qtrim 的边界语义（`TrimRead.trimByAmount(r, 0, right, 1)`）：
+  `right >= len` 时剪到 `max(1, len-1)`——len=1 的 read 被剪成空 read
+  （minlen=0 时保留输出），len≥2 保留 1bp；pgr 原实现 `saturating_sub`
+  在 len=1 时错误保留 1bp、len≥2 全剪时错误剪空（修复：复刻钳制公式）。
+* maxNs 检查在 qtrim **之后**（bbduk 顺序 qtrim → minlen → maxNs）——
+  qtrim 剪掉 N 后剩余 N 数才参与 maxNs 判定；交叉验证用 N×100 read 确认。
 
 ### 4.1 目标与范围
 
@@ -202,8 +212,8 @@ BBTools-40.01 源码已置于仓库根 `BBTools-40.01/`——该目录自带 `.g
   禁用（`if(false && Shared.USE_JNI)`），实际运行就是纯 Java fallback
   `mateByOverlapRatioJava*`——直接移植该路径即与 golden 一致；质量值参与
   overlap 判定，需保留 33/64 编码处理。
-- **bbnorm 内存**：`bits=16` 是近似 kmer 表（省内存）；pgr 精确 u128 表在
-  超大数据集的峰值内存待实测，必要时引入近似哈希路径。
+- **bbnorm 内存**：精确 vs 近似的完整分析记录见 §4.8（2026-08-10，
+  **尚未定论**）。
 - **paired 流一致性**：修剪/过滤时 R1/R2 必须同步处理（tbo/tpe、
   tossbrokenreads 语义）。
 - **统计文本**：`trim.stats.txt`/`filter.stats.txt`/cardinality 输出格式是否
@@ -265,6 +275,182 @@ bucket 强制外部桶路径；指定 `--buckets` 等价于隐含 bucket 模式�
 
 踩坑记录：channel 原始 `out_tx` 若不 drop，collector 的 `recv()` 会永久
 阻塞（worker 全部退出后 out_rx 仍不关闭）——feeder join 必须在 drain 之后。
+
+### 4.8 bbnorm norm：精确 vs 近似分析记录（2026-08-10，未定）
+
+**原始用法（anchr `templates/trim.tera.sh`）**：
+
+```bash
+bbnorm.sh in=temp.fq.gz out=highpass.fq.gz \
+    passes=1 bits=16 min={{ opt.cutoff }} target=9999999 \
+    threads=... -Xmx...
+```
+
+注释 "Remove reads without high depth kmer"——**纯 highpass filter**，这是
+bbnorm 在 anchr 里的唯一用途（khist/peaks 由后续 `kmercountexact.sh` 单独
+完成，与 bbnorm 无关）。
+
+**判定语义（BBTools-40.01 `current/jgi/KmerNormalize.java`）**：
+
+* `target=9999999`：`coin>target` 分支永不触发（`coin=1..depthAL`，
+  depthAL ≤ 65535），降采样/归一化完全禁用；`passes=1` 且无 ECC
+  （`USE_ECC1/ECCF` 默认 false）→ 整个调用退化为 filter。
+* toss 条件只有两条：`depthAL<0`（read 中 ≥15 个 k-mer 的计数
+  ≥ `max(min, high/125)` 不成立，`MIN_KMERS_OVER_MIN_DEPTH=15`、
+  `ERROR_DETECT_RATIO=125`、`HIGH_PERCENTILE=0.90`）或
+  `maxTrueDepth<min`（truedepth = 46 分位 k-mer 计数，
+  `DEPTH_PERCENTILE=0.54`，取一对中较大者）。`MIN_LENGTH=1` 不生效。
+* pair 级决策：任一 mate 满足上述条件即整对保留
+  （`USE_LOWER_DEPTH=true` 取 minAL 有值者、`REQUIRE_BOTH_BAD=false`）。
+* 表由**全量 reads** 构建（`tablereads=-1`），runPass 内部两遍
+  （`makeKca` 全量建表 → `count` 全量过滤），确定性、与顺序无关——
+  **不是对 reads 采样**（khmer 式单遍在线会顺序相关，已排除）。
+
+**精确 vs 近似 分析（结论未定，2026-08-10 保留）**：
+
+1. 判定只需要阈值区分（≥min 与 ≥max(min, high/125)），不需要精确大计数。
+2. CMS（min-of-tables）只会高估不会低估 → 误差单向：只可能把 <min 的
+   read 误判为保留，不可能误杀；而本 filter 的用途是滤掉含低深度（错误）
+   k-mer 的 reads，单向高估与用途相反。
+3. bbnorm 自身是近似表（bits=16 + 哈希 + minprob），结果依赖 `-Xmx`
+   （装载率变 → 碰撞率变 → 边界判定变），"与 bbnorm 字节级一致"是移动靶；
+   Lambda min=3 的 ~21 对差异（精确 39846 vs bbnorm 39888）是定义差异，
+   不是实现缺陷。近似路径也无法保证追上（除非克隆 KCountArray 内部并锁死
+   内存配置）。
+4. 精确外部桶路径已实现（§4.6 同款 mem_cap 约束，输出与内存路径一致）；
+   CMS "固定内存"≠"小内存"（1B unique k-mer 低装载需 ~10GB 量级，且随
+   unique 数线性涨；1G 虚拟机下 CMS 判定失真，精确外部路径只是慢但正确）。
+5. 速度上精确外部桶 = 多遍 I/O + 排序，与 bbnorm 自身两遍全扫描同量级。
+6. 工程上精确路径已实现/已并行/已测试；CMS 是新代码 + 任意参数
+   （bits/表数/哈希数/饱和），结果随配置漂移。
+
+**倾向：精确**（外部桶路径即 1TB 答案）。转向近似的唯一场景：单机、
+极小内存、无大磁盘、接受判定噪声——非 pgr/anchr 语境。待用户定稿。
+
+**可选的收尾项（待确认）**：① 把 21 对差异正式定义为"精确语义 vs bbnorm
+近似语义"；② `.pkt` count 字段按 bits 截断（对齐 bbnorm bits=16 → u16，
+更激进可 u8）缩小落盘体积，判定字节不变（阈值在低端，截断到 65535
+不影响任何判定）。
+
+khmer（Count-Min Sketch + 在线 diginorm）源码分析见
+`notes/references/khmer.md`。fairy（FracMinHash 稀疏采样 + 宏基因组
+coverage）源码分析见 `notes/references/fairy.md`。
+
+### 4.9 bbnorm kmer 深度分箱（2026-08-10 讨论记录，未定、暂不实现）
+
+**结论**：bbnorm 原生支持按 kmer 深度把 reads 分箱（"Depth binning
+parameters"，39.38 与 40.01 一致），但这是**新功能**，不在 anchr 替换
+范围内（anchr 只用 highpass filter 一项），用户暂不打算做，先记录。
+
+**参数与语义**（`bbnorm.sh` usage + `KmerNormalize.java` 主循环）：
+
+* `lowbindepth=10`（lbd）/ `highbindepth=80`（hbd）+
+  `outlow=<file>` / `outmid=<file>` / `outhigh=<file>`，一次运行 3 个 bin，
+  更多层需多次运行不同阈值取交集。
+* 判据是 `depthAL`——kmer 深度数组的稳健分位（约 46-54 百分位，只统计
+  深度 ≥ `max(min, high/125)` 的 kmer），与 §4.8 的 toss 判定同一套量；
+  help 里 "median" 是口语化说法。阈值控制的是 kmer 深度而非 read 深度。
+* low：两条 mate 的 `depthAL` 都 < lbd；high：两条都落在 [lbd, hbd) 之外
+  （源码 read1 用 `>HBD`、read2 用 `>=HBD`，小不对称，疑似笔误）；
+  其余进 mid。双端按对分类。
+* 分箱与 keep/toss 正交：任何 read 都会恰好进入一个 bin，可只分箱不
+  归一化；两遍式（全量建表 → 分类），确定性，与已实现的 norm 语义一致。
+
+**若将来要做**：`pgr fq norm` 的扩展——建表与 depthAL 计算全为现成，
+加 `lbd/hbd` + 三个输出通道即可，成本不大。当前无动作。
+
+### 4.10 reformat.sh 功能全景盘查（2026-08-10）
+
+**结论**：anchr 实际用 reformat 做两件事——① `trim.era.sh` 的
+`samplebasestarget`（已核对 ✅，§M2）；② **`2_insert_size.era.sh` 的
+`ihist`**（SAM → 插入片段直方图，pgr 目前无对应，**这是真缺口**）。
+
+**ihist 细节（39.38 实测）**：
+
+* 调用：`reformat.sh in=<sam.gz> ihist=<file>`，输出格式：
+  `#Mean/#Median/#Mode/#STDev/#PercentOfPairs` 五行 + `#InsertSize Count`
+  分布表（Lambda bbmap sam 实测：Mean 421.7 / Median 407 / STDev 98.4）。
+* 实现：`tracker/ReadStats.java` 的 `addToInsertHistogram(SamLine)`（取
+  `|TLEN|`，`pairedOnSameChrom && x>0` 计入 paired，`MAXINSERTLEN` 截断）
+  与 `insertSizeMapped(r1,r2)`（proper pair + 同染色体，cigar 长度换算，
+  重叠对近似）；输出汇总在 `BBMerge.writeHistogram`。39.38/40.01 的
+  `.class` 均含 `MAKE_IHIST`，两版本都支持。
+* **重要认知修正**：BBTools 仓库里的 `.java` 与发布的 `.class` **不同步**
+  ——40.01 的 `ReformatReads.java` 全文只有 1 处 "hist"（无任何 histogram
+  实现），但 `ReformatReads.class` 里有 `MAKE_IHIST`/`addToInsertHistogram`
+  （实测也真的输出）。后续源码分析以 `.class` strings + 黑盒实测为准，
+  `.java` 只作提示性参考。
+* 移植成本：pgr 没有 SAM reader，需先能读 sam（`|TLEN|` 或双线
+  insertSizeMapped）+ 直方图输出；属于新命令（如 `pgr fq ihist` 或挂在
+  `paf`/`fa` 侧）。**是否纳入迁移待用户定**（ihist 属于 2_insert_size
+  模板，不在 trim 流水线 8 步内）。
+
+**reformat 其余功能与 pgr 现状对照**（anchr 未用到）：
+
+| reformat 功能 | pgr 现状 |
+|---|---|
+| 格式转换 fq↔fa、sam→fq、qual/scarf/oneline | `fq to-fa` ✅；sam→fq 无（pgr 无 SAM 命令） |
+| 命名/序列操作（addslash/underscore/tuc/rcomp/uniquenames/remap/fixjunk/utot/pad） | `fa rc` ✅；fq 侧无专门命令 |
+| 采样家族（samplerate/samplereadstarget/upsample/prioritizelength/reads/skipreads） | `fq sample` 只做 samplebasestarget（anchr 其他降采样用 hnsm split，不用 reformat） |
+| 过滤家族（qtrim/trimq/minlen/maq/maxns/barcode/GC/forcetrim） | `fq trim-qual`/`fq trim-adapter` 覆盖（与 bbduk 交叉，已移植） |
+| 直方图（bhist/qhist/lhist/gchist、sam 系列 ehist/idhist...） | `kmer hist`/`kmer qhist`/`fa n50`；fq lhist/gchist 无（anchr 未用） |
+| sam/bam 过滤（mappedonly/mapq/flag/cigar） | pgr 无 SAM 命令（anchr 未用） |
+| k/cardinality（loglog 唯一 kmer 数） | `kmer table` 精确计数 ✅；loglog 无（bbduk filter 的 cardinality 已随 trim-adapter 移植） |
+
+**交叉关系**（BBTools 家族特点）：reformat 的 qtrim/minlen/maxns ↔ bbduk
+（已移植）；cardinality ↔ bbduk filter（已移植）；ihist ↔ BBMerge/Tadpole
+（共享参数）；sample 家族在 reformat 是主入口。**pgr 真正的缺口只有
+ihist 一项**（anchr 用到且 pgr 无）。
+
+**为什么 reformat 里有 ihist（设计动机，2026-08-10 反推）**：reformat 的
+定位是"通用流式 read 处理器"而非纯格式转换器（官方 ReformatGuide 第一句：
+"designed for generic streaming read-processing tasks... such as format
+conversion, subsampling, and various filtering operations"）。ihist 在其中的
+理由：① 反正要逐条扫 reads，直方图是循环内 O(1) 增量，零边际成本且保持
+低内存；② 输入为 paired sam 时 TLEN/proper pair 信息现成，sam→fq 转换是
+reformat 常见用途，顺路提取；③ 实现不在 ReformatReads 而在共享
+`tracker.ReadStats`，谁消费 paired reads 谁挂上（BBMerge/Tadpole/BBWrap/
+RQCFilter 同款 ihist）——"命令=输入流类型"的组织模式；④ 基础 histogram
+与 bbduk 共享（官方明说，bbduk 更快更耗资源，reformat 低资源），高级变体
+才单独出工具（如 readlength.sh）。这也是"工具交叉"现象的成因。
+
+**insert size 的两种来源（2026-08-10 修正）**：reformat 的 ihist **必须
+输入 sam（比对结果）**——取 `|TLEN|`/坐标差，未比对则无从得知，这是
+"输入为比对流"的顺路统计，不是 reads 自带信息。未比对时只有另一条路：
+BBMerge 在 overlap merge 时从 read 对重叠/缺口反推 `bestInsert`
+（`hist[bestInsert]++`），可输出同格式 ihist，但仅对能 merge 的短插入
+文库（insert < 2×read length）有效且为估算。同名 `ihist` 在两个工具里是
+两条不同实现——"工具交叉"的另一面：**同名参数在不同工具里可能不是一回事**。
+
+### 4.11 bbduk 参数全景盘查（2026-08-10）
+
+**anchr 用 bbduk 做三件事**：
+
+1. trim.era.sh trim（ktrim=r/k/mink/hdist/tbo/tpe/minlen/qtrim/trimq/ftm/
+   maxns/stats/tossbrokenreads）——已移植并核对 ✅；
+2. trim.era.sh filter（k/cardinality/stats/tossbrokenreads）——已移植 ✅；
+3. **merge.era.sh 纯 qtrim**（`bbduk.sh qtrim=r trimq={{opt.qual}}
+   minlen={{opt.len}}`，无 ref）——**缺口**：`pgr fq trim-adapter` 的
+   `--ref` 目前必填；`pgr fq trim-qual` 是 sickle 语义（sliding/Mott），
+   与 bbduk 的 optimalMode（testOptimal）输出不一致，不能顶替。
+
+**结论：bbduk 全部参数里，对 anchr 有用的只剩 merge.era.sh 的纯 qtrim
+一项**。候选改法（待用户定）：`trim-adapter --ref` 改为可选——无 ref 时
+跳过 kmer 匹配/ktrim/tbo/tpe，只做 qtrim/minlen/maxns/ftm/toss（qtrim
+ 语义已与 39.38 逐字节核对）。改动很小。
+
+**其余参数分类与用途标记**（anchr 均未用，pgr 不主动加）：
+
+| 类别 | 参数 | 备注 |
+|---|---|---|
+| kmer 容错/判定 | maskmiddle、edist、qhdist、minkmerhits/fraction、mincovfraction、findbestmatch、forbidn | pgr 已实现 k/mink/hdist/rcomp |
+| trim 模式 | ktrim=l、qtrim=rl/l/w、kmask、ksplit、ktrimtips、tp、ftl/ftr/ftr2、trimclip | anchr 只用 r 模式 |
+| 过滤家族 | minavgquality、minbasequality、mcb、mingc/maxgc、tossjunk、swift、entropy、chastity/barcode/tag | 通用 QC，anchr 未用 |
+| 质量处理 | quantize、recalibrate、mincalledquality/maxcalledquality | changequality 已按默认行为实现 |
+| 输出流 | outm/outs/out2、refstats、rpkm、dump、rename、statscolumns=5 | anchr 只用 stats 3 列 |
+| 直方图 | bhist/qhist/lhist/gchist/enthist/ihist 等 | anchr 的 khist 走 kmercountexact |
+| sam/bam | sam、trimclip、varfile/vcf、ehist/idhist | pgr 无 SAM 命令 |
+| 其他 | ecco（BBMerge 纠错）、amino、literal、samplerate、copyundefined | — |
 
 ## 5. 验收标准（替换后的对比）
 
