@@ -60,12 +60,14 @@
   + 元数据（c、k、file_name、sample_name、paired、mean_read_length），
   bincode 写 `.bcsp`。每样本一张表，`threads`（默认 3）个样本并行。
 - **去重（关键）**：
-  - **pair marker**：固定 k=16（`Marker=u32`），`pair_kmer` 对双端 read 各自
-    取**偶数位**碱基拼成一个 16-mer、**奇数位**碱基拼成另一个 16-mer，形成
-    两个 `[Marker;2]`（`doublepairs.0=[read1偶数,read2偶数]`、
+  - **pair marker**：固定 k=16（`Marker=u32`，`k = size_of::<Marker>()*4`），
+    `pair_kmer` 对双端 read 各自取**偶数位**碱基拼成一个 16-mer、**奇数位**
+    碱基拼成另一个 16-mer，形成两个 `[Marker;2]`
+    （`doublepairs.0=[read1偶数,read2偶数]`、
     `doublepairs.1=[read1奇数,read2奇数]`）；`pair_kmer_single` 把单端 read
-    按**前半/后半**各取偶数位、奇数位拼成同样的两对。长度不足（双端 <33bp、
-    单端 <66bp）或单端 >400bp → 无 marker、不去重。
+    按**前半/后半**各取偶数位、奇数位拼成同样的两对。长度不足
+    （双端**任一端** <33bp，即 `< 2k+1 = 33`；单端 <66bp，即 `< 4k+2 = 66`）
+    或单端 >400bp → 无 marker、不去重。
   - **规则**：对每个采样的 kmer，若 `(km, marker)` 已见过 → 该 kmer
     不计数（`num_dup_removed++`）；否则插入并 `c += 1`。
   - **效果**：`c` ≈ 该 kmer 出现过的**不同 read-pair 数**——完全相同的
@@ -90,7 +92,9 @@
 
 - **contig sketch**（`sketch_genome_individual`，每 contig 独立，contain.rs
   恒走此路径）：FracMinHash 采样 → **重复 kmer 去重被 `|| true` 短路禁用**
-  （见 §8 quirk，contig 上重复出现的 kmer 并不会被丢弃）→ 仅 `min_spacing=30`（间距 <30nt 的相邻 kmer 丢弃，`--min-spacing` 可调）→
+  （见 §8 quirk，contig 上重复出现的 kmer 并不会被丢弃）→ 仅
+  `min_spacing=30` 过滤（代码 `pos - last_pos > min_spacing` 才保留，即
+  **间距 ≤ min_spacing 的相邻 kmer 被丢弃**，`--min-spacing` 可调）→
   `genome_kmers: Vec<u64>`；`gn_size` = contig 长度。可预存 `.bcdb`。
   （但本版本 `sketch` 命令**只生成 `.bcsp`，从不生成 `.bcdb`**；coverage
   仅**读取**预存的 `.bcdb`/`.sylqueries` contig sketch——`.syl*` 后缀表明可与
@@ -103,7 +107,8 @@
   （`ani_from_lambda`：`contain/(1-e^-λ)/total` 再开 k 次方）。
   **输出阈值 0.95**（pseudotax 分支，main 恒走；普通分支为 0.9）
   ——与 wiki 的说法一致，但 0.9 分支实际不可达；阈值可用
-  `--minimum-ani`（0-100，`-a`）覆盖。
+  `-m/--minimum-ani`（0-100，短选项由 clap 从字段名 `minimum_ani` 自动派生
+  为 `-m`，实测 `./fairy coverage -h` 确认）覆盖。
 - **覆盖度估计**（`get_stats`）：
   1. `median_cov` = covs 中位数；median<30 时按 `Poisson(median)` CDF
      < 0.9999999999 剪掉高倍噪声（`max_cov`）；
@@ -120,9 +125,28 @@
   `read_length/(read_length-k+1)` 与 `1/((seq_id/100)^k)` 校正
   （`seq_id` 默认 99.5，即 kmer identity ≈ `0.995^k`）。
 - **输出**：默认 MetaBAT2 格式（contigName/contigLen/totalAvgDepth + 每样本
-  cov/var）。`--concoct-format` 与 `--aemb-format` 均去掉 contigLen、
-  totalAvgDepth、每样本 var 三列：concoct 保留表头（contigName + 各样本名），
-  aemb **无表头**只输出每样本 cov。`--full-contig-name` 保留空格后的全名。
+  cov/var）。`--maxbin-format` 与 `--aemb-format` 均去掉 contigLen、
+  totalAvgDepth、每样本 var 三列：`--maxbin-format`（注意：cmdline 里
+  clap 的 long 是 `maxbin-format`，但对应**结构体字段名**是
+  `concoct_format`，故源码内写的是 `args.concoct_format`——对外 CLI 是
+  `--maxbin-format`，兼容 MaxBin2）保留表头（contigName + 各样本名），
+  `--aemb-format` **无表头**只输出每样本 cov。`--full-contig-name` 保留
+  空格后的全名。
+- **输入分类与一致性检查**：coverage 的每个输入按后缀分类
+  （`.bcsp`/`.sylsample` → 样本 sketch；`.bcdb`/`.sylqueries` → contig
+  sketch；fasta/fastq → 内部即时 sketch）。要求至少 1 个 contig 源 + 1 个
+  read 源，否则报错退出；多个 contig 文件时**每个文件输出一段独立 TSV 表头**
+  （warn "not a valid TSV file"）。一致性检查：所有 genome sketch 的 `k`
+  必须一致；read sketch 的 `c` 不得大于 genome 的最小 `c`（`get_seq_sketch` 与
+  `get_genome_sketches` 双处校验）；sketch 的 `k` 必须与 `-k` 匹配。
+- **reads 检出比例日志**（`estimate_covered_bases`，仅 log）：估算
+  `tentative_bases = c × Σkmer_counts × read_len/(read_len-k+1)` 与
+  `covered = Σ gn_size × final_est_cov`，输出 `min(covered/tentative, 1)`
+  的百分比，只在低错误 reads 下近似准确。
+- **rel/seq abundance 未实现**：`AniResult.rel_abund / seq_abund` 恒为
+  `None`（`get_stats` 从不赋值）；论文/README 描述的 taxonomic / sequence
+  abundance 两列只存在于**死代码** `_print_ani_result`（下划线前缀、未被调用），
+  实际输出恒走 `print_cov_matrix`（binning 矩阵）。
 
 ## 6. 内存与并行
 
@@ -180,3 +204,11 @@
   `fmh_seeds` 则无此限制。
 - **`.bcdb` 只读不写**：本版本 `sketch` 仅生成 `.bcsp`，contig sketch 需
   外部提供（兼容 sylph 的 `.sylqueries`）。
+- **`--maxbin-format` 命名错位**：clap 的对外 long 是 `maxbin-format`（README
+  亦如此），但结构体字段名却叫 `concoct_format`——源码里到处是
+  `args.concoct_format`，容易误以为 CLI 是 `--concoct-format`（实际不是）。
+- **大量下划线前缀死代码**：`_print_ani_result`（含 rel/seq abundance 列的
+  ANI 明细表）、`_print_header`、`_get_sketches_rewrite`、
+  `_derep_if_reassign_threshold`、`_get_kmer_identity`、`_ani_from_lambda_moment`
+  等均未被调用；本版本实际只走 `print_cov_matrix`（binning 矩阵）路径，
+  abundance 输出功能整体未落地。

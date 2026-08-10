@@ -23,8 +23,14 @@
    `SeqIndex::build_index`：读 FASTA/FASTQ，拼接成单一字节流，建 FM-index 索引序列名，用
    `SparseBitVec` 记录序列边界，mmap 拼接文件做 O(1) 随机访问。
 2. **比对索引** — [alignments.rs](../../../seqwish-master/src/alignments.rs)
-   `unpack_paf_alignments`：多线程读 PAF，按 CIGAR 解析成逐碱基的 match 段，双向写入
-   `aln_iitree`（query→target 与 target→query 各一份）。
+   `unpack_paf_alignments`：多线程读 PAF，双向写入 `aln_iitree`（query→target 与 target→query
+   各一份）。每个 worker 在共享 `Mutex<BufRead>` 上逐行取一条 PAF（`more: AtomicBool` 标记
+   EOF），用 `rank_of_seq_named` 解析 query/target 序列 id。**关键细节**：对 CIGAR 的 `M/=/X`
+   块**逐碱基比对**——仅当 `query_base == target_base && != 'N' && offset(q) != offset(t)`
+   时才延长当前 match，遇到错配（X 或 N）即切断、把已累积段 flush 出去。也就是说 CIGAR M 块
+   内部会按"实际相等的碱基"再切成更细的 match 段（`I` 跳过 query、`D` 跳过 target）。写入前
+   还要过 `min_match_len` 短段过滤与 `--sparse-factor` 哈希稀疏化（`keep_sparse`，见 §8）。
+   这决定了 `aln_iitree` 里存的是**逐碱基一致的精确 match 段**，而非整段 CIGAR M。
 3. **传递闭包** — [transclosure.rs](../../../seqwish-master/src/transclosure.rs)
    `compute_transitive_closures`：核心算法，把对齐位置划分成等价类，输出图序列 `seq_v` +
    `node_iitree`（图位置→输入位置）+ `path_iitree`（输入位置→图位置）。
@@ -35,8 +41,39 @@
 6. **GFA 输出** — [gfa.rs](../../../seqwish-master/src/gfa.rs)
    `emit_gfa`：写 S（节点序列）、L（边）、P（路径）三段，并校验路径与图序列碱基一致。
 
-[main.rs#L200-L420](../../../seqwish-master/src/main.rs#L200-L420)
+[main.rs#L197-L420](../../../seqwish-master/src/main.rs#L197-L420)
 给出了 完整的编排，包含进度日志、tempfile 管理、Rayon 线程池配置等工程细节。
+
+### 2.1 CLI 参数与内部常量
+
+[main.rs](../../../seqwish-master/src/main.rs) 的 clap 定义（含默认值）：
+
+| 参数 | 默认 | 含义 |
+|------|------|------|
+| `-p, --paf-alns FILE` | 必填 | 输入 PAF 比对文件（支持 .gz） |
+| `-s, --seqs FILE` | 必填 | 输入序列（FASTA/FASTQ/.seq，支持 .gz） |
+| `-g, --gfa FILE` | stdout | GFA 输出路径 |
+| `-b, --temp-dir PATH` | 当前目录 | 临时文件目录（`tempfile::set_dir`） |
+| `-t, --threads N` | 1 | 线程数；同时配置 Rayon 全局线程池 |
+| `-r, --repeat-max N` | 0 | 单个输入碱基最多并入 N 个图拷贝 |
+| `-l, --min-repeat-distance N` | 0 | 输入序列上相距 < N 的碱基不做传递闭包 |
+| `-k, --min-match-len N` | 0 | 过滤短于 N 的精确匹配段 |
+| `-f, --sparse-factor N` | 0.0 | 哈希稀疏化保留比例（`keep_sparse`） |
+| `-B, --transclose-batch N` | 1000000 | 传递闭包每 chunk 处理的 bp 数 |
+| `-T, --keep-temp` | off | 保留中间文件 |
+| `-P, --show-progress` | off | 打印进度日志（走 stderr） |
+| `-M, --in-memory` | off | 用内存区间树；否则 disk-backed |
+
+**内部常量**（散落各模块）：
+- phase 1 BFS 工作队列 `ArrayQueue` 容量 131072（todo_in/todo_out），worker 数 `num_threads * 2` + 1 manager；
+- phase 1 后 rank 收集的并行 chunk_size = 100000；dsets_vec 读取 `.with_min_len(10000)`；
+- `InMemoryTree::finalize` 排序阈值 n > 10000 用 `par_sort`，否则单线程 sort；
+- `overlap_iaitree` 小 subtree 阈值 `k <= 3`；
+- `SeqIndex` 写拼接序列缓冲 1MB；GFA 输出缓冲 1MB；
+- FM-index `locate` 采样参数 `2`（每 2^2=4 位采一个样本）。
+
+> 注：即使 `-t 1`，phase 1 的 worker 数也固定为 `num_threads * 2 + 1`（即 3 个），Rayon 全局池
+> 则按 `num_threads` 建。
 
 ## 3. 关键数据结构
 
@@ -56,6 +93,10 @@ pub fn is_rev(pos: PosT) -> bool { (pos & 1) != 0 }
 **亮点**：方向和 offset 打包进一个 u64，`incr_pos` / `decr_pos` 用 `±2` 步进，反链时反向步进。
 所有区间树都以 `PosT` 为 value，单棵树同时表达"位置 + 链方向"。pgr 的 `pgr paf` 模块若要支持
 反链投影，可直接借鉴此编码。
+
+同文件还定义了 `AlnPosT { pos: PosT, aln_length: u64 }`（`#[repr(C)]`，供 FFI）：其 `Ord` 比较
+`pos`，仅当 `pos` 相等时才用 `aln_length` 分胜负——把"位置 + 匹配长度"打包成单个可排序值，供比对
+匹配排序用（本 Rust 移植中主要在 PAF 稀疏化/排序场景使用）。
 
 ### 3.2 SeqIndex：FM-index + SparseBitVec
 
@@ -210,6 +251,20 @@ eprintln!("[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduc
 **这是 seqwish 最聪明的优化。**生成树覆盖所有序列且连通，BFS 沿树边能发现所有连通分量，
 不必扫全部对齐。后续 phase 2 再补全非树边的等价类合并。
 
+`compute_spanning_tree` 用 `aln_iitree.for_each_interval` 线性扫全部区间，按规范化后的
+`(seq_i, seq_j)`（小 id 在前）累加对齐碱基数作为权重，跳过自比对（`source_seq == target_seq`
+或任一为 0），再按权重降序跑 Kruskal。生成树用 `SpanningTreeAdj`（`Vec<Vec<usize>>` 邻接表，
+双向各存一份邻居）存储，`contains(a,b)` 是 O(degree) 线性查找——树中每节点度约 2-3，线性扫描比
+`HashSet` 更快。
+
+> **注意（与直觉相反）**：`IntervalTree::for_each_interval` 在 disk-backed 后端**未实现**
+> （返回 `io::ErrorKind::Unsupported`，见
+> [intervaltree.rs](../../../seqwish-master/src/intervaltree.rs#L120-L128)），而
+> `compute_spanning_tree` 用 `.ok()` **静默吞掉**该错误。因此**默认（未加 `-M`，`aln_iitree` 为
+> disk-backed）时 spanning tree 实际为空**，phase 1 的"只沿树边 BFS"退化为不追任何边，只能靠
+> phase 1b orphan recovery 的按序列查询来补全等价类（正确性仍在，只是少了加速）。spanning tree
+> 优化只在 `-M` 内存模式下真正生效。
+
 ### 4.2 Phase 1：BFS 发现（仅标记，不合并不收集）
 
 主循环按 `transclose_batch`（默认 1Mb）切 chunk，每个 chunk 内：
@@ -230,8 +285,11 @@ BFS 标记，phase 2 用 per-sequence 查询独立完成。
 
 生成树 BFS 可能漏掉"只能通过非树边到达"的位置。`orphan_recovery` 循环：
 
-1. `find_component_sequences` 找出当前 chunk 已标记位置涉及的序列。
-2. 对每条序列的 [offset, offset+len) 区间查 `aln_iitree`，把对端的未标记位置标进 `q_curr_bv`。
+1. `find_component_sequences` 找出当前 chunk 已标记位置涉及的序列（只查每条序列起始 offset
+   处是否有 1-bit）。
+2. 对每条 component sequence 的 [offset, offset+len) 区间查 `aln_iitree`；对每个区间，仅当
+   其 `iv_start` **已被** `q_curr_bv` 标记时才处理（洪水填充：从已发现的一端沿对齐走到另一端），
+   把对端未标记的目标位置标进 `q_curr_bv`。
 3. 若本轮无新位置则收敛，否则继续。
 
 日志显示典型情况 1-3 轮就收敛。这是个"补漏"机制，保证等价类完整性。
@@ -253,13 +311,41 @@ phase 2 用 `DisjointSetsAsm`（无锁 CAS），`component_seqs.par_iter()` 并�
 
 等价类排好序后，`write_graph_chunk` 顺序遍历 `(dset_id, position)`：
 
-- 每遇新 dset_id，从 `seqidx.at(offset)` 取该位置碱基，push 进 `seq_v_out`。
-- 对该 dset 的每个输入位置 `curr_q_pos`，调 `extend_range` 把 (图位置, 输入位置) 对 写进
-  `range_buffer`，满一段后 flush 到 `node_iitree` 和 `path_iitree`。
-- `repeat_max` / `min_repeat_dist` 参数控制重复区过滤：同一序列在图同一位置的拷贝数 超阈值时，
-  不再写进 range_buffer，避免高拷贝重复把图吹爆。
+- 每遇新 dset_id，从 `seqidx.at(offset)` 取该位置碱基，push 进 `seq_v_out`（`seq_v_length` +1），
+  并先 `flush_ranges(seq_v_length-1, ...)` 把上一个图位置的待定 range 落盘。
+- 对该 dset 的每个输入位置 `curr_q_pos`（默认正链，若 `at` 与 `at_pos` 取碱基不符则翻转为反链，
+  后接 `assert_eq!` 校验），调 `extend_range` 把 (图位置, 输入位置) 对写进 `range_buffer`。
 
-`write_graph_chunk` 在独立线程跑，主线程同时处理下一个 chunk，实现流水线。
+**`extend_range` 的区间累积机制**（这是"图序列一个碱基 ↔ 若干输入位置"如何变成两棵区间树的
+关键）：`range_buffer` 是 key=`q_pos`（输入位置）、value=`Range{begin,end}`（图位置区间）的
+`HashMap`。对每个 (图位置 s, 输入位置 q)：
+- 看前驱 `q_last_pos = q-1`（`decr_pos`）是否已在 buffer 中；若在且 `found.end == s`，则把该
+  range 的 end 扩到 `s+1`（连续同段图序列合并成一个区间）；
+- 若 `q_last_pos` 处恰是序列边界（`seqidx.seq_start`），则先 `flush_single_range` 落盘再新开
+  （不跨序列边界扩区间）；
+- 否则新建 `Range::new(s, s+1)`。
+`flush_single_range` 根据正/反链把 `(start_in_q, end_in_q, pos_in_s)` 与 `(start_in_s, end_in_s,
+pos_in_q)` 分别 `add` 进 `path_iitree` 与 `node_iitree`——一次 flush 同时写两棵树，建立图位置与
+输入位置的**双向映射**。
+
+**`repeat_max` / `min_repeat_dist` 过滤的真实语义**：这两个参数默认 0（关闭）。开启后，对每条
+序列统计它在当前 dset（图位置）上已并入的次数 `seq_counts` 与上次位置 `last_seq_pos`。当某序列
+在**同一图位置**的拷贝数将超过 `repeat_max`，或与上次同序列位置距离小于 `min_repeat_dist`
+（`close_to_prev`）时，该 `curr_q_pos` 不再 `extend_range` 并入当前图碱基，而是按拷贝计数
+`curr_seq_count` 存进 `todos: HashMap<u64, Vec<PosT>>`。**这些被延迟的拷贝并没有被丢弃**——在
+下一个新 dset 开始时（`flush todos inline`），每个计数档会作为**一个独立的图碱基**被
+`seq_v_out.push` 出来，并把该档的输入位置 `extend_range` 到那个新碱基上。效果是：高拷贝重复碱基
+不再全部塌缩进同一个图节点（否则会形成一个巨大的共享节点），而是按拷贝序分裂成多个小图位置
+（bubble），从而限制单个输入碱基并入同一节点的次数。
+
+`write_graph_chunk` 在独立线程跑（`node_iitree`/`path_iitree` 用 `write()` 独占；`seq_v_out`/
+`range_buffer` 随线程所有权转移回主线程），主线程同时处理下一个 chunk，实现 I/O 与计算流水线。
+循环结束后 join 最终 writer，把 `seq_v_out` 写文件、`flush_ranges(seq_bytes+1)` 收尾、
+`close_writer()` + `index()` 建两棵树的查询索引。
+
+另外，transclosure.rs 顶部定义的 `wang_hash_64`（Thomas Wang 64 位哈希）**实际未被算法调用**
+（只有单元测试引用），真正的哈希稀疏化用的是 alignments.rs 的 `match_hash`——`wang_hash_64`
+是 `#![allow(dead_code)]` 下残留的 C++ 遗产。
 
 ## 5. 节点压缩与边派生
 
@@ -599,7 +685,12 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 [paf.rs](../../../seqwish-master/src/paf.rs) 定义 `PafRow`（12
 必填 字段 + CIGAR 可选字段），`from_line`/`to_string` 往返。额外提供 `parse_paf_spec`：解析
 `"file1:weight1,file2:weight2,..."` 格式，支持单文件无权重（默认 0）、混合权重、空字段跳过、
-无效权重跳过。这个 spec 用于 `-p` 参数指定多个 PAF 文件及其权重。
+无效权重跳过。
+
+> **修正**：这个多文件 spec 在本 Rust 移植中**仅通过 FFI 导出**
+> （[lib.rs](../../../seqwish-master/src/lib.rs) 的 `parse_paf_spec`）。main.rs 的 CLI 参数
+> `-p/--paf-alns` 现在只接收**单个 PAF 文件路径**（`unpack_paf_alignments` 直接把它当文件名
+> 打开），并未走多文件加权 spec。多文件加权是 C++ 原版 `-p` 的语义，Rust CLI 已简化为单文件。
 
 **对 pgr 的启示**：pgr 的 `src/libs/paf/` 已有更完整的 PAF 解析（含 MAF→PAF 转换）。 seqwish 的
 `parse_paf_spec` 多文件权重思路可参考——pgr 若支持"多 PAF 加权合并"可借鉴此格式。

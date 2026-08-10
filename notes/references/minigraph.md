@@ -70,7 +70,7 @@ IO 层     bseq.c / gfa-io.c / format.c  FASTA/FASTQ/GFA/GAF 读写
 - `shortk.c`（251 行）— K 最短路径
 - 其余均 < 250 行（`index.c` 230 / `gcmisc.c` 223 / `ggen.c` 182 / `algo.c` 194 / `cal_cov.c` 139 / `asm-call.c` 147 / `options.c` 134）
 
-**CLI 预设**（`-x`，main.c + options.c）：`lr`（默认，k=17/w=11，长读映射）、`asm`（k=19/w=10，asm-to-ref）、`sr`（k=21/w=10，短读）、`ggs`（=asm 且自动开启 `--ggen` 增量图生成）。图生成相关默认参数见 `mg_ggopt_init`（options.c）：`min_var_len=50`、`min_map_len=100k`、`min_mapq=5`。索引默认 `bucket_bits=14`；`-c`（CIGAR）在 ggsimple 模式下会被警告推荐开启（main.c）。
+**CLI 预设**（`-x`，main.c + options.c）：`lr`（默认，k=17/w=11，长读映射）、`asm`（k=19/w=10，asm-to-ref）、`se`（k=21/w=10，单端短读）、`sr`（=se 且强制 `FRAG_MODE|FRAG_MERGE`，双端 FR，短读）、`ggs`（=asm 且自动开启 `--ggen` 增量图生成，并置 `best_n=0` 关闭 secondary 输出）。`se`/`sr` 均设 `MG_M_SR|MG_M_HEAP_SORT|MG_M_2_IO_THREADS`（短读走 heap-sort 收集种子）。图生成相关默认参数见 `mg_ggopt_init`（options.c）：`min_var_len=50`、`min_map_len=100k`、`min_depth_len=20k`、`min_mapq=5`、`match_pen=10`、`ggs_shrink_pen=9`、`ggs_min_end_cnt=10`、`ggs_min_end_frac=0.1`、`ggs_max_iden=0.80`、`ggs_min_inv_iden=0.95`，且默认开启 `MG_G_NO_QOVLP`（ggsimple 不接受 query 重叠区段）。索引默认 `bucket_bits=14`；`-c`（CIGAR）在 ggsimple 模式下会被警告推荐开启（main.c#L225）。
 
 ---
 ## 3. 核心数据结构
@@ -99,6 +99,11 @@ rGFA 是 GFA 1.0 的扩展，给 segment 加三个 tag：
 
 这三个 tag 提供**稳定坐标系**：即使图后续被增强（插入新 segment、分割旧 segment），
 参考路径上的坐标仍然可追溯。这是 minigraph 区别于普通 GFA 工具的核心。
+
+**参考的锚定方式**：首个输入既可以是 rGFA 也可以是普通 FASTA——`gfa_read`
+（gfa-io.c）解析 FASTA 的 `>` 头（`gfa_parse_fa_hdr`），把每个 contig 建成一个
+segment 并设 `rank=0`、`snid=contig 名`、`soff=0`，从而把参考基因组锚定为
+stable sequence（`rank==0` 即参考路径）。后续插入的 segment 才取 `rank>0`。
 
 ### 3.3 `mg_idx_t`（minimizer 索引）
 
@@ -138,7 +143,7 @@ for each input assembly:
 **关键点**：每加入一个 assembly 都要**重建索引**（因为图变了）。这是 minigraph 线性但
 非增量的代价——索引不能复用。pgr 的 PAF 索引是静态的（构建一次查询多次），无此问题。
 
-**两条 ggsimple 路径**：`mg_ggen_aug`（ggen.c#L89-L100）按是否启用 `-c`（CIGAR）分派——无 `-c` 走 `mg_ggsimple`（基于锚点间隔的启发式打分，ggsimple.c#L107），有 `-c` 走 `mg_ggsimple_cigar`（ggsimple.c#L392，用 CIGAR 的逐碱基比对质量过滤插入区段，插入判别更精细）。main.c#L225 明确警告 "it is recommended to add -c for graph generation"。两路径最终都调 `gfa_augment` 落图（ggsimple.c#L301/#L562）。pgr 的 PAF 天然带 CIGAR，对应的是"精细路径"。
+**两条 ggsimple 路径**：`mg_ggen_aug`（ggen.c#L89-L100）按是否启用 `-c`（CIGAR）分派——无 `-c` 走 `mg_ggsimple`（基于锚点间隔的启发式打分，ggsimple.c#L107），有 `-c` 走 `mg_ggsimple_cigar`（ggsimple.c#L392，用 CIGAR 的逐碱基比对质量过滤插入区段，插入判别更精细）。后者先把每个 gchain 的 CIGAR 拆成逐碱基的区间（`gg_count_intv`/`gg_write_intv`/`gg_score_intv`，ggsimple.c#L330 起），再用 `mg_mss_all` 找候选、`gg_merge_seg`（ggsimple.c#L378）合并相邻弱区段。main.c#L225 明确警告 "it is recommended to add -c for graph generation"。两路径最终都调 `gfa_augment` 落图（ggsimple.c#L301/#L562）。pgr 的 PAF 天然带 CIGAR，对应的是"精细路径"。
 
 **共享机制（补齐）**：两路径都先调 `mg_gc_index`（ggsimple.c#L11）把每个 query 的 gchain 映射到 segment/query 两个区间索引（`mg_intv_index`，algo.c），并统计锚点密度 `a_dens`；随后用 `mg_mss_all`（algo.c#L40，Ruzzo-Tompa 线性时间最大评分段）识别"映射不良"的区段，做 `--gg-min-end-cnt`/`--gg-min-end-frac` 末端裁剪；之后逐候选过滤：长度差 < `min_var_len`、含 N 碱基、query/图两侧重叠数（`mg_intv_overlap`）≠ 1 的丢弃；对长度差较小的事件用 `mg_path2seq` 取 path 序列 + `mg_wfa_cmp`（algo.c#L177，miniWFA 精确比对）做一致性校验并探测 inversion（翻转后若高一致则拆成两次插入）。
 
@@ -215,13 +220,21 @@ AVL 树 + Dijkstra 的 K 最短路径实现：
 
 ### 4.6 图增强（gfa-aug.c）
 
-`gfa_augment` 把插入（insertion）应用到图：
+`gfa_augment`（gfa-aug.c）把插入（insertion）应用到图：
 
 1. 分割现有 segment（如果插入点在中间）
 2. 创建新 segment（插入序列）
 3. 更新 arc（删除旧 arc，添加新 arc）
 
-`gfa_ins_adj` 调整插入坐标，处理相邻插入的边界情况。
+**新 segment 命名与 tag 建立**：所有 segment（含切分出的）统一命名为 `s1/s2/...`
+（`snprintf("s%d", k+1)`）。切分片段继承父 segment 的 `snid/soff/rank`，`soff` 随切分点递增；
+真正插入的新序列则在此**建立 rGFA 三 tag**——`snid = gfa_sseq_add(name)`、`soff = 插入的 query 起点`
+（`coff[0]`）、`rank = max_rank+1`（>0，非参考），随后 `gfa_sseq_update` 更新 stable sequence 的
+min/max。纯删除（`coff[0]==coff[1]`）不建新 segment，只在两侧加一条旁路 arc。最后 `gfa_arc_sort` +
+`gfa_arc_index` + `gfa_fix_multi` 重排并去重弧。
+
+`gfa_ins_adj`（gfa-aug.c#L213）调整插入坐标：用 `gfa_ins_shrink_semi` 做带 X-drop 的端部收缩，
+把插入点往内缩到与 graph 序列一致的边界，处理相邻插入的边界情况。
 
 ---
 ## 5. 与 pgr 路线的对照
@@ -329,10 +342,17 @@ pgr paf graph 物化粗 GFA 时可同时启用两种过滤：
 #### (5) GAF 紧凑路径编码
 
 [format.c](../../../minigraph-master/format.c) 的 `mg_write_gaf` 实现
-**紧凑路径编码**：
+**GAF 路径列的紧凑编码**：
 
-- 当连续 segment 属于同一 stable sequence 且连续时，合并为 `chr:start-end`
-- 否则展开为 `>seg1<seg2...`
+- **紧凑模式**：当整条链都落在同一条 `rank==0` 的 stable sequence（`min==0`）上时，
+  把第 6-9 列合并为 `name\tmax\tst\ten`（stable 名 + 总长 + 起止偏移），并省略显式 `plen/ps/pe`
+- **展开模式**：否则逐 segment 展开为 `>seg[:st-en]`/`<seg[:st-en]`（`>`/`<` 表正/反链），
+  再附显式 `plen\tps\tpe`
+- **顶点坐标模式**（`--vc`，`MG_M_VERTEX_COOR`）：始终展开为纯 `>seg<seg...`，不带区间
+
+另输出 `tp:A:P/S`（primary/secondary）、`cm:i:`（锚点数）、`s1/s2:i:`（得分/次级分）、
+`dv:f:`（divergence）、`NM:i:`（错配数）等 tag；`-c` 时还有 `cg:Z:`（CIGAR）与
+`ds:Z:`（差异串，含 `+`/`-`/`*`/`:` 算子）。
 
 pgr 的 `pgr paf query` 输出同源区间列表时，可借鉴这种"能合并就合并，不能就展开"的双模式输出。
 

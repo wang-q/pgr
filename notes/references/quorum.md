@@ -23,9 +23,14 @@
 |---|---|
 | `quorum_create_database` | 读 FASTQ，建 k-mer 计数库（`hash_with_quality`），写二进制 `.jf` 文件 |
 | `quorum_error_correct_reads` | 读计数库 + FASTQ，逐 read 纠错，输出 FASTA |
-| `merge_mate_pairs` | 双端两个文件 → 交错（配对保序） |
-| `split_mate_pairs` | 交错 → `_1.fa`/`_2.fa` 两个文件 |
-| `query_mer_database` / `histo_mer_database` | 调试工具（`check_PROGRAMS`，make check 构建、不随安装）：查单个 mer 的 (count, quality)、输出计数直方图 |
+| `merge_mate_pairs` | 读**偶数个**文件，把偶/奇索引文件按位交错（配对保序），写 FASTQ 到 stdout；文件数或配对数不一致报 "Input files are not paired reads." |
+| `split_mate_pairs` | 从 stdin 读 FASTA，把相邻两行（`>header`+序列）交替写到 `<prefix>_1.fa`/`<prefix>_2.fa` |
+| `query_mer_database` / `histo_mer_database` | 调试工具（`check_PROGRAMS`，make check 构建、不随安装）：`query` 查单个 mer 的 (count, quality)，`histo` 输出 (count, 高质量/低质量) 双通道计数直方图 |
+
+`Makefile.am` 里 4 个 `bin_PROGRAMS`；`all_tests`（`unit_tests/test_mer_database.cc`，gtest
+参数化测试 bits 与计数语义）、`query_mer_database`、`histo_mer_database` 归 `check_PROGRAMS`。
+`data/adapter.jf` 由 Makefile 规则 `.fa.jf` 用 `jellyfish count -m 24 -s 5k -C` 从适配器
+FASTA 生成（`dist_data_DATA`）。
 
 入口脚本额外做：质量编码自动检测（读前 ~1000 条 read，取最小 quality
 char；遇 35/66 特殊 −2，校验须为 33/59/64）、k-mer 长度（默认 24，README
@@ -55,6 +60,13 @@ char；遇 35/66 特殊 −2，校验须为 33/59/64）、k-mer 长度（默认 
 即**至少一次高质量出现就把该 k-mer 记为高质量，且权重从 3 起步**；低质量
 reads 的错误 k-mer 不会膨胀计数。这是 quorum 与朴素计数最大的区别。
 
+> 实现细节：底层 `vals_` 用 `val_array(bits + 1, ...)`——多出的 1 位正是
+> 质量位；`max_val_ = (2^bits) - 1` 即计数封顶（`create_database -b` 校验
+> 1-63）。写入 `.jf` 头时 `header->bits(vals_->bits() - 1)` 存回用户 bits。
+> `create_database` 的 `-q/-Q`（min-qual-value/char）二选一互斥、且必须给出
+> 其一；`-Q` 是单 ASCII 字符、`-q` 是整数值；`-p/--reprobe` 是独立选项（默认
+> 126，Jellyfish 哈希最大 reprobe 次数）。
+
 **quality 位如何判定**（`create_database.cc` 的 `quality_mer_counter`）：
 逐碱基维护 `low_len`/`high_len`，凡碱基质量 ≥ `qual_thresh`（= `min-q-char +
 min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；当
@@ -83,9 +95,15 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 
 ### 4.1 `find_starting_mer`：找 anchor
 
-- 从 5' 端滑窗（k-mer 窗口），跳过 N；
-- 连续 `good` 个 k-mer 计数 ≥ `anchor`（anchor-count）即认为找到可信
-  起点；找不到 → 整条丢弃（`--no-discard` 时输出单碱基 N）。
+- 从 **`skip` 偏移**（`--skip`，默认 1）起的 5' 端滑窗（k-mer 窗口），
+  遇 N 则重置并跳到下一个 k-mer（`shift_left` 返回 false 即重新装配）；
+- 每个位置先查污染（命中且非 trim → 直接判 "Contaminated read"）；
+- 非污染时取 **`get_val`（仅高质量计数）**，连续 `good`（`--anchor`→`-g`，
+  默认 2）个 k-mer 计数 ≥ `anchor-count`（默认 3）即认为找到可信起点；
+  找不到 → 整条丢弃，`--no-discard` 时输出单碱基 N。
+- 跳过/丢弃的 read 会在 `.log` 里记一行 `Skipped <header>: <error>`，
+  错误信息三种：`Contaminated read` / `No high quality mer` /
+  `Entire read is an homopolymer`。
 
 ### 4.2 `extend`：逐碱基扩展与纠错
 
@@ -101,6 +119,12 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 | 其余情况（含 N 碱基） | 进入候选替换：对每个计数 > min-count 的候选检查**延续性**（替换后移一位，下一个 k-mer 的 level ≥ 当前）；选计数最接近 `prev_count` 的候选；平局时用 read 下一个碱基仲裁；仍多个候选 → 不纠 |
 | 原碱基为 N 且无候选 | `truncation` |
 
+> 表格中"质量够"即 `*qual >= qual_cutoff`（EC 的 `-q/-Q`）；其**默认值是
+> `char` 最大值 127**——即默认情况下该分支几乎不因质量直接保留原碱基，除非
+> 显式给 `-q`/`-Q` 压低阈值。另外 `prev_count` 用 `get_val`（仅高质量计数）
+> 初始化，每步随 `count==1` 分支更新；候选替换里"选最接近 prev_count"
+> 在 `prev_count <= min_count` 时退化为选**计数最大**的候选。
+
 ### 4.3 `err_log`：窗口错误数限制（防过度纠错）
 
 所有 sub/trunc 事件按位置记录；**滑动窗口（`-w`，quorum.in 不传时默认
@@ -114,7 +138,12 @@ k 与 k/2）。输出日志：`pos:sub:from-to`、`pos:3_trunc`（3' 端）、
 - `compute_poisson_cutoff`：未显式给 `-p` 时，从计数分布自动估计 cutoff
   ——只统计**高质量** mer（编码值奇数且 ≥2），`coverage = total/distinct`
   （总 k-mer / 去重数，即平均计数），`lambda = coverage × 先验错误率/3`，
-  取首个满足 `poisson_term < 阈值` 的 x 并**返回 x+1**。
+  从 `x=2` 起取首个满足 `poisson_term(lambda,x) < 阈值` 的 x 并**返回 x+1**。
+  注意这里传给它的**阈值是 `poisson-threshold / apriori-error-rate`**（默认
+  `1e-6 / 0.01 = 1e-4`），与 `extend` 内碰撞检验直接用的 `poisson-threshold`
+  （1e-6）**不是同一个值**；若自动估计失败（返回 0）且未给 `-p`，程序
+  `err::die("Cutoff computation failed. Pass it explicitly with -p switch.")`。
+  另外 `poisson_term(λ,i)` 对 `i<11` 查阶乘表、`i≥11` 用 Stirling 近似。
 - `homo_trim`（`--homo-trim`）：从 corrected read 末端向前扫描，逐位累计
   homopolymer 评分（`(same<<1)-1`：同碱基 +1、异 −1），记录累计最大值
   位置；**仅当最大评分 ≥ 阈值才在该位置截断**（否则不截）。
@@ -125,15 +154,26 @@ k 与 k/2）。输出日志：`pos:sub:from-to`、`pos:3_trunc`（3' 端）、
 
 | 参数 | 含义 |
 |---|---|
-| `-s` | Jellyfish 哈希槽位大小（必须容下全部 k-mer） |
-| `-k` | k-mer 长度（默认 24） |
-| `-q` / `-m` | 质量下限字符 / 高质量阈值偏移（高质量 = char ≥ q+m） |
+| `-s` | Jellyfish 哈希槽位大小（默认 200M，必须容下全部 k-mer；估小报 "Failed: Increase the size parameter"） |
+| `-t` | 线程数（默认自动检测 CPU 数） |
+| `-p` | **输出前缀**（默认 `quorum_corrected`） |
+| `-k` | k-mer 长度（默认 24，README 注明上限 31） |
+| `-q` / `-m` | 质量下限字符（默认自动检测）/ 高质量阈值偏移（默认 5；高质量 = char ≥ q+m） |
 | `-w` / `-e` | 错误窗口大小（默认 10）/ 窗口内最大错误数（默认 3）；显式传 0 时回退到 k / k/2 |
-| `--min-count` / `--skip` | 好 k-mer 最小计数 / 找 anchor 前跳过的碱基数 |
-| `--anchor` / `--anchor-count` | anchor 连续个数 / anchor k-mer 最小计数 |
-| `-p` | cutoff（显式覆盖 Poisson 自动估计） |
-| `--contaminant` / `--trim-contaminant` | 污染库 / 命中即截断 |
-| `-d` / `-P` / `--homo-trim` | 不丢弃（输出 N）/ 双端分文件 / homopolymer 截断 |
+| `--min-count` / `--skip` | 好 k-mer 最小计数（EC 默认 1）/ 找 anchor 前跳过的碱基数（默认 1） |
+| `--anchor` / `--anchor-count` | anchor 连续个数 / anchor k-mer 最小计数（EC 默认 2 / 3） |
+| `--contaminant` / `--trim-contaminant` | 污染库（Jellyfish `.jf`）/ 命中即截断（而非丢弃） |
+| `-d` / `-P` / `--homo-trim` | 不丢弃（输出单碱基 N）/ 双端分文件 / homopolymer 截断（需传整数值阈值） |
+| `--debug` / `--version` / `-h` | 调试（回显执行的命令行）/ 版本 / 帮助 |
+
+> **quorum.in 参数名与 `error_correct_reads` 内部名并不一一对应**：
+> `--anchor` → EC 的 `-g/--good`（连续 good 数，默认 2）；`--anchor-count` →
+> EC 的 `-a/--anchor-count`（默认 3）。EC 二进制还有若干 **quorum.in 未暴露** 的
+> 开关：`-p/--cutoff`（Poisson cutoff，未给则自动估计）、`--apriori-error-rate`
+> （默认 0.01）、`--poisson-threshold`（默认 1e-6）、`-q/-Q`（质量 cutoff 值/字符）、
+> `--gzip`、`-M/--no-mmap`、`-v/--verbose`。因此上一版把 `-p` 记为 cutoff 是**错的**——
+> 那是 EC 二进制内部的 `-p`，而 quorum.in 的 `-p` 是输出前缀；cutoff 在 quorum.in 流程里
+> 只能靠 Poisson 自动估计，无法从脚本层显式指定。
 
 ## 6. 与 pgr 的关联
 

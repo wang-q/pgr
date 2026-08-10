@@ -8,6 +8,7 @@
 
 - **syncmer 定义**：本文采用 Edgar (2021) 的 *closed syncmer*——一个长度为 `w+k` 的窗口被称为 syncmer，当且仅当其内部最小的 s-mer（长度为 `k` 的子串）出现在窗口的**首端或末端**。详见 [Edgar, 2021](https://peerj.com/articles/10805/)。
 - **文件产物**：`.1khash`（syncmer 序列集合）、`.1path`（序列表示为 kmer 索引路径）、`.1gbwt`（GBWT 编码的图+路径）、`.1seq`（重建序列）。均基于 [ONEcode](https://github.com/thegenemyers/ONEcode) 二进制格式。
+- **工具套件与最新进展**：仓库由 Makefile 构建出 `syng`（主程序）、`syngmap`（读段→图映射）、`syngpath2gbwt`（`.1path`→`.1gbwt`）、`syngstat`（ONEcode 统计）、`k31type`，外加 ONEcode 自带的 `ONEview` 与 `SEQUENCE_UTILITIES`（`seqconvert`/`seqstat`/`seqextract` 互转 `.1seq`）。2026-03 起 GBWT 用 `rskip.[ch]`（**行程长度编码跳表**，核心操作 O(logN)）重写，README 明确推荐**两步法**：先用 `syng` 产出 `.1path`，再用 `syngpath2gbwt` 生成 `.1gbwt`。各命令细节见 §3.4。
 - **性能参考**：20× PacBio HiFi 的 935Mb 慈鲷基因组（~19Gbp）→ 1.05GB `.1khash` + 493Mb `.1gbwt`（(1023,32)-syncmer），MacBook Pro 上 62 秒。
 
 > **范围说明**：pgr 不需要复现 syng 的图/GBWT/ONEcode 部分。我们只需要 `seqhash.[ch]` 里的 **syncmer 迭代器算法**，用来替换 `src/libs/hash.rs` 中基于 `minimizer_iter` crate 的 minimizer 采样。
@@ -21,7 +22,7 @@ syng 的参数命名与 pgr/minimizer 习惯**相反**，移植时必须注意�
 | 符号 | syng 含义 | pgr/minimizer 习惯 | 本文澄清 |
 | :--- | :--- | :--- | :--- |
 | `k` | **s-mer 长度**（用于哈希的小子串） | k-mer 长度（被采样的串） | syng 的 `k` 是"哈希粒度" |
-| `w` | 窗口内 s-mer 个数 | 窗口内 k-mer 个数 | 语义一致 |
+| `w` | 窗口内 s-mer 个数的参数（**注意**：syng 主程序经 `+1` 后实际窗口含 `w+1` 个 s-mer，见下行） | 窗口内 k-mer 个数 | 语义一致（pgr 按 w 个） |
 | `w + k - 1` | **syncmer 跨度**（w 个 s-mer 覆盖的碱基数） | — | 裸 `seqhash.c` 迭代器按 w 个 s-mer（跨度 `w+k-1`）；syng 主程序（`syng.c:432`）创建 Seqhash 时用 `w+1` 补偿（注释 "need the +1 here, awkwardly"），实际窗口含 `w+1` 个 s-mer、跨度 `w+k`，与 README 一致；pgr 移植按 w 个 s-mer（`w+k-1`） |
 | `seed` | 哈希函数种子 | — | 一致 |
 
@@ -140,6 +141,57 @@ typedef struct {
   poly-A/C/G/T"）——`.1khash` 因此不含同聚物 syncmer。
 - **长度必须为奇数**：`kmerHashCreate` 要求存储长度 `len` 为奇数（`if (!(len & 0x01)) die`），故
   `w+k` 必须为奇数（默认 63，示例 (1023,32)→1055、(63,8)→71 均满足）。
+- **KmerHash 哈希表机制**（`kmerhash.c`）：开地址哈希——`table[loc]` 存 1-based 索引，冲突探测步长
+  `delta = hashDelta(pack, plen, dim)` 由 64 位字 X-OR 折叠而成，末尾 `v |= 1` **保证为奇数**（与
+  `2^dim` 互质，故能遍历整个表）；条目按 2-bit 压缩进 `pack[]`（`plen=(len+31)>>5` 个 u64 每项，
+  `psize=size*0.3`，`dim` 初值 20，`max` 逼近 `psize` 时 `doubleTable` 翻倍扩容并重排）。查询线程安全版
+  `kmerHashFindThreadSafe` 用调用方提供的 `uBuf` 缓冲，供 syng/syngmap 的并行抽取直接使用。
+- **SyncmerSet 计数与位置字段**（`syncmerset.h:27`）：`count`（跨所有输入的累计频次，I64）、
+  `thisCount`（当前输入内频次，char 1..127）、`maxCount`（任意单个输入内最大频次，char）、`loc`
+  （位置，I64，正负表方向）。`.1khash` 按 schema 以 `S`（2-bit DNA）、`C`（counts）、`M`（maxCount）、
+  `L`（locations）行分块（128Mb/块）写出；`syncmerUpdateMaxCount` 在每轮输入结束后把 `thisCount`
+  并入 `maxCount`。
+  > **勘误**：`syncmerset.h:34` 注释把 `loc` 写成 "the first location this syncmer was seen"，但
+  > `syng.c` 实际用**蓄水池采样**（`rand() % count == 0` 时更新，`syng.c:551-554,561-564`），即等概率抽到的
+  > 代表性位置，并非字面 "第一个"。
+
+### 3.4 syng 主程序流程与各命令作用
+
+**主程序 `syng`**（`syng.c`）是一个流式、多线程（pthread，默认 `-T 8`，每线程 100Mb 序列缓冲）管道：
+读入 FASTA[.gz]/FASTQ[.gz]/BAM/CRAM/SAM/`.1seq`/`.1path`/`.1gbwt` 或 fofn 文件列表，用
+`syncmerIterator`/`syncmerNext` 抽 syncmer（调用时 kmer 参数传 `0`，节点身份由
+`kmerHashFindThreadSafe` 查 `pos` 处 `w+k` 长窗口得到），最后按 `outType`（SEQ/PATH/GBWT）写出。
+每个输入序列文件结束时报 "yielding N syncs with M extra syncmers"，全程结束报 "average X coverage"
+（= 总实例数 / 去重 syncmer 数，即平均深度）。
+
+`syng` 主要选项（`syng.c:291-321` 的 usage）：
+
+| 选项 | 作用 |
+| :--- | :--- |
+| `-w` / `-k` / `-seed` | syncmer 参数，默认 55 / 8 / 7 |
+| `-T` | 线程数，默认 8 |
+| `-o <prefix>` | 输出前缀，默认 `syngOut`，作用于其后所有 `write*` |
+| `-readK <file>` | 从既有 `.1khash` 继续（用于增量构建） |
+| `-zeroK` / `-limitK <min> <max>` | 清零 kmer 计数 / 按计数过滤 kmer 集（`max=0` 无上界） |
+| `-histK` | 输出 kmer 计数的二次直方图（`qhist`，含 mean/median/N50） |
+| `-noAddK` | 不新增 syncmer，未命中置 0 |
+| `-writeK` / `-writeKfa` | 写 `.1khash` / 写 gzip fasta（`.1kmer.fa.gz`） |
+| `-writeNewK <prefix>` | 只写新增 syncmer；隐含 `-noAddK` |
+| `-writePath` / `-writeGBWT` / `-writeSeq` | 写 `.1path` / `.1gbwt` / `.1seq` |
+| `-outputEnds` / `-noEnds` | 写/不写路径两端非 syncmer 的 `X`/`Y` DNA 段（默认写） |
+| `-noNames` | 不把序列名写入 path/gbwt（read 集用） |
+
+**其余命令**：
+- `syngmap`（`syngmap.c`）：`syngmap <.1khash> <.1gbwt> <query>`，把查询读段以 **MEM**（maximal exact
+  match）映射到图，输出 `.1map`。`M` 行记 mem 的 start/end/count，`U` 行记唯一比对
+  （file/path/offset，负 offset 表反向），`X` 行记图中缺失的 syncmer（附其序列），`F` 行记被过滤序列。
+  过滤器：`-filterG <nG>`（连续 G 超 nG 的坏 Illumina 读）、`-filterQ <QT>`（平均质量低于 QT）、
+  `-filterIllumina`（等价 `-filterG 60 -filterQ 20`）、`-outputIds`。MEM 定位用 GBWT 前向 + 回退搜索
+  （`syngBWTmatchStart`/`syngBWTmatchNext`），并借助唯一 syncmer（`count==1`）的 `loc` 回溯 `syngBWTlocFind`。
+- `syngpath2gbwt`（`syngpath2gbwt.c`）：`XX.1path YY.1gbwt`，把显式路径列表转成隐式 GBWT（每条 path 正反向
+  各加入一次），是生成 `.1gbwt` 的两步法第二步。
+- `syngstat`（`syngstat.c`）：对 ONEcode 文件统计；对 `gbwt` 报告顶点/边/序列数并调 `syngBWTstat`。
+- `k31type`（`k31type.c`）、`ONEview`（ONEcode 自带的 ONE 文件查看器）。
 
 ## 4. 与 pgr 当前 minimizer 实现的对比
 

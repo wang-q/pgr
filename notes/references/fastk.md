@@ -75,7 +75,8 @@ FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio 
     另一套固定 `Dran/Fran`（a=0,c=1,g=2,t=3），两套编码职责不同：`Tran` 只管分桶路由，
     `Dran/Fran` 管 k-mer 的 2-bit 编码与反向互补。
 
-**source quirk**：`refine_tree` 里 `PAD += 2`（仅 `FIND_MTHRESH` 未定义时 +1），且
+**source quirk**：`refine_tree` 里 `PAD += 2`（仅当定义了 `FIND_MTHRESH` 调试宏时才 +1，
+正常编译为 +2；**修正：原笔记把二者写反了**），且
 `last_max < 1.02*max_count` 时停止细化并可能改变 `NPARTS`——桶数在训练阶段可能被
 实际数据规模回退调整。末尾有硬校验 `if (KMER < PAD_LEN) Clean_Exit`（"K-mer must be
 at least PAD_LEN"），k 太小直接报错退出。
@@ -94,6 +95,12 @@ FastK 生成以下几种核心文件（均为二进制；最终结果写入 `-N`
         + `int64 hist[1..=32767]`（共 32767 个频次 bin）。`max_inst` 是 ≥ high 的
         k-mer 实例总数（封顶累计）。pgr `libs/kmer/hist.rs` **字节级复刻**了此布局
         （见 §4 借鉴）。
+        *   **逐字节核对**（`count.c` 写 / `libfastk.c::Load_Histogram` 读）：`count.c`
+            实际把 `counts[1]`（第一个 bin 的值）写入第 4 个字段（ilowcnt 位置）、把
+            `max_inst` 写入第 5 个字段（ihighcnt 位置）——因此 ilowcnt 字段与紧随其后的
+            `hist[1]` **数值重复**。libfastk 读出后把 ilowcnt/ihighcnt 藏在
+            `hist[high+1]`/`hist[high+2]`（注释称 "boundary counts for opposite mode
+            hidden at top"），供 unique↔instance 两种视角切换（`Modify_Histogram`）。
 *   **K-mer 表 (.ktab)**: 一个排序的列表，包含数据集中所有（或满足特定阈值）的规范 k-mer 及其计数。
     *   结构 = **stub 文件 + 分片**（`table.c::Merge_Tables`）：
         `<root>.ktab` stub 含 `int32 k | int32 NTHREADS | int32 cutoff | int32 IDX_BYTES`
@@ -101,7 +108,10 @@ FastK 生成以下几种核心文件（均为二进制；最终结果写入 `-N`
         `.<root>.ktab.#`，每条记录 = k-mer 字节 + `uint16 count`。这就是
         `libfastk.c::_Kmer_Stream` 的"前缀压缩 + 索引"结构（`ibyte` 前缀 →
         `index` 偏移表 + `inverse_index`），供 O(1) 前缀定位 + 桶内小范围查找。
-    *   `IDX_BYTES` 按总条目数自适应（`count.c`：>2^26 用 3、≥2^16 用 2、否则 1）。
+    *   `IDX_BYTES` 按总条目数自适应（`count.c::Sorting` 末尾，条目数为 `tmers`）：
+        `tmers > 2^26(0x4000000) 且 k≥12` 用 3；`tmers ≥ 2^18(0x40000) 且 k≥8` 用 2；
+        否则 1。**（修正：原笔记误写为"≥2^16 用 2"，实为 2^18=0x40000，且 3/2 两档还各有
+        k≥12/k≥8 的约束。）**
 *   **档案 (.prof)**: (可选) 数据集中每条序列的 k-mer 计数概况。这是一个压缩格式，不仅记录了 k-mer 的出现，还按原序列顺序保留了位置信息。
     *   结构 = stub + 分片（`merge.c::Merge_Profiles`）：`<root>.prof` stub 含
         `int32 k | int32 ITHREADS`；数据在 `.<root>.pidx.N`（A-file，read id →
@@ -140,6 +150,64 @@ FastK 生成以下几种核心文件（均为二进制；最终结果写入 `-N`
     且 `-p:<table>` 时 `-t` 被忽略、默认直方图也不再输出（相对 profile 不做直方图）。
 *   全部阶段用 pthread 并行；`-T` 同时是桶内排序线程数与 profile 分片数
   （`NTHREADS`），输入读取另用 `ITHREADS`。
+
+## 2.6 子命令一览（顶层各 `*.c`）
+
+FastK 本体之外，仓库还附带一系列围绕 `.hist/.ktab/.prof` 及 1-code 格式的子命令，
+绝大多数是基于 `libfastk.c` 库（`Load_Histogram` / `Open_Kmer_Stream` /
+`Open_Profiles`）编写的"薄壳"。各命令用法与作用如下（括号内为其 `Usage`）：
+
+*   **Histex**（`[-1] [-kAG] [-h[<int(1)>:]<int(-G?1000:100)>] <root>[.hist]`）：
+    显示 k-mer 直方图，或转成 1-code 的 `.khist`。`-1` 输出 1-code（ONElib 格式）；
+    `-A` 制表符分隔 ASCII；`-k` 输出 **instance 计数**（默认是 unique 计数，
+    用 `Modify_Histogram` 切换视角）；`-G` 输出专供 GenomeScope.FK 的 ASCII 直方图；
+    `-h low:high` 限定频次区间（默认 1:100，`-G` 时强制 1:1000）。
+*   **Tabex**（`[-1AC] [-t<int>] <root>[.ktab] [<address>[-<address>]]`）：
+    列出 / 校验 / 在表中查找 k-mer，或转成 1-code 的 `.kmr`。`-A` ASCII 列出
+    （`kmer\tcount`）；`-C` 校验排序（检查 k-mer 严格递增，与其余选项互斥）；
+    `-1` 转 1-code；`-t` 只输出 count ≥ 阈值的项。`<address>` 可以是序号 `<int>`
+    或 DNA 字符串 `<dna:string>`，支持 `a-b` 区间。基于 `Open_Kmer_Stream` 的
+    `First/Next/GoTo` 顺序与随机访问（前缀索引支撑）。
+*   **Profex**（`[-1Az] <root>[.prof] [<read:int>[-(<read:int>|#)] ...]`）：
+    显示档案（某条 read 的逐 k-mer 计数向量）或转 1-code 的 `.prf`。`-1` 1-code；
+    `-A` tab 分隔 ASCII；`-z` 压缩游程并忽略 0 值。基于 `Open_Profiles` /
+    `Fetch_Profile`（delta+RLE 解压）。
+*   **Logex**（`[-T<int(4)>] [-[hH][<low>:]<high>] <output:name=expr> ... <source>.ktab ...`）：
+    用**逻辑表达式**组合多个 k-mer 计数表并可按 count 阈值过滤。表达式运算符
+    `OR/AND/XOR/MIN/CNT/GC`，计数调制器 `AVE/SUM/SUB/MIN/MAX/LFT/1`（`MAX_TABS=10`）。
+    例子 `AnB = A &. B` 表示取两表交集（count 按调制器合并）。默认输出**结果表**；
+    `-h low:high` / `-H low:high`（二者同义，见 `Logex.c` 的 `case 'h'/'H'`）带区间时
+    改输出**结果直方图**。
+*   **Symmex**（`[-v] [-T<int(4)>] [-P<dir(/tmp)] <src>[.ktab] <dst>[.ktab]`）：
+    从 **canonical** 表生成**对称**表——把每个非回文 k-mer 的正反两条都写出来，
+    回文 k-mer 只保留一份，全局排序后输出（供需要"正反都计"的应用）。
+*   **KmerMap**（`[-vm] [-T<int(4)>] [-P<dir(/tmp)> <kmers>[.ktab] <target>[.dna] <out:bed>`）：
+    生成 `.bed` 文件，标出 target 序列中**被 k-mer 表覆盖的区域**。原理：对 target 求
+    **相对 profile**（以 kmers 表为参照），把连续 count>0 的区间写成 bed；
+    `-m` 把相邻区间合并。用于 e.g. 判断 reads 覆盖了基因组的哪些区域。
+*   **Fastmerge**（`[-ht] [-T<int(4)>] [#<int(1)>] [-P<dir(/tmp)>] [-S<N:int>of<D:int>] <target> <source>.ktab ...`）：
+    HPC 场景：把分片跑出的多个 k-mer **表**合并为一个（`-t` 出表、`-h` 出直方图，
+    至少一个）。直方图必须由合并后的表重算（histogram 本身不能直接合并）。
+    `-#` 指定每线程产多个分片；`-P` 先把源文件缓存到节点本地盘；
+    `-S<N>of<D>` 把合并分成 D 片、本次只做第 N 片（超大合并分片处理）。
+*   **Fastcat**（`[-vk] [-htp] <target> <source>[.hist|.ktab|.prof] ...`）：
+    把 Fastmerge `-S` 产生的分片按序**拼接**成单一 `.hist/.ktab/.prof` 文件
+    （`-h/-t/-p` 选类型）。
+*   **Fastrm**（`[-if] <source>...`）与 **Fastxfer**（`[-inf] <source> <dest>`）：
+    把 `.hist/.ktab/.prof` 及对应隐藏分片当作"单个整体"删除 / 改名复制
+    （后者即 README 中 Fastmv/Fastcp 的统一实现）。
+
+此外，本 checkout 还额外附带（README 未收录）：
+*   **Homex**（`-e<int> -g<int>:<int> <root>[.ktab]`）：统计 homopolymer 错误率。
+*   **Haplex**（`-H [-g<int>:<int>] <root>[.ktab]`）：产出所有"中心含单个 SNP"的
+    潜在单倍型 k-mer。
+*   **Vennex**（`[-h[<low>:]<high>] <s1>.ktab <s2>.ktab ...`）：对多个表的 k-mer
+    做维恩图式集合统计。
+*   **ONElib**（`ONElib.c/.h`，FASTK-2 的 `.one` 通用格式库）：Histex/Tabex/Profex 的
+    1-code 输出即用此格式，本笔记不展开。
+
+> 注：`Split_Table`（`split.c`，仅 `-p:<table>` 相对 profile 时触发）把 `PRO_TABLE`
+> 的 k-mer 按 core-prefix 分发到"块+线程"文件，供第二阶段与输入 k-mer 归并出相对 count。
 
 ## 3. 处理流程 (Processing Workflow)
 

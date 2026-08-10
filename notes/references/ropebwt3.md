@@ -50,15 +50,21 @@ FM-index（rld rank + 采样 SA）
 
 1. **ropebwt2 动态算法**（`-2`/`-s`/`-r` 选项）：
    - 把序列**反转**后逐条插入 multi-rope（`mr_insert_multi`）；
-   - rope（rope.c）是 B+-tree 风格的块结构（`max_nodes=64`、`block_len=512`），
-     每个节点保存 6 个 marginal counts（ACGTN$）；插入 = 在 BWT 中做 backward 插入，
-     动态维护 BWT。
+   - rope（rope.c）是 B+-tree 风格的块结构（`ROPE_DEF_MAX_NODES=64`、
+     `ROPE_DEF_BLOCK_LEN=512`，可用 `-n`/`-l` 覆盖；`max_nodes` 强制偶数、
+     `block_len` 强制 8 对齐），内部节点 `rpnode_t` 用位域压缩（`l:54, n:9,
+     is_bottom:1`），每个节点保存 6 个 marginal counts（ACGTN$）；
+   - **叶子块**即一段 RLE 编码的 BWT 子串，采用 rle.h 的 "43+3" codec（详见 3.2）；
+   - 插入 = 在 BWT 中做 backward 插入，沿树**自上而下"搜索 + 分裂"单趟**完成：
+     节点满（`n==max_nodes`）或叶子 `n_runs + RLE_MIN_SPACE(18) > block_len`
+     时 `split_node` 分裂，动态维护 BWT；`rpcache_t` 缓存上次插入位置加速连续插入。
    - `-r` 用 RCLO（reverse-complement + 计数排序优化），适合短读。
 2. **libsais 批量算法**（默认）：
    - 按 batch 读入序列（含正反链），用 **libsais 构建广义后缀数组**（libsais.c，
      外部库；`sais-ss.c` 的 `rb3_build_sais` 按 batch 长度选择：`len + sais_extra_len >=
      INT32_MAX` 时用 64 位 `libsais64_gsa`，否则用 32 位 `libsais_gsa` 省内存；
      "libsais16x64" 并不存在）→ 由 SA 生成部分 BWT；
+   - batch 大小默认 **7G** 符号（`-m`，`rb3_parse_num` 支持 K/M/G 后缀）；
    - **SA→BWT 直接构造**（`rb3_build_sais32/64` 的亮点）：不必对 SA 再排序，而是对每个
      后缀取其**前驱字符**填回原位——`SA[i] = T[SA[i]==0 ? len-1 : SA[i]-1]`（位置 0 的
      后缀取最后一个字符做循环哨兵），一趟把广义 SA 就地转成 BWT，省一次重排；
@@ -70,16 +76,26 @@ FM-index（rld rank + 采样 SA）
 输出格式：`-b` FMR（rope dump）、`-d` FMD（rld 编码）、`-T` TREE、`-e` BRE
 （block-run encoding）、默认 PLAIN 文本 BWT。
 
-### 3.2 RLE-BWT 存储（rld0.c）
+### 3.2 RLE-BWT 存储（rld0.c + rle.h）
 
-FMD 的核心数据结构 `rld_t`（rld0.h）：
+FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
 
-- **run-length 编码**：BWT 的连续相同字符压缩为 (symbol, run-length)；
-- **delta/变长编码**：run 长度按位块存储（23-bit 块粒度 + 16/32/64-bit 三种块宽
-  `offset0`），`rld_dec` 迭代解压；
-- **rank 支持**：`frame` 索引（块级前缀计数）+ `cnt/mcnt`（累计/边际计数），
-  使 `rld_rank` 近似 O(1)——这是 FM-index 查询（occ）的基础；
-- alphabet：DNA 模式 `asize=6`（ACGTN$）。
+- **rope 叶子层的 "43+3" codec（rle.h）**：BWT 连续相同字符压缩为 (symbol, run)，
+  每个 run 低 3 位存符号、高位存长度，长度按阈值分档**变长**：`<2^4` 占 1 字节、
+  `<2^8` 占 2、`<2^19` 占 4、否则占 8 字节（`rle_enc1`/`rle_dec1`）——这是
+  FMR/rope 在内存与磁盘上的 RLE 格式；
+- **FMD 的 delta 编码（rld0.c）**：把 run 流再压缩——run 长度用 **delta 编码**
+  （`rld_delta_enc1`，宽度 = `2⌈log₂⌈log₂l⌉⌉ + 1 + ⌈log₂l⌉` 的自适应变长码），连同
+  symbol（`abits=3` 位，`asize=6`）打包成连续 bit 流写入 64-bit 字；
+  - 数据按 **`2^23` 字（`RLD_LSIZE`）分块**（`z[]`），每块内再细分为
+    `ssize=2^sbits` 字（默认 `bbits=3` → 8 字）的 small block，每个 small block
+    头部存**该块内的累计符号计数**（按块内总数自动选 16/32/64-bit 三种宽度，
+    即 `rld_block_type` 0/1/2 与 `offset0[]`），便于随机 seek 与 skip；
+  - **rank 支持**：`rld_rank_index` 建 `frame` 索引（每 `2^ibits` 个符号采样一次
+    块级前缀计数），配合 `cnt`（累计）/`mcnt`（边际）计数，`rld_rank*`/`rld_extend`
+    近似 O(1)——这是 FM-index 查询（occ/LF）的基础；
+- alphabet：DNA 模式 `asize=6`（ACGTN$，`RB3_ASIZE`），`_DNA_ONLY` 时启用
+  `rld_dec0_fast_dna` 快速解码热路径。
 
 ### 3.3 FM-index 查询（fm-index.c）
 
@@ -103,6 +119,8 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
   短 MEM 的重复扫描。
 - `mem` 输出 BED（query name, start, end, #hits），默认不输出位置（`-p` 可选，
   3.8 起输出半随机子集）；`--gap`/`--cov` 报告未覆盖/覆盖长度。
+- **歧义碱基**：query 非 ACGT 字符经 `rb3_nt6_table` 统一编码为 N（code 5，合法 BWT
+  符号），避免 mem 段错误（3.4 修复）；sw 的 query DAWG 构建中再把 N 转成 A。
 
 ### 3.5 BWA-SW 局部比对（bwa-sw.c，修订版）
 
@@ -113,13 +131,17 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
 - **候选集**：`sw_cell_t` 携带 H/E/F 三个 DP 状态与 **SA 双区间**（`lo, lo_rc, hi-lo`）；
   `sw_candset_t` 以 `(lo,hi)` 为键去重/合并同一区间的多个来源，`sw_update_candset`
   裁剪，`sw_heap_insert1` 用堆保留 top `n_best` 候选；
+- **rank 缓存**：`rb3_r2cache_init` 用哈希表缓存 `(k,l)` 的 rank 结果（默认容量
+  `0x10000`，`-C` 可调），DP 中 `rb3_fmd_extend_cached` 复用，省去大量重复 occ 计算；
+- **矩阵布局**：`cell` 按 `n_node × n_best` 铺开（每 DAWG 节点至多保留 `n_best` 个
+  cell，`row[i].a` 指向各节点行）——`-N`（`n_best`，默认 25）即 DP 的"带宽"；
 - **F 状态**：`sw_track_F` 用 `fpar`（`rb3_u128_t` 数组，存前驱区间）跟踪 F 数组
   （前向 gap 延伸）的 `F_from_off`，供回溯；`sw_cell_dedup` 删除 out-of-band cells
   （3.4 提速 20%）；
 - **回溯**：`sw_backtrack1` / `sw_backtrack` 从最优位置回溯路径，输出 CIGAR
   （`cs` tag，3.7+）；
 - **评分**：默认 BLASTN 风格参数（`rb3_swopt_init`：`match=1, mis=3, gap_open=5,
-  gap_ext=2, min_sc=30`，`-A/-B/-G/-E/-m` 可覆盖）；`-N` 设每个 DAWG 节点保留的候选
+  gap_ext=2, min_sc=30`，`-A/-B/-O/-E/-m` 可覆盖）；`-N` 设每个 DAWG 节点保留的候选
   hit 数（`n_best`，默认 25），`-k` 要求比对末端有 k-mer 精确匹配（`end_len`，默认 11），
   `-j` 设启动比对所需的最小 MEM 长度（`min_mem_len`，默认 0；>0 时先跑
   `rb3_fmd_smem_present` 做**长 MEM 门控预检**，query 不含足够长 MEM 就直接跳过 SW，
@@ -138,7 +160,7 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
 | 模块 | 职责 |
 |------|------|
 | `build.c` | BWT 构建主流程（ropebwt2 动态 / libsais 批量 + merge，FMR/FMD/TREE/BRE 输出）|
-| `mrope.c` / `mrope.h` | multi-rope：6 条 rope（ACGTN$），序列插入（正反链）|
+| `mrope.c` / `mrope.h` | multi-rope：把 BWT 按**后缀首字符**分成 6 段（ACGTN$），每段一条 rope（`r[a]`）；`mr_insert1`/`mr_insert_multi` 序列插入（正反链）、`mr_rank2a` 跨 rope 定位计数 |
 | `rope.c` / `rope.h` | B+-tree 风格动态 BWT 块结构（marginal counts、插入、rank）|
 | `rld0.c` / `rld0.h` | RLE-BWT：run-length + delta 编码、rank、FMD 读写（`rld_t`）|
 | `fm-index.c` / `fm-index.h` | FM-index：extend/backward search、SMEM、SSA、格式互转 |
@@ -157,9 +179,9 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
 
 | 命令 | 功能 | 关键参数 |
 |------|------|----------|
-| `build` | 构建 BWT（FMR/FMD）| `-2/-s/-r` ropebwt2 算法、`-m` batch、`-p` SA 并行、`-d/-b` 格式、`-i` 续建 |
-| `mem` | SMEM 查找 | `-l` 最小长度、`-c` 最小出现、`-p` 输出位置、`--gap/--cov`、`--old-mem` 切回原始算法（默认 Gagie）|
-| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数、`-k` 末端 k-mer（`end_len`）、`-j` 启动 MEM 长度、`-m` min score、`-e` 端到端、`-p` 多位置、`--all-e2e` |
+| `build` | 构建 BWT（FMR/FMD）| `-2/-s/-r` ropebwt2 算法（`-s` RLO、`-r` RCLO）、`-m` batch（默认 7G）、`-t` 线程、`-p` SA 并行线程、`-l/-n` 叶子块长/节点扇出、`-F/-R` 免正/反链、`-d/-b/-e/-T` 输出格式、`-i` 续建、`-S` 逐文件保存 |
+| `mem` | SMEM 查找 | `-l` 最小长度（默认 19）、`-c` 最小出现、`-p` 输出位置、`--gap/--cov`、`--old-mem` 切回原始算法（默认 Gagie）|
+| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数（`n_best`）、`-k` 末端 k-mer（`end_len` 默认 11）、`-j` 启动 MEM 长度（`min_mem_len`）、`-m` min score、`-A/-B/-O/-E` 评分、`-C` rank 缓存、`-y` e2e 丢尾、`-e` 端到端、`-b` 双链、`-u` 输出未比对、`-p` 多位置、`--seq` 输出 rs、`--all-e2e`/`-g` |
 | `suffix` | 找最长匹配后缀 | `-L` 输入单行一条序列 |
 | `hapdiv` | 101-mer 单倍型多样性 | 内部调用 sw -e（`hapdiv_k=101, hapdiv_w=50`）|
 | `ssa` | 采样后缀数组 | `-s` 采样率（每 2^INT 碱基一个 SA，默认 8）、`-t` 线程 |

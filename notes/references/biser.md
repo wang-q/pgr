@@ -147,7 +147,7 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 
 **Core duplicon**: 定义为能覆盖所有 SD 的 elementary SD 最小集合。BISER 使用贪心 set-cover 近似算法
 （`cover.py` 中的 `greedy_set_cover`）识别 core duplicons，并在 `.elem` 文件中标记为 `CORE`。
-（每个 core 需覆盖至少 2 个 SD，`len(sds) < 2` 的集合被跳过。）
+（每个 core 需覆盖至少 2 个 SD，`len(sds) < 2` 的集合被跳过。实现细节见 §3.3.5。）
 
 ### 2.5 多基因组扩展
 
@@ -248,7 +248,7 @@ search 按（染色体, chunk）逐段处理：Python 侧按 `--max-chromosome-s
   内 (`loci.loc - MAX_DISTANCE ≤ walker.last < loci.loc`)，则延伸 walker 的 `last`/`ref_last`
    并增加 `count`。
 2. **插入**: 若 `loci[lidx]` 落在当前 walker 与下一个 walker 之间，则插入新节点， 年龄初始为 0
-   （本轮结束时再 `age += 1`）。
+   （本轮结束时再 `age += 1`；若新位置恰落在当前 walker 自身区间内，walker 的 `age` 还会额外 +1）。
 3. **老化**: 若当前 walker 未被延伸或插入，则 `age += 1`，并检查 `count ≥ ceil(age · τ)`。
     - 若满足且长度 `< MAX_SD_LEN`，标记 `potentional`。
     - 若不满足或长度超限，且此前为 `potentional`，并满足 `last - first > QUERY_THRESHOLD` 与
@@ -267,10 +267,21 @@ search 按（染色体, chunk）逐段处理：Python 侧按 `--max-chromosome-s
 并过滤掉完全自重叠（same species/name/strand 且坐标相同）的情况。最终生成 `Hit` 存入按
 `(species1, chr1, species2, chr2, complement)` 分组的 `result` 字典。
 
+**`cross_search()`**: 以基因组 A 的单个目标染色体 `ch` 为参考（`find_sds=False`，只建索引），对其建
+前向 + 反向互补两个拷贝的索引；过滤高频 k-mer 后，读取基因组 B 的 `<sp>.bed.regions.txt`（每行
+`(contig, st, ed)` 区间），把 B 每条 contig 追加为一个 query 染色体，再对其中每个 `(st, ed)` 区间
+`i.seq[st:ed]` 调 `build_index(find_sds=True, st=st)` 做 plane-sweep（`st` 作为 `Locus` 的坐标偏移）。
+与单基因组 `search` 一致，反向互补 query 只接受 `chr == current.chr - 1` 的 loci。
+
 **search 输出的 merge**: `__init__.codon` 对每组的 hits 调 `hit.Hit.merge(r, MERGE_DIST=500)`
-再写盘——按 `h.x.start` 排序后，x 端 `ph.x.end+dist < h.x.start` 才开启新组，同组内相邻 hit 若
-x/y 双轴都足够接近则取并集合并边界（`hit.codon` 的 `merge`）。这与 §3.3.4 decompose 阶段的
-`merge()` 是两处独立实现。
+再写盘（`hit.codon` 的 `merge`，与 §3.3.4 decompose 阶段的 `merge()` 是两处独立实现）。流程：先按
+`h.x.start` 排序；当 `ph.x.end + dist < h.x.start`（x 轴间隔超过 `dist`）时开启新组并 flush 旧组，
+否则把当前 hit 并入当前组——组内维护按 `y.end` 二分排序的 `y_sorted/y_hits`，从 `h.y.start - dist`
+起找候选，对每个满足
+`x.end+dist ≥ h.x.start && y.end+dist ≥ h.y.start && y.start ≤ h.y.end+dist`
+（x/y 双轴都在 `dist` 内接近）的候选取并集合并边界并删除之，随后把当前 hit 按其 `y.end` 插回。
+flush 时经 `_y()`：对 `x == y` 的自匹配 hit，若 `span() > 1000` 则复制一份并把 `y.start += 1000`
+（把第二个 mate 起点推后，避免与自身完全重叠），其余 hit 原样输出。
 
 #### 3.3.2 Chaining in `chain.codon`
 
@@ -316,7 +327,8 @@ anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一
 - anchors 先排序：`Hit.__lt__` 按 `(x.chr, y.chr, x.start, x.end, y.start, y.end)`（Interval
   dataclass 的字典序，源码中的注释 lambda 是旧键，未生效）。
 - 每个 anchor 的自身得分 `score = MATCH * matches - MISMATCH * mismatches - GAP * indel_bp`。
-- DP 仅向后查找最多 `max_iter=500` 个候选前驱；对每对 `(aj, ai)` 计算：
+- DP 从 `ai-1` 向前回溯，且 `it` 只对通过上述 interval 过滤的候选计数，最多处理 `max_iter=500`
+  个合法前驱；对每对 `(aj, ai)` 计算：
     - `mi = min(c_xs - p.x.end, c_ys - p.y.end)`
     - `ma = max(c_xs - p.x.end, c_ys - p.y.end)`
     - 若 `ma ≥ MAX_GAP` 则跳过。
@@ -333,7 +345,8 @@ anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一
       令 `mi = min(Δx, Δy)`（较短侧长度），若 `max(Δx, Δy) ≤ 1000` 直接用 `bio.seq.align()`
       精确比对；否则两端各比对 `mi` bp 并取分高者，中间 `max(Δx, Δy) - mi` 用 `I`/`D` 表示。
     - 在链两端各取 `SIDE_ALIGN=500` 做 `ltrim()` / `rtrim()`：从端点向内侧扫描，找到累积比对得分
-      最大的位置作为新边界。
+      最大的位置作为新边界（实际向两侧取的宽度为 `off = min(SIDE_ALIGN, x.start, y.start)`，端点
+      靠近 0 时取更小值）。
 
 `hit.codon` 中的 `Hit.align()` 按 `MAX_ALIGN=60 kb` 分块调用 `bio.seq.align()`，并将返回的 `M`
 操作细分为 `=`（匹配）与 `X`（错配），CIGAR 操作仅使用 `=`, `X`, `I`, `D`。
@@ -354,26 +367,48 @@ decompose 阶段需要跟踪同一 elementary SD 在多个序列上的多个拷�
 - `gap`：自上次命中以来的未命中步数；
 - `score`：命中计数。
 
-处理当前 k-mer 的位置列表 `index`（按 `(chr, loc)` 升序构建，`update_list` 自列表末尾向前遍历）时：
+处理当前 k-mer 的位置列表 `index`（按 `(chr, loc)` 升序构建，`update_list` 自列表末尾向前遍历）时，
+对每个节点依次判分支：
 
-1. 对尚未进入链表的新位置，在链表头部插入新节点，并继承当前 `mappings`。
-2. 对可延伸的节点，更新 `end`、`score`、`gap=0`、`count += 1`；若本次延伸使节点长度首次跨过
-   `MIN_MATE_LEN` 且 `mappings` 中已跟踪多个节点（即该 elementary SD 有多个拷贝），先触发一次
-   `process(L, visited, [], n.mappings)` 输出各拷贝已覆盖的前缀区间。
-3. 对老化节点（`gap >= diff=50`），若此前为 `potentional` 且长度超过 `MIN_MATE_LEN`， 调用
-   `process()` 输出：
+1. **延伸**: 若 `n.chr == index[i][0]` 且 `index[i][1] - diff ≤ n.end < index[i][1]`（位置在当前
+   节点右侧 `diff` 内），则延伸——更新 `end`、`score += 1`、`gap=0`、`count += 1`；若本次延伸使
+   节点长度首次跨过 `MIN_MATE_LEN` 且 `mappings` 中已跟踪多个节点（该 elementary SD 有多个拷贝），
+   先触发一次 `process(L, visited, [], n.mappings)` 输出各拷贝已覆盖的前缀区间。
+2. **被覆盖**: 若 `n.chr == index[i][0]` 且 `n.end + diff > index[i][1] ≥ n.begin`（位置已落在
+   当前节点区间内），只 `score += 1` 并跳过该位置（不延伸、不计数）。
+3. **插入**: 若位置不属于当前节点、且应插在当前节点之后（无后继，或后继同 chr 且其
+   `end + diff < index[i][1]`），则 `insert_after` 新节点并赋 `score=1`、继承 `mappings`；对尚未
+   进入链表的新位置则在链表头部插入（开头的 while 与末尾的 while）并同样继承当前 `mappings`。
+4. **老化**: 每轮 `gap += 1, age += 1`；若 `gap < diff` 置 `potentional=True`，否则若此前为
+   `potentional` 且长度超过 `MIN_MATE_LEN`，调用 `process()` 输出并清空整个链表（`L = None`）：
     - 若 `mappings` 为空，输出 `(chr, begin, end, score)`；
     - 否则对每个 chromosome 输出从 `begin` 到 `mappings[chr]` 的区间，并更新 `begin` 为
       `mappings[chr]+1`。
-4. 将已输出区域对应的 `visited` 位置置为已访问（`process()` 中 `visited[c][i] = True`），避免同一
+5. 节点长度超过 `MIN_MATE_LEN` 时把 `mappings[id] = end`，记录各拷贝的当前最右边界。
+6. 将已输出区域对应的 `visited` 位置置为已访问（`process()` 中 `visited[c][i] = True`），避免同一
    碱基被多次分解。注意 `process()` 仅在输出区域数 ≠ 1 时才标记 `visited` 并返回结果；若恰好只
    输出 1 个区域，则返回空列表，调用方不会记录该 elementary SD（该区域也不标记 visited）。
 
-**合并 `merge()`**: 对相邻的 elementary SD 集合，若它们在所有 chromosome 上连续且间隔不超过 500bp，
-则合并为一个集合。
+**合并 `merge()`**: 对相邻的两个 elementary SD 集合 `e1/e2`，若区域数相同、逐区域 chromosome 一致、
+且 `e1[i]` 的 end 恰落在 `e2[i]` 的 start 之前 `500 bp` 内（`e1[i].end ≤ e2[i].start` 且
+`e1[i].end + gap ≥ e2[i].start`，`gap=500`），则合并为一个集合：每个区域取 `(chr, e1.start, e2.end,
+score 求和)`；否则各自独立输出。
 
 **输出**: 每个 elementary SD 集合输出为 BED 行，格式为
 `species\tchrom\tbegin\tend\tset_id\tlength\tscore\tstrand`；其中 strand 来自序列名中的 `+`/`-`。
+
+#### 3.3.5 Core duplicon cover in `cover.py`
+
+`cover(bed, elems)` 读取 `final.bed` 与 `.elem.txt`，为每个 `(species, chrom, strand)` 键用 `ncls`
+建关于 elementary SD 坐标的区间树（`start, end, elem_id`）。对每条 SD 行，取其两个 mate 的
+`(species, chrom, strand, start, end)`，用 `find_overlap` 找到覆盖该 mate 的所有 elementary SD，维护：
+- `elem_sd[elem_id]`：该 elementary SD 覆盖到的 SD 行索引集合；
+- `sd_elem[sd_li]`：覆盖该 SD 的所有 elementary SD id 集合。
+
+随后 `greedy_set_cover(subsets=elem_sd, parent_set=sd_elem)` 把**所有 SD 行索引**作为被覆盖全集，用
+最大堆（按 `max - len(s - result_set)` 打分）每次挑选能覆盖最多*尚未覆盖* SD 的 elementary SD，贪心
+近似"覆盖所有 SD 的最小 elementary 集合"。凡覆盖 SD 数 `< 2` 的集合被跳过（`len(sds) < 2`），剩余
+core 在 `.elem` 输出中给对应行（`len(l) <= 8`）追加 `CORE` 标记。
 
 ## 4. 相关研究：T2T-CHM13 SD 注释来源与下游分析
 

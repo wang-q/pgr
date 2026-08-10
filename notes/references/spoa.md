@@ -18,16 +18,24 @@
   （0=local、1=global、2=semi-global）、`-r` 结果模式（0=consensus、1=MSA、
   2=consensus+MSA、3=GFA、4=GFA+consensus 路径）、`-d <file>` DOT 图输出、
   `-s` strand-ambiguous、`--min-coverage`（仅 `-r 0` 生效）。
-- **输出细节**: `-r 2` 是先后输出 consensus 与 MSA 两份 FASTA（MSA 含 consensus 行）；
-  `-r 4` 仍是**同一份 GFA**，只是额外把 consensus 作为一条 `P` 路径写入（并非两个
-  独立输出）；`-d` 在结果循环结束后无条件调用 `PrintDot`（路径非空才写文件）；
+- **输出细节**: `-r 2` 实为**单份 FASTA**——`main.cpp` 中 `case 1`/`case 2` 走同一分支，
+  仅以 `include_consensus=(it==2)` 区分，`-r 2` 只输出 MSA（末尾追加 `Consensus` 行），
+  **并非**先后输出 consensus 与 MSA 两份 FASTA；`-r 4` 仍是**同一份 GFA**，只是额外把
+  consensus 作为一条 `P` 路径写入（`case 3`/`case 4` 分支在 `PrintGfa` 前先调用
+  `GenerateConsensus()` 填充 `consensus_`）；`-r` 可多次指定（默认 `{0}`，结果数 >1 时
+  去掉首个元素）；`-d` 在结果循环结束后无条件调用 `PrintDot`（路径非空才写文件）；
   GFA 的 `L` 边行形如 `L a + b + OM ew:f:W`（`OM` 为 CIGAR 域，`ew` 为边权重 tag），
-  consensus 节点/边以 `ic:Z:true` 标记；`-s` 逐序列分别比对正/反向链并取更优者。
+  consensus 节点/边以 `ic:Z:true` 标记；`-s` 逐序列分别比对正/反向链并取更优者
+  （反向链的 `P` 路径会倒序并追加 `-` 标记链向）。
 - **SIMD 支持**: SSE4.1 与 AVX2（README 自评 "marginally faster due to high
   latency shifts"）；[SIMDe](https://github.com/simd-everywhere/simde) 提供
   非 x86 可移植；运行时分派按 AVX2 > SSE4.1 > SSE2。
-- **交付形态**: 库（`libspoa`）+ 独立二进制 `spoa`（FASTA/FASTQ → consensus /
-  MSA / GFA / DOT，stdin/stdout 友好）。
+- **交付形态**: 库（`libspoa`，SOVERSION 7.0.0）+ 独立二进制 `spoa`（FASTA/FASTQ →
+  consensus / MSA / GFA / DOT，stdin/stdout 友好）。**公开 API 纯 C++**：聚合头
+  `include/spoa/spoa.hpp` 仅含 `graph.hpp` + `alignment_engine.hpp` + `version.hpp`
+  （版本经 `SPOA_VERSION` 宏注入，CMake `project(VERSION 4.1.5)`）；**本版本没有公开
+  C API**——`extern "C"` 仅用于 SIMD 头文件包含，`spoa.hpp` 无任何 `c_api`/`extern C`
+  导出。
 - **依赖**: bioparser/biosoup（序列 I/O）、zlib；可选 cereal（图序列化）、
   simde（可移植 SIMD）、cpu_features（x86 分派）、gtest（测试）。
 - **线程模型**: 库与 CLI 均为**单线程**——并行化由使用者完成（spoa 本身只提供
@@ -76,6 +84,10 @@ FASTA/FASTQ（bioparser 流式读取）
    `weights[i-1] + weights[i]`（相邻两节点各贡献一次）；节点本身无 weight。
    支持统一 weight、逐位权重向量、Phred quality（`quality[i] - 33`）三种入参。
 4. 每次插入后全图 `TopologicalSort()`（O(V+E)）。
+5. **健壮性校验（`invalid_argument` 异常）**: `sequence_len == 0` 直接返回（不建图）；
+   `weights.size() != sequence_len` 抛错；alignment 中 `second` 越界抛错；alignment 里
+   没有任何 `second != -1` 的条目抛 "missing sequence in alignment"。图本身无异常状态
+   （Zero-Panic 由调用方捕获 `invalid_argument` 保证）。
 
 ### 3.3 拓扑排序
 
@@ -120,6 +132,10 @@ FASTA/FASTQ（bioparser 流式读取）
   T∈{i16,i32} 泛型计算。SIMD `Prealloc` 据此选 lane 类型（§5.4）。
 - 工厂先尝试 `CreateSimdAlignmentEngine`；无 AVX2/SSE4.1/SIMDe 编译时
   `SimdAlignmentEngine::Create` 返回空指针，工厂回退 `SisdAlignmentEngine`。
+- **非虚 `Align(std::string)` 包装**：`AlignmentEngine::Align` 的 `std::string` 重载是
+  非虚的，只是 `c_str()+size()` 转发到虚 `Align(const char*, ...)`——外部无论传
+  `std::string` 还是裸指针都走同一虚路径。CLI 在 `Prealloc` 时用全输入最大序列长、
+  `alphabet_size=4`（硬编码；图自身的 alphabet 仍按 `coder_/decoder_` 动态增长）。
 
 ### 4.2 标量 DP（`src/sisd_alignment_engine.cpp`，928 行）
 
@@ -162,8 +178,10 @@ FASTA/FASTQ（bioparser 流式读取）
 
 - 行内 gap 延伸 `max_k(H[j-k] + k·g)` 是前缀最大值：`_mmxxx_prefix_max` 用
   `log kNumVar` 步的 mask + shift + add + max 完成（penalties 为 2 的幂倍 g），
-  避免每列 O(kNumVar) 的串行扫描。README 所称"high latency shifts"即指这些
-  字节移位/变量移位指令的延迟。
+  避免每列 O(kNumVar) 的串行扫描。**作用于序列 gap 状态**：affine 里对 `E_row` 调用
+  （`simd_alignment_engine_implementation.hpp` 行 1201），convex 里对 `E_row` 与
+  `Q_row` 调用（Q 用第二组 penalties，行 1681/1691）。README 所称"high latency shifts"
+  即指这些字节移位/变量移位指令的延迟。
 
 ### 5.4 类型与架构选型
 
@@ -174,6 +192,11 @@ FASTA/FASTQ（bioparser 流式读取）
   2. 否则 worst 低于 `int16::min()+1024` → i16 会溢出，退用 **i32 lane**；
   3. 否则（i16 可表示）→ 用 **i16 lane**（lane 数翻倍、寄存器吞吐更高）。
   即 i16 是快路径、i32 是溢出兜底。
+- **Prealloc 与 Align 的矩阵宽度公式不同**: `Prealloc` 用 `(max_len/kNumVar)+1` 宽 ×
+  `max_len·alphabet` 高预分配，且对 int32 下界**只提前 `return`、不抛错**——真正的
+  "possible overflow" 异常在 `Align` 用实际 `sequence_len+8` × 节点数重算时才抛出；
+  `Align` 用 `ceil(seq_len/kNumVar)` 宽 × `节点数+1` 高。`kNegativeInfinity` 在 SIMD 中
+  按 lane 类型 `T::min()+1024` 泛型定义（与 SISD 的 int32 常量一致）。
 - **编译期实例化**: `dispatch.cpp` 按 `__AVX2__` / `__SSE4_1__` / 默认 选
   `Architecture::kAVX2/kSSE4_1/kSSE2` 实例化模板。
 - **运行时分派**: `dispatcher.cpp` 用 cpu_features（或手写 cpuid）检测

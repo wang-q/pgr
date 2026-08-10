@@ -292,6 +292,11 @@ SGD 把不相关的节点排到一起，toposplit 也能按连通性把它们拆
 1. **超长切分（Cutting）** — 若块内某 path_range 长度超过 `max_poa_length`
    （`-q`，默认 2×target POA length），把该 range 切成 `cut_length` 的小块。这是
    `break_blocks` 的首要职责（标题注释即 "break ... to be shorter than our max sequence size"）。
+   注意切分只发生在 **`block.path_ranges.size() > 1`** 时——单 range 的块（孤立的单条序列）
+   不切。切分时按 step 累积长度，每累计 `cut_length` bp 就切一刀（`pos - last_cut > cut_length`），
+   保持切点落在节点边界上。
+   > **源码注释坑**：`-q` 帮助文本写默认 `2*poa-length-target = 10k`，但实际默认
+   > `max_poa_length = 2 * target = 2 * 4000 = 8000`（main.cpp#L376），"10k" 是过时的注释。
 2. **VNTR（串联重复）检测** — 若 `break_repeats` 开启，对长度 ≥ `2*min_copy_length` 的
    range 用自相关库 `sautocorr::repeat` 检测重复周期（参数 `min_copy_length`/`max_copy_length`/
    `min_autocorr_z`/`autocorr_stride`，其中 `min_autocorr_z=5`、`autocorr_stride=50` 在
@@ -302,8 +307,12 @@ SGD 把不相关的节点排到一起，toposplit 也能按连通性把它们拆
    forward/reverse 序列合并为一个代表），再分两种模式聚类拆块：
    - **WFA edit-based 聚类** — 用 WFA（wavefront）算 **gap-compressed identity**
      （`wfa_gap_compressed_identity`，压缩连续 gap 后 matches/(matches+mismatches+indels)），
-     相似度低于 `block_group_identity`（`-I`）的序列拆到不同块。WFA 的 `max_distance_threshold`
-     做软上界，只对齐"有可能达到阈值"的序列对。
+     相似度低于 `block_group_identity`（`-I`）的序列拆到不同块。WFA 用固定 affine 打分
+     `match=0, mismatch=7, gap_open=11, gap_ext=1`（breaks.cpp 硬编码），以
+     `max_distance_threshold = curr_len * (1-identity) * 2` 做软上界（distance 超过它直接放弃
+     对齐，`min_wavefront_length = 16`），只对齐"有可能达到阈值"的序列对。聚类采用"贪心分桶"：
+     对每条去重序列，从**最近的桶倒序**逐桶、逐成员（`length_ratio < length_ratio_min` 即停）
+     试探并入，匹配失败则开新桶。
    - **mash 聚类** — 对长度 ≥ `min_length_mash_based_clustering`（`-L`，默认 200 bp）的长序列
      用 `rkmh` 算 mash 距离，估计 identity 低于 `block_group_est_identity`（`-E`，默认等于
      `-I`）的拆块。该模式受 `min_dedup_depth_for_mash_clustering`（`-D`，默认 12000，0 关闭）
@@ -338,12 +347,25 @@ graph_t，保留 consensus path（`consensus_name`）。**关键认识**：POA �
 `path_mapping` 知道"原 path 的哪段在哪个子图的哪条 path 上"，从而把子图的 step 翻译回
 输出图。
 
-**adaptive POA 打分细节**（`-a`）：对块内序列去重后用 `rkmh` 两两估计 identity，取
-**30% 分位**作为 `est_identity_threshold`（70% 的序列对 identity 不低于此值），再按
-threshold 落在 ≥0.99 / 0.98 / 0.97 / 0.95 / 0.90 的梯度查表替换整组 POA 打分参数
-（如 ≥0.99 用 `1,19,39,3,81,1`，≥0.90 用默认 `1,4,6,2,26,1`）。这解释了 main.cpp 里
-`-p/--poa-params` 默认值与 4/6 参数语义（4 个=affine gaps，6 个=convex，abPOA 下 4 个时
-`q,c` 置 0）。
+**adaptive POA 打分细节**（`-a`）：仅当块深度 >1 且 ≤ `max_block_depth_for_padding_more` 时启用。
+对块内序列（**丢弃长度 < 8*kmer_size 的短序列**，因其无法可靠计算 k-mer hash）用 `rkmh`
+两两估计 identity，取 **30% 分位**并**下限钳制到 0.7**
+（`est_identity_threshold = max(0.7, 第 30 百分位)`，70% 的序列对 identity 不低于此值），再按
+threshold 落入的梯度**整体查表替换** 6 项 POA 打分参数 `match,mismatch,gap1,ext1,gap2,ext2`：
+
+| est_identity_threshold | match | mismatch | gap1 | ext1 | gap2 | ext2 |
+|------------------------|-------|----------|------|------|------|------|
+| ≥ 0.99                 | 1     | 19       | 39   | 3    | 81   | 1    |
+| ≥ 0.98                 | 1     | 13       | 31   | 3    | 51   | 1    |
+| ≥ 0.97                 | 1     | 9        | 16   | 2    | 41   | 1    |
+| ≥ 0.95                 | 1     | 7        | 11   | 2    | 33   | 1    |
+| ≥ 0.90                 | 1     | 4        | 6    | 2    | 26   | 1    |
+| else（≤0.90）          | 保持 `-p` 给定/默认值                               |
+
+这解释了 main.cpp 里 `-p/--poa-params` 默认值与 4/6 参数语义（4 个=affine gaps，6 个=convex，
+abPOA 下 4 个时 `q,c` 置 0）。**另一个易忽略的细节**：`smooth_spoa` 被调用时所有惩罚参数都取
+**负值**（`-poa_n, -poa_g, ...`）——SPOA 与 abPOA 的符号约定相反（SPOA 惩罚为负），而 adaptive
+查表与 `-p` 解析均按正数语义，仅在传给 SPOA 时取反。
 
 **consensus 时序**：consensus path **只在最后一轮迭代**加入（main.cpp 中
 `current_iter == num_iterations-1` 才用非空 `consensus_base_name`），默认前缀为
@@ -356,9 +378,13 @@ consensus path。
 的 `create_consensus_graph` 在平滑后的图上构建共识图：
 
 1. **收集 consensus paths** — 从 `consensus_path_names`（smooth_and_lace 阶段生成）+ ref_file
-   指定的参考路径合并。
+   指定的参考路径合并；若 `min_consensus_path_cov > 0`，先按每条 consensus path 的**平均覆盖深度**
+   （逐节点 depth 加权长度）过滤掉低于阈值的路径。
 2. **找 link paths** — 遍历每条普通 path，找它在两条 consensus path 之间的中间段
-   （`path_part_t::middle`），记录为 `link_path_t`。
+   （`path_part_t::middle`），记录为 `link_path_t`。其中 `path_part_t` 的划分是**几何的**：
+   每条 consensus path 按长度均分，首/末各 **1/8** 为 `begin`/`end`，中间 6/8 为 `middle`
+   （`curr_pos < len/8 → begin`，`curr_pos ≥ len - len/8 → end`，否则 `middle`）；离 consensus
+   path 距离为 -1（未落在 consensus 上）的 handle 一律视为 `middle`。
 3. **构建输出图** — 保留 consensus paths 的 middle 段 + 连接它们的 link paths，丢弃
    consensus paths 的 begin/end 段和变异 bubble。
 

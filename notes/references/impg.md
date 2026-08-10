@@ -525,8 +525,11 @@ op 码的精确编码（`CigarOp::new`，impg.rs#L79-91）：`=`=0、`X`=1、`I`
 对 `metadata.is_reversed()` 的 entry 调用 [`invert_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L144)
 把 A 视角的 CIGAR 转换为 B 视角。两步变换：(1) `I`↔`D` 交换（query 的 insertion 变成 target 的
 deletion）；(2) 仅当 `strand == Reverse` 时反转 CIGAR 数组（负链比对在反向互补坐标上读取，op 顺序
-需逆序）。`=`/`X`/`M` 保持不变。**注意 `invert_cigar_ops` 全仓库仅 `get_cigar_ops` L543-544 一处调用**
-——这是"索引时存偏移 + 查询时惰性翻转"设计的落地。这是 pgr mirror index 设计可借鉴的细节——pgr paf query 的
+需逆序）。`=`/`X`/`M` 保持不变。**注意 `invert_cigar_ops` 全仓库有 2 个生产调用点**（另有 6 处测试调用，
+L3157-3204）：`get_cigar_ops`（L544）与 `project_overlapping_interval` 的
+tracepoint 子集重建路径（L1164，处理 reversed entry 时把"原始比对视角"的 CIGAR 翻转回
+metadata 的 reversed 视角，使 `project_target_range_through_alignment` 正确工作）。这是
+"索引时存偏移 + 查询时惰性翻转"设计的落地。这是 pgr mirror index 设计可借鉴的细节——pgr paf query 的
 `reverse_trees` 仅 `+` 链建 mirror（见 [[paf-pangenome.md]] §4.5），若未来扩展到负链 mirror 需实现等价变换。
 
 ### 3.3 `SortedRanges` 与区间合并
@@ -1257,8 +1260,9 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
   （见 [[paf-pangenome.md]] §3，+6 tests）
 
 > **输出格式差距**：impg `query` 支持 11 种输出
-> （bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，默认 `bed`，见
-> [main.rs#L4873](../../../impg-0.4.1/src/main.rs#L4873)）。pgr
+> （bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto；默认 `auto`，
+> 按查询方式解析为 `bed`（`-r` 单区间）或 `bedpe`（`-b` 批查），格式清单见
+> Query 命令 after_help [main.rs#L4892](../../../impg-0.4.1/src/main.rs#L4892)）。pgr
 > query 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，
 > 理由见 [[paf-pangenome.md]] §3.1）。**graph 已实现**`pgr paf graph [-f refs.fa] --min-var-len 100`，
 > 输出 GFA v1.0（S/L/P），seqwish DSU 风格（详见 [[paf-pangenome.md]] §3.3、[[seqwish.md]]

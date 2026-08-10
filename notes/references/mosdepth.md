@@ -31,10 +31,17 @@ preset）：
 | `*.per-base.d4` | d4 格式逐碱基深度（`--d4`，编译期开关） | 可选 |
 
 关键过滤：`-F/--flag` 默认 **1796**（0x704 = unmapped | secondary | QC-fail |
-duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(isize)`）、
-`-R/--read-groups`、`-c/--chrom`（支持 `chr:start-end`，1-based、内部减 1 转
-0-based；BED 输入则直接按 0-based half-open 映射）。CRAM 需要 `-f/--fasta`
-或 `REF_PATH`（`check_cram_has_ref` 缺引用直接 quit(1)）。
+duplicate），`-i/--include-flag`（默认 0；非 0 时只保留含其中**任意**位的
+read，与 `-F` 是 AND 关系）、`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`
+（按 `abs(isize)`；`-u` 默认 -1 内部转 `int.high`，且 `-u < -l` 时直接
+quit(2)）、`-R/--read-groups`（逗号分隔，只统计这些 RG 的 read）、
+`-c/--chrom`（支持 `chr:start-end`，1-based、内部减 1 转 0-based、半开；
+BED 输入则直接按 0-based half-open 映射）。
+
+参数约束（均在各入口直接 quit(2)）：`--fast-mode` 与 `--fragment-mode` **互斥**；
+`--thresholds` 只能在指定 `--by` 时使用；输入 BAM/CRAM **必须带索引**
+（`bam.idx == nil` 时报错退出）。CRAM 需要 `-f/--fasta`（docopt 默认值取
+`REF_PATH` 环境变量）或 `REF_PATH`（`check_cram_has_ref` 缺引用直接 quit(1)）。
 
 ## 3. 深度计算核心
 
@@ -49,8 +56,13 @@ duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(is
   即 `-split` 语义：每个对齐块贡献独立的 `(pos, +1)` 与 `(last_stop, -1)`，两个块之间的
   deletion/N 区域深度为 0（如块 `[10,15)`、`[20,25)` 中间 5 bp deletion：事件
   `+1@10, -1@15, +1@20, -1@25` 归位后 `[15,20)` 深度 0）；
-* 相邻参考块之间只有 deletion/N 时**不重复开段**（`pos == last_stop` 检查），
-  块的起止事件精确对齐 CIGAR 的 M/= /X 段。
+* 相邻参考块之间只有 deletion/N 时**重开段**（deletion/N 推进 `pos` 而
+  `last_stop` 不变 → 下一块 `pos != last_stop`），每个 M/= /X 块的起止事件精确
+  对齐 CIGAR 段，块与块之间（deletion/N 段）深度为 0；
+* 而 `pos == last_stop` 检查真正防的是**不消耗 reference 的 op
+  （insertion/soft-clip）**：这类 op 既不推进参考坐标也不改 `last_stop`，
+  紧邻的下一 M 块 `pos == last_stop`，故**不重复开段**——两 M 块在参考坐标上
+  相邻，合并为连续深度（ins 长度不计入参考坐标，不产生深度间隙）。
 
 单 CIGAR 且仅一个 `M` op 时有快速路径（`gen_start_ends` 里
 `c.len == 1 and op == match`）直接产生 `(ipos, +1)` / `(ipos+len, -1)` 两个
@@ -65,6 +77,8 @@ duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(is
 | 默认 | CIGAR 粒度 + **mate 重叠校正**（见 3.3） | 精确深度 |
 | `-x --fast-mode` | 只看 `rec.start/rec.stop`（read 外边界），不看内部 CIGAR、不校正 mate | 快速、绝大多数场景推荐 |
 | `-a --fragment-mode` | 只统计 proper pair 的 read1（跳过 read2/supplementary），覆盖整个 fragment（起点取 `min(start, matepos)`，至 `+abs(isize)`） | fragment 深度 |
+
+`--fast-mode` 与 `--fragment-mode` **互斥**（同给则 quit(2)）。
 
 ### 3.3 mate 重叠校正
 
@@ -81,22 +95,29 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
 * **per-base**：`gen_depths` 遍历逐碱基数组，深度变化处切分，输出
   `(start, stop, depth)` 游程；整数转字符串用自带的 `fastIntToStr`（Milo Yip
   itoa 查表法，输出是主要性能瓶颈）。
-* **regions**：窗口（`window_gen`，半开 `[start, start+window)`）或 BED 区域
-  （`region_gen`，按染色体预读、边消费边删）；mean 直接求和除以**区域全长**
-  `stop-start`（含 0 深度位点，即"每碱基平均深度"口径），`-m` median 用
-  `CountStat` 直方图（65536 桶，超出 65535 的深度计入末桶，高深度时中位数
-  是近似值）。
+* **regions**：窗口（`window_gen`，半开 `[start, start+window)`，末窗口截断到
+  染色体长度 `t.length`）或 BED 区域（`region_gen`，按染色体预读、边消费边删；
+  BED 若 ≥4 列，第 4 列 name 会作为输出第 4 列、depth 移到第 5 列）；mean
+  直接求和除以**区域全长** `stop-start`（含 0 深度位点，即"每碱基平均深度"
+  口径；区域起点越界返回 0，终点越界时只累到数组末尾但分母仍用全长、值偏小），
+  `-m` median 用 `CountStat` 直方图（65536 桶，超出 65535 的深度计入末桶，
+  高深度时中位数是近似值）。
 * **thresholds**：`write_thresholds` 对每个 region 逐碱基统计"深度 ≥ 各阈值"的碱基数；
   阈值经 `threshold_args` 排好序，内层 `if v < t: break` 提前跳出（`v < t` 后更大的阈值也
   必然不满足，避免扫完全部阈值）；无数据的染色体（`tid==-2`）直接输出全 0 行。
+  输出前先经 `write_header` 写 `#chrom start end region 1X 10X ...` 头；区域无
+  4 列 name 时该列填 `unknown`。
 * **quantized**：`gen_quantized` 把相邻、同 bin 的碱基合并，bin 由
   `--quantize 1:10:20` 定义（`:inf` 表示开区间；环境变量 `MOSDEPTH_Q*` 可
-  覆盖输出标签）。
+  覆盖输出标签）。无数据染色体（`tid==-2`）仅当 `quantize[0]==0` 时写一行全 0
+  （标签 `lookup[0]`），否则直接跳过该染色体。
 * **distribution**：直方图数组从 512 动态增长（`inc` 在 `v >= len` 时
-  `set_len(v+10)`），深度 > 400000（`MAX_COVERAGE`）截断到 399990（只影响
-  分布，不影响 per-base/quantized）；输出时反序 cumsum，得到
-  "深度 ≥ X 的碱基占比"；先跳过深度索引 > 300 的 0 计数桶（`irev > 300 and
-  v == 0`），再跳过累计占比 < 8e-5 的行。
+  `set_len(v+10)`，负深度 `v < 0` 直接跳过），深度 > 400000（`MAX_COVERAGE`）
+  截断到 399990（只影响分布，不影响 per-base/quantized）；输出时反序 cumsum，
+  得到"深度 ≥ X 的碱基占比"；先跳过深度索引 > 300 的 0 计数桶（`irev > 300
+  and v == 0`），再跳过累计占比 < 8e-5 的行。`region.dist.txt` 与 global
+  同构，但**窗口模式**聚合的是"每窗口 mean 深度"的分布（`region.isdigit`
+  分支），**BED 模式**才是逐碱基深度直方图（`inc(arr, start, stop)`）。
 * **summary**：length / bases（= 深度总和，即总比对碱基数）/ mean / min / max；
   空染色体 min 记 0；数值精度由 `MOSDEPTH_PRECISION` 控制（默认 2）；
   指定 `--by` 时额外输出 `<chrom>_region` 与 `total_region` 两行（区域统计）。
@@ -109,8 +130,13 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
 * **输出 I/O**：BGZF 压缩级别 1；BGZI + CSI 分级（`get_min_levels` 按最长
   染色体定级，1<<14 起 ×8）；`fastIntToStr` 避免 `$int` 的通用格式化开销。
 * **线程**：`-t/--threads` 只用于 htslib BAM 解压，深度计算单线程。
-* **CRAM 优化**：按需裁剪 required fields（非 fast-mode 才要
-  QNAME/RNEXT/PNEXT），关闭 MD 解码。
+* **跳过无用染色体的计算**：当 `-n`（跳过 per-base）且无 thresholds/quantize、
+  且某染色体不在 `--by` BED 里时，`continue` 直接跳过整条染色体的 coverage
+  计算。`coverage` 返回语义：`-1`=染色体不在 BAM header、`-2`=header 有但该
+  染色体无数据、否则返回 tid；`-2` 时不 cumsum、per-base 写全 0 行。
+* **CRAM 优化**：按需裁剪 required fields（基础字段 FLAG/RNAME/POS/MAPQ/
+  CIGAR/TLEN；非 fast-mode 再要 QNAME/RNEXT/PNEXT；指定 `-R` 再加 RGAUX），
+  关闭 MD 解码。
 * 构建要求 `--mm:refc`（README 明确"必须"，影响性能与正确性）；
   `GC_disableMarkAndSweep`。
 

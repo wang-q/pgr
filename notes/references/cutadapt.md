@@ -1,17 +1,18 @@
 # cutadapt: Mott/BWA 式质量修剪与接头去除
 
-> 整理于 2026-08，源自对 `cutadapt-main/`（v5.2, 2025-10-23）源码的分析。目的：承接 [sickle.md](./sickle.md) 中"现代质量修剪算法对比"的结论——滑窗仍是默认，cutadapt 的 `-q` 提供了**唯一真正不同的算法方向**（Mott/BWA 累积质量法）。本文聚焦**按质量分数修剪**（非接头去除），为 pgr 的 `fq trim-qual` 提供算法与 CLI 参考。接头/适配器部分仅作背景，pgr 当前只关心质量修剪。
+> 整理于 2026-08，源自对 `cutadapt-main/`（v5.2, 2025-10-23）源码的分析。最初承接 [sickle.md](./sickle.md) 中"现代质量修剪算法对比"的结论——滑窗仍是默认，cutadapt 的 `-q` 提供了**唯一真正不同的算法方向**（Mott/BWA 累积质量法），故初稿聚焦**按质量分数修剪**，为 pgr 的 `fq trim-qual` 提供算法与 CLI 参考。后按需求补充了**接头（adapter）去除**的完整算法（indel-aware 半全局比对、多适配器匹配、修饰器与配对端处理），本文现同时覆盖质量修剪与接头去除两条主线。pgr 当前主要关心质量修剪，接头部分为算法参考。
 
 ## 1. 简介
 
-`cutadapt`（Marcel Martin, 2011）是 FASTQ 预处理的事实标准工具，以**接头/引物去除**见长，同时提供质量修剪、长度过滤、poly-A 修剪、expected-errors 过滤等。本文只分析其质量修剪。
+`cutadapt`（Marcel Martin, 2011）是 FASTQ 预处理的事实标准工具，以**接头/引物去除**见长，同时提供质量修剪、长度过滤、poly-A 修剪、expected-errors 过滤等。
 
 - **质量修剪入口**：CLI 的 `-q, --quality-cutoff [5'CUTOFF,]3'CUTOFF`（见 [cli.py](file:///home/wangq/Scripts/pgr/cutadapt-main/src/cutadapt/cli.py#L268)）。
 - **核心实现**：`quality_trim_index`（[qualtrim.pyx](file:///home/wangq/Scripts/pgr/cutadapt-main/src/cutadapt/qualtrim.pyx#L22)），Cython 加速，单条读段 O(n)。
 - **算法来源**：注释明确说明与 **BWA 的 `bwa_trim_read`** 相同（`qualtrim.pyx:29-33`）。这与经典 Mott 算法同源（BWA `-q` 即 Mott 算法），累计和取最小。
 - **变体**：`nextseq_trim_index`（NextSeq polyG 暗循环）、`poly_a_trim_index`（poly-A/poly-T）、`expected_errors`（Edgar 2015 期望错误数）。
+- **接头去除主线**：见 §3——Cython 半全局比对器 `Aligner`（indel-aware、混合 cost/score）+ k-mer 预过滤 + 多适配器索引，配以 `AdapterCutter` 修饰器与配对端变体。
 
-> **范围说明 / 落地状态**：本文初稿时 pgr 的 `fq trim-qual` 还是设计提案；现已实现于 `src/cmd_pgr/fq/trim_qual.rs` + `src/libs/fq/trim.rs`，`quality_trim_index`（Mott/BWA 累积质量法）作为 `--method mott`，与继承自 sickle 的滑窗（`--method sliding`）并存。§4 已从"设计提案"改写为"已实现对照 + 剩余借鉴点"。
+> **范围说明 / 落地状态**：初稿时 pgr 的 `fq trim-qual` 还是设计提案；现已实现于 `src/cmd_pgr/fq/trim_qual.rs` + `src/libs/fq/trim.rs`，`quality_trim_index`（Mott/BWA 累积质量法）作为 `--method mott`，与继承自 sickle 的滑窗（`--method sliding`）并存。§5 已从"设计提案"改写为"已实现对照 + 剩余借鉴点"。
 
 ## 2. 核心算法：`quality_trim_index`（Mott/BWA 累积质量法）
 
@@ -60,13 +61,92 @@ return (start, stop)
 
 ### 2.3 三个变体（`qualtrim.pyx`）
 
-1. **`nextseq_trim_index`**（`-q` 的 NextSeq 变体，`--nextseq-trim`）：NextSeq 双色编码中"暗循环"（无颜色）通常被读成高质量 G，出现在读段 3' 端。算法与 `quality_trim_index` 的 3' 端相同，但把 **G 碱基的质量强制设为 `cutoff - 1`**（`qualtrim.pyx:108`），使其不贡献正累积，从而把 polyG 尾巴当低质量去掉。
+1. **`nextseq_trim_index`**（`--nextseq-trim`）：NextSeq 双色编码中"暗循环"（无颜色）通常被读成高质量 G，出现在读段 3' 端。算法与 `quality_trim_index` 的 3' 端相同，但把 **G 碱基的质量强制设为 `cutoff - 1`**（`qualtrim.pyx:107-108`），使其不贡献正累积，从而把 polyG 尾巴当低质量去掉。
 2. **`poly_a_trim_index`**（`--poly-a`）：poly-A/poly-T 尾巴检测，'A'(或'T') 得 +1，其他碱基 −2，累计 score 最大处为切点。错误率上限 0.2 的校验是**位置相关的**：5' 端（polyT head）为 `errors * 5 <= i+1`、3' 端（polyA tail）为 `errors * 5 <= n-i`（`qualtrim.pyx:147,161`），即错误按"当前已扫到的尾巴长度"而非整条读长计。长度 < 3 的尾巴忽略（`best_index < 3` → 0；`best_index > n-3` → n）。
-3. **`expected_errors`**（`--max-ee`）：用 Edgar et al. (2015) 公式从 Phred 质量计算期望错误数 `sum(10^(-Q/10))`，用于按总错误数过滤（非修剪）。C 实现 `expected_errors_from_phreds`。
+3. **`expected_errors`**（`--max-ee`）：用 Edgar et al. (2015) 公式从 Phred 质量计算期望错误数 `sum(10^(-Q/10))`，用于按总错误数过滤（非修剪）。C 实现 `expected_errors_from_phreds`（`qualtrim.pyx:15`）。
 
-## 3. 质量修剪的修饰器封装与 CLI
+## 3. adapter 修剪算法：indel-aware 半全局比对
 
-### 3.1 `QualityTrimmer` 修饰器（`modifiers.py:840`）
+cutadapt 的接头去除核心是一个 Cython 实现的**混合 cost/score 半全局比对器** `Aligner`（[_align.pyx](file:///home/wangq/Scripts/pgr/cutadapt-main/src/cutadapt/_align.pyx#L93)），配合 k-mer 预过滤（`KmerFinder`）与多适配器索引（`AdapterIndex`）。pgr 的接头去除走 BBDuk k-mer 路线（`clean --ref --k`），**未采用**本节算法，此处为算法参考。
+
+### 3.1 类层次：`Adapter` / `Match`（adapters.py）
+
+- **`Adapter`**（抽象）→ **`SingleAdapter`**（抽象）→ 具体类型：`FrontAdapter`(5')、`BackAdapter`(3')、`RightmostFront/BackAdapter`、`AnywhereAdapter`、`NonInternalFront/BackAdapter`、`PrefixAdapter`(锚定 5')、`SuffixAdapter`(锚定 3')，以及 **`LinkedAdapter`**（5'+3' 连接的复合接头）。
+- **`Match`**（抽象）→ `SingleMatch` → **`RemoveBeforeMatch`**（剪掉 match 之前的序列，用于 5'/front，保留 `read[rstop:]`）/ **`RemoveAfterMatch`**（剪掉 match 之后的序列，用于 3'/back，保留 `read[:rstart]`）；`LinkedMatch` 组合前后两段。
+
+`SingleAdapter` 关键参数（adapters.py:564）：`sequence`（自动转大写、U→T、I→N）、`max_errors=0.1`、`min_overlap=3`（与接头长度取 min）、`adapter_wildcards=True`、`read_wildcards=False`、`indels=True`。要点：
+- **max_errors ≥ 1 时按非 N 碱基数折算成比率**（`max_errors /= len - N`，adapters.py:580-581）。
+- **错误率 = 错误数 / 与接头比对的那段长度**（非整条 read），见 _align.pyx:144 的 `errors / (reference_stop - reference_start)`。
+- indel 通过 `_make_aligner` 把 `indel_cost` 设为 1（允许）或 100000（`--no-indels` 时，adapters.py:605），后者等价于禁止 indel。
+- 匹配类 `SingleMatch` 的 `score` 与 `errors` 分别记录比对得分与错误数（用于多接头竞争与报告）。
+
+### 3.2 比对核心 `Aligner`（_align.pyx）
+
+半全局：允许以零代价跳过 reference（接头）/query（read）的前缀和后缀，由 4 个 bit flag 控制（`EndSkip`：REFERENCE_START=1、QUERY_START=2、REFERENCE_END=4、QUERY_STOP=8；全设即 SEMIGLOBAL=15）。adapter 类型通过 `Where` 枚举映射到 flag 组合（见 §3.3）。
+
+- **双矩阵**：每格同时维护 `cost`（编辑距离，mismatch=1、indel=indel_cost）和 `score`（match=+1、mismatch/insertion/deletion=−2，_align.pyx:16-19）。`cost` 用于错误率约束，`score` 用于最优化选择。
+- **错误率上限**：`k = int(max_error_rate * m)`（m=接头长）。候选需满足 `cost <= effective_length * max_error_rate` 且 `length >= min_overlap`，其中 `effective_length` 扣除了 N 通配碱基（_align.pyx:557-560）。
+- **最优化判据**（_align.pyx:146-154）：① error_rate 不超上限；② 其中 score 最高；③ score 相同时错误数最少；④ 仍相同时取 read 内最左位置。
+- **单列 DP + origin**：内存中仅保留一个 `_Entry` 列（`column`，含 cost/score/origin），`origin` 记录比对起点（负=起点在 reference 内，正=在 query 内），据此回溯得到 `(ref_start, ref_stop, query_start, query_stop)`（_align.pyx:579-587）。
+- **Ukkonen 带状剪枝**：`last` 追踪"cost ≤ k 的最远行"，只计算错误带内的格；`start_in_query=0` 时列上限 `min(n, m+k)`，`stop_in_query=0` 时列下限 `max(0, n-m-k)`（_align.pyx:343-352）。
+- **结束位置搜索**：若 `stop_in_query`，当整条 reference 比对完（`last==m`）时检查 `column[m]` 作为候选（match 结束于 read 内部）；若 `stop_in_reference`，列扫完后在最后一列倒序搜索（match 结束于 read 末尾）（_align.pyx:494-572）。
+- 返回 `(ref_start, ref_stop, query_start, query_stop, score, errors)`；无满足条件者返回 `None`。
+
+**`PrefixComparer` / `SuffixComparer`**（_align.pyx:594,696）：当锚定适配器禁用 indel 时使用，不做 DP 矩阵，只逐位统计前缀/后缀错误数，满足 `errors <= max_k` 且 `length >= min_overlap` 即返回固定区间元组（更快；`PrefixAdapter` 在 `indels=False` 时走此路径）。
+
+### 3.3 各适配器类型对应的 Where 标志（adapters.py:39-53）
+
+| 类型 | Where 标志 | 语义 |
+| :-- | :-- | :-- |
+| `FrontAdapter` (5') | FRONT = Q_START\|Q_STOP\|R_START | 接头对齐读段 5' 端，剪掉接头之前 |
+| `BackAdapter` (3') | BACK = Q_START\|Q_STOP\|R_END | 接头对齐读段 3' 端，剪掉接头之后 |
+| `AnywhereAdapter` | ANYWHERE = SEMIGLOBAL | 若 `rstart==0` 视为 5'，否则视为 3' |
+| `NonInternalFrontAdapter` | FRONT_NOT_INTERNAL = R_START\|Q_STOP | 不允许内部匹配 |
+| `NonInternalBackAdapter` | BACK_NOT_INTERNAL = Q_START\|R_END | 不允许内部匹配 |
+| `PrefixAdapter` (锚定 5') | PREFIX = Q_STOP | 必须从读段起始对齐（`^`） |
+| `SuffixAdapter` (锚定 3') | SUFFIX = Q_START | 必须对齐到读段末尾（`$`） |
+| `RightmostFront/BackAdapter` | 反转序列后以 BACK/FRONT 比对 | 偏好最右匹配 |
+
+`AnywhereAdapter.match_to` 里靠 `alignment[2] == 0`（rstart 为 0）判 5' 还是 3'，分别产出 `RemoveBeforeMatch` / `RemoveAfterMatch`（adapters.py:930-934）。
+
+### 3.4 接头规格解析与 CLI 类型映射（parser.py）
+
+`make_adapter` / `AdapterSpecification` 把 `-a/-g/-b` 的字符串解析成具体类。放置限制记号（parser.py:292-319）：
+- `^ADAPTER` → `PrefixAdapter`（锚定 5'）
+- `ADAPTER$` → `SuffixAdapter`（锚定 3'）
+- `XADAPTER`（X 前缀）→ `NonInternalFrontAdapter`
+- `ADAPTERX`（X 后缀）→ `NonInternalBackAdapter`
+- `...` 区分前后接头与 anywhere（linked 由两个子接头组成）
+- `;rightmost`、`name=...`、`min_overlap=`（`o=`）等参数经 `parse_search_parameters` 解析；`{...}` 花括号展开（`expand_braces`）。
+- 同一条规格里**不能**同时出现多个放置限制。
+
+### 3.5 k-mer 预过滤（_kmer_finder.pyx + kmer_heuristic.py）
+
+真正的 DP 比对前先做**可命中性检查** `KmerFinder.kmers_present()`（adapters.py:715 等）：对每条 adapter 生成一组"位置 → k-mer 集合"，要求 read 中至少一个 k-mer 出现在指定位置附近，否则直接判不匹配、跳过昂贵的 DP。`create_positions_and_kmers`（kmer_heuristic.py:118）按错误率把 adapter 分成若干段，每段取 `max_errors+1` 个互不重叠 chunk 作为必需 k-mer（例：AAAAATTTTT 允许 1 错时，AAAAA 或 TTTTT 至少一个必须存在）；front/back 适配器另加部分重叠的短 k-mer（`create_back_overlap_searchsets`）。k-mer 过长无法建索引时退回 `MockKmerFinder`（恒真，退化为纯 DP）。
+
+### 3.6 多适配器匹配：`MultipleAdapters` 与 `AdapterIndex`
+
+- **`MultipleAdapters.match_to`**（adapters.py:1265）：依次对每个 adapter 调 `match_to`，选 **score 最高、score 相同取 error 最少** 者为最佳匹配——这是多接头竞争的基本规则。
+- **`AdapterIndex`**（adapters.py:1289）：对**锚定**（Prefix/Suffix）适配器建索引加速：把每个 adapter 的**编辑环境**（`edit_environment`，含 indel，或 `hamming_sphere` 纯错配）内、错误数 ≤k 的所有字符串预先展开存入 dict，查询时直接 O(1) 查 read 的后缀/前缀。限制：k≤3、不允许通配、适配器须为锚定类型。多长度时按长→短依次查，用"匹配数不可能超过已找到的 best_m"提前终止。出现歧义（两个 adapter 对同一字符串同分，`matches` 相等）的字符串会被**删除**——含歧义序列的 read 将**不修剪**（并有日志警告，adapters.py:1444-1466）。
+- `AdapterCutter._regroup_into_indexed_adapters`（modifiers.py:127）把用户适配器里"可被索引的锚定"拆出来建 `IndexedPrefixAdapters` / `IndexedSuffixAdapters`，其余进 `MultipleAdapters`。
+
+### 3.7 修饰器 `AdapterCutter` 与 action（modifiers.py:82）
+
+`AdapterCutter` 负责反复找接头并按 `action` 处理：
+- `times`（`-n/--times`，默认 1；`-e` 是 `--error-rate`）：每轮只剪最佳匹配，剪完再搜下一轮，直到某轮无匹配为止（modifiers.py:225-231）。
+- `action`（`--action`）：`trim`（默认，删除接头及上下游）、`mask`（将被删区替换为 N）、`lowercase`（转小写）、`retain`（保留接头本体，只删其上下游）、`crop`（只保留接头匹配区）、`none`（`--no-trim`，只记录不删除）。`retain`/`crop` 不能与 `times>1` 组合。
+- 统计：`with_adapters`、每个 adapter 的 `EndStatistics`（按 removed 长度 × 错误数计数、`adjacent_bases`）供报告。
+
+### 3.8 paired-end 处理（modifiers.py + cli.py）
+
+- **默认**：R1、R2 各自的 `AdapterCutter` 独立工作（`PairedEndModifierWrapper` 包成 `(modifier1, modifier2)`），接头可只给一端（另一端为 `None`）。
+- **`--revcomp`**：`ReverseComplementer`（单端）/ `PairedReverseComplementer`（双端）——同时跑正向与反向互补（双端即 R1/R2 交换）两种方案，取**总 score 更高**者；反向时给 read 名加 `" rc"` 后缀并置 `is_rc` 标记（modifiers.py:278-405）。
+- **`--pair-adapters`**：`PairedAdapterCutter`（modifiers.py:412）——R1/R2 的接头必须成对给（两列表长度相同），只有"第 i 个接头在 R1、第 i 个在 R2 都匹配"才修剪，选总 score 最高的接头对；与 `--revcomp` 互斥（cli.py:1086-1087）。
+- **过滤步（steps.py + predicates.py）**：修饰完成后按序执行 `SingleEndFilter`/`PairedEndFilter`。配对过滤有 `pair_filter_mode`：`any`（任一命中即丢）、`both`（都命中才丢）、`first`（仅看 R1）。谓词：`TooShort`(`-m`)、`TooLong`(`-M`)、`TooManyExpectedErrors`(`--max-ee`)、`TooHighAverageErrorRate`(`--max-er`)、`TooManyN`(`--max-n`)、`CasavaFiltered`、`IsUntrimmed`/`IsTrimmed`（`--discard-untrimmed`/`--discard-trimmed`）。过滤顺序：rest/info/wildcard 写出器先见所有 read，随后是上述过滤器，最后是 sink。
+
+## 4. 质量修剪的修饰器封装与 CLI
+
+### 4.1 `QualityTrimmer` 修饰器（`modifiers.py:840`）
 
 cutadapt 采用"修饰器（modifier）"流水线架构——每个操作是一个 `SingleEndModifier`，对 `read` 返回 `read[slice]`：
 
@@ -81,7 +161,7 @@ class QualityTrimmer(SingleEndModifier):
 - 统计修剪碱基数（`trimmed_bases`）供报告。
 - 返回 `read[start:stop]`，即保留 `[start, stop)` 区间（**左闭右开**）。
 
-### 3.2 CLI 参数（`cli.py:268`）
+### 4.2 CLI 参数（`cli.py:268`）
 
 - `-q, --quality-cutoff [5'CUTOFF,]3'CUTOFF`：可指定单个（默认只修 3' 端）或 `5,3` 两个值。注：cutoff 为 `0` 时该端禁用修剪（`cli.py:1059` 的 `cutoff != "0"` 判断）。
 - `--quality-base N`：Phred 偏移，默认 33（Sanger）。
@@ -90,9 +170,9 @@ class QualityTrimmer(SingleEndModifier):
 
 **`parse_cutoffs`**（`cli.py:419`）解析 `"5"` → `(0,5)`（只修 3'），`"6,7"` → `(6,7)`。
 
-### 3.3 执行顺序（pipeline）
+### 4.3 执行顺序（pipeline）
 
-cutadapt 的 read 修饰器按**固定顺序**依次对 read 生效，`make_pipeline_from_args` 依序 append（`cli.py:937-975`）。实际顺序是：
+cutadapt 的 read 修饰器按**固定顺序**依次对 read 生效，`make_pipeline_from_args` 依序 append（`cli.py:937-980`）。实际顺序是：
 
 1. `--cut` 无条件切头尾（`UnconditionalCutter`）
 2. `--nextseq-trim`（NextSeq polyG 修剪）
@@ -100,15 +180,16 @@ cutadapt 的 read 修饰器按**固定顺序**依次对 read 生效，`make_pipe
 4. 去接头（`-a/-g/-b`，`AdapterCutter`）
 5. `--poly-a` poly-A/poly-T 修剪
 6. `-l/--length` 缩短（`Shortener`）
-7. 重命名/后缀
+7. 两端通用修饰：`--trim-n`（`NEndTrimmer`）、`--length-tag`、`--strip-suffix`、`-x/-y` 前后缀、`--zero-cap`（`ZeroCapper`）
+8. `--rename` 重命名（`Renamer`/`PairedEndRenamer`）
 
 **注意：质量修剪在去接头之前**（`cli.py:947-967`，`make_quality_trimmers` 先于 `make_adapter_cutter`），与直觉相反——先按质量把低质量区剪掉，再做接头比对，这样接头搜索不受低质量 3' 尾干扰。pgr 移植纯质量修剪时无此依赖，但若日后加 `--method` 组合（如质量修剪 + 去接头）应保持"先质量后接头"的顺序。
 
-## 4. 对 pgr 的启示：`fq trim-qual` 与 `fq clean`
+## 5. 对 pgr 的启示：`fq trim-qual` 与 `fq clean`
 
 > **落地状态**：pgr 的 `fq trim-qual` 已实现（`src/cmd_pgr/fq/trim_qual.rs` + `src/libs/fq/trim.rs`），本文 §2 的 `quality_trim_index` 以 `Method::Mott` 落地为 `--method mott`。本节从初稿的"设计提案"改写为"已实现对照 + 剩余借鉴点"。
 
-### 4.1 已落地：`mott_cut`（`libs/fq/trim.rs`）
+### 5.1 已落地：`mott_cut`（`libs/fq/trim.rs`）
 
 `Method::Mott` 在 `trim_interval`（`libs/fq/trim.rs:263`）中调用 `mott_cut`（`libs/fq/trim.rs:192`），与 Cython 版 `quality_trim_index` 逐行对应，约 30 行，仍是"单遍累积 + 局部最大"：
 
@@ -123,16 +204,16 @@ fn mott_cut(qual: &[u8], base: u8, cutoff_front: f64, cutoff_back: f64) -> (usiz
 与 Cython 原版的差异：
 
 - **int → f64**：cutadapt 的 `-q` 是整数 cutoff；pgr 的 `--qual-threshold` 是 `f64`，score 累积用 f64，阈值语义更宽（可给小数）。数值上等价于整数版。
-- **单阈值两端共用**：`trim_interval` 把 `--qual-threshold` 同时作为 front 与 back cutoff；`--no-fiveprime` 时 front 置 `0.0` 禁用 5' 修剪。**未实现** cutadapt 的 `5,3` 独立 cutoff（见 §4.3.1）。
-- **零 panic 校验**：`process_record` 先调 `validate_quality`（`trim.rs:245`），把质量字符限制在 `[base, base+93]`，越界即 `bail!` 报错——正是初稿 §4.4 的建议，已落实。
+- **单阈值两端共用**：`trim_interval` 把 `--qual-threshold` 同时作为 front 与 back cutoff；`--no-fiveprime` 时 front 置 `0.0` 禁用 5' 修剪。**未实现** cutadapt 的 `5,3` 独立 cutoff（见 §5.3.1）。
+- **零 panic 校验**：`process_record` 先调 `validate_quality`（`trim.rs:245`），把质量字符限制在 `[base, base+93]`，越界即 `bail!` 报错——正是初稿 §5.4 的建议，已落实。
 - **区间判定一致**：`start >= stop → (0,0)`；`trim_interval` 再按 `--length-threshold` 决定丢弃整条。
-- **`--polyg-right`（polyg_end, `trim.rs:227`）**：3' 端数连续 G 跑，达标才剪（见 §4.3.2 与 cutadapt 的差异）。
+- **`--polyg-right`（polyg_end, `trim.rs:227`）**：3' 端数连续 G 跑，达标才剪（见 §5.3.2 与 cutadapt 的差异）。
 
-### 4.2 与滑窗共存（已实现）
+### 5.2 与滑窗共存（已实现）
 
 CLI 已提供 `--method sliding`（默认）与 `--method mott`（`trim_qual.rs:71-77`），对应 §2.2 的两类算法，验证了 [sickle.md](./sickle.md) §4.5 的结论。两者共用 `--qual-threshold`/`--length-threshold` 与长度过滤。
 
-### 4.3 其余值得借鉴但尚未落地的点
+### 5.3 其余值得借鉴但尚未落地的点
 
 1. **5'/3' 独立 cutoff**：cutadapt `-q 5,3` 允许两端不同阈值；pgr `mott_cut` 目前单阈值（加 `--no-fiveprime` 整体禁 5'）。若需"前端高严格、后端低严格"，可加 `--qual-front/--qual-back` 或 `--quality-cutoff FRONT,BACK`。
 2. **cutadapt 的 NextSeq polyG（`nextseq_trim_index`）未移植**：pgr 的 `--polyg-right`（`polyg_end`）是 **BBDuk 式简单实现**——从 3' 端数连续 G 跑，长度达标才剪；`fq clean` 的 `--trim-poly-g-right` 同理。cutadapt 则是把 G 的质量强制设为 `cutoff-1` 后**嵌入累积算法**，能处理"夹着少量错配/低质量非 G 段"的 G 尾。对"纯连续 G 尾"两者等价，对"含噪声的 G 尾"cutadapt 式更鲁棒。若 pgr 面向 NovaSeq/NextSeq 平台，可评估移植 nextseq 式。
@@ -140,16 +221,16 @@ CLI 已提供 `--method sliding`（默认）与 `--method mott`（`trim_qual.rs:
 4. **`--max-ee` 期望错误数过滤未落地为独立选项**：pgr 的 `expected_errors`（`trim_adapter.rs:907`、`clump.rs:607`）是 BBTools 式（`sum(10^(-Q/10))`，`prob[128]` 查表），用于 dedup/clump 排序，**不是** cutadapt 的 Edgar 2015 用户级过滤。长读场景可把 `--max-ee` 作为 `fq filter` 的过滤选项参考。
 5. **`--quality-base` 可配置**：pgr 的 `--quality-base`（`33/64/auto`）比 cutadapt 更强——除显式覆盖外，还通过 BBDuk flip-flop 启发式（`detect_quality_base`, `trim.rs:88`）自动探测编码。
 
-### 4.4 与 `fq clean` 的关系（重要澄清）
+### 5.4 与 `fq clean` 的关系（重要澄清）
 
 pgr 目前有**两条质量修剪路径，算法来源不同**：
 
 - `pgr fq trim-qual`：滑窗（sickle）+ Mott（cutadapt 本文算法），纯质量修剪，单/双端，可配 `--outfile-2/--outfile-single`。
 - `pgr fq clean`：整体是 **BBDuk（bbduk.sh）** 移植（`libs/fq/trim_adapter.rs`），其 `--qtrim` 取 `r/l/rl/w/f`——这是 **BBDuk 的质量修剪模式**（`r`=右侧逐碱基、`w`=滑窗等，对应 `trimq`/`qtrim-window`），**不是** cutadapt 的 Mott。即 `clean` 的质量修剪不来自 cutadapt。
 
-因此 cutadapt 对 pgr 的算法价值**已集中在 `trim-qual --method mott`**；接头/适配器去除部分 pgr 走 BBDuk k-mer 路线（`clean --ref` + `--k`），未采用 cutadapt 的 `-a/-g/-b` 适配器匹配（BWA/seed 半全局比对）。
+因此 cutadapt 对 pgr 的算法价值**已集中在 `trim-qual --method mott`**；接头/适配器去除部分 pgr 走 BBDuk k-mer 路线（`clean --ref` + `--k`），**未采用** cutadapt 的 `-a/-g/-b` 适配器匹配（banded 半全局 DP，见 §3）。
 
-### 4.5 边界与实现注意
+### 5.5 边界与实现注意
 
 - `quality_trim_index` 对质量越界**不校验**（Cython 直接 `qual[i] - base`，可能得负值），cutadapt 只在 `expected_errors` 里校验。pgr 的 `validate_quality` 已补齐（零 panic 硬约束）。
 - 左闭右开切片 `read[start:stop]` 与 pgr `SeqRecord::sequence()[start..end]` 语义一致。

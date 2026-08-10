@@ -58,8 +58,11 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
   输出行 `miss \t tots \t err(%.4f) \t qv(%.1f)`——**QV 用的是单碱基错误率，
   不是裸的 miss/tots 占比**（后者会被 k 次方放大为明显更高的"错误率"）。
   - **source quirk**：逐 scaffold 的 `.qv`（`scan_asm`）写的是 `err` **分数**
-    （0~1）；而整体 `OUT.qv`（main 里）同一列写的是 `100.*err` **百分比**。
-    两处表头都叫 "Error %" 但量纲不一致，读输出时别被误导。
+    （0~1），表头 `Assembly Only | Total | Error % | QV`；而整体 `OUT.qv`
+    （main 里）同一列写的是 `100.*err` **百分比**，表头
+    `Assembly | No Support | Total | Error % | QV`。两处表头都叫 "Error %"
+    但量纲不一致，读输出时别被误导。**双 asm 时 `OUT.qv` 还会多输出一行
+    `both`**（两 asm 的 miss/tots 合并后重算的并集错误率/QV）。
 - completeness = reads 中 solid（高计数）k-mer 被组装覆盖的比例，由
   `Logex` 计算：单倍体 `A&.B[<thresh>-]`（asm ∩ reads 的高计数）；双倍体
   用 `A&.D[thresh-]`/`B&.D[thresh-]`/`C&.D[thresh-]` 分别求 asm1/asm2/并集
@@ -75,14 +78,27 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
     不再下降或持平处，判据更"提前"；且它**不算 SOLID_COUNT**，只取阈值。
   - 两者扫描前都先 `Modify_Histogram(hist,low,high,1)` 把直方图归一化到
     **unique 计数模式**（`hist[i]` = 出现 i 次的**不同** k-mer 数，而非实例
-    数；切换时 `*i` / `/i` 互转，边界桶藏在 `hist[high+1/+2]`）。
+    数；切换时 `*i` / `/i` 互转）。**上下溢出边界桶**藏在 `hist[high+1/+2]`，
+    分别对应 `.hist` 文件头里的 `ilowcnt`（unique 模式下 low 以下的实例总数）
+    与 `ihighcnt`（high 以上的实例总数）——`Modify_Histogram` 收窄/放宽区间
+    时据此恢复两端的 under/overflow 计数，unique↔instance 互转时二者也随之
+    `*i`/`/i`（见 libfastk.c `Modify_Histogram`/`toggle_histogram`）。
   - 这是一个可复用的"从 k-mer 谱自动分错误峰/固体峰"模式：**先归一化到
     unique 模式 → 沿低覆盖度方向找"不再单调下降"的拐点**。
 - **CN 谱的构造**（`cn_plotter.c`）：调一次 `Logex -H1000` 对 asm 表 A 与
   reads 表 R 求 **7 个集合**直方图：`B-A`（reads-only）、`B&.A[1..4]`
   （reads ∩ asm 拷贝数 =1..4）、`B&.A[5-]`（≥5）、`A-B`（asm-only）；
-  标签 `read-only / 1 / 2 / 3 / 4 / >4`。核心思想 = 把 reads 的 k-mer 按其
+  标签 `read-only / 1 / 2 / 3 / 4 / >4`（H[0..5]；H[6]=A-B 仅用于 `-z`）。
+  核心思想 = 把 reads 的 k-mer 按其
   在 assembly 中的**拷贝数**分桶——这正是 copy-number 谱的精髓。
+- **坐标轴自适应**（CNplot/ASMplot 同款）：`-X/-Y` 未给时，先在各直方图
+  （STACK 模式对各桶求和）上从 low+1 起找"首个不单调下降点"再沿上升段扫
+  全局最大得主峰 `(xmax,ymax)`；再在主峰右侧找**次峰 `xsec`**（≥10%·ymax），
+  `XMAX = (xmax+xsec)·XREL/2`，`YMAX = ymax·YREL`。对 line/fill 额外用
+  `MASS=.98` 把 x 上限放宽到能看到每条曲线 98% 的质量（并 ≥1%·YMAX 的峰）。
+- **`-z`（ZGRAM）**：CN 用 H[6]=A-B（asm-only）输出 `.cnz`——在 x=0 处画
+  asm-only k-mer 里 unique（count=1）vs 非 unique（count>1）两段柱；ASM 用
+  各 asm 的 `A-B`/`B-A`/共有集合的**总量**（`GetCount`）画 in/not-in 占比。
 - **ASM 谱的构造**（`asm_plotter.c`）：单 asm 用 `B-A / B&.A / A-B`；
   双 asm 用 `C-#(A|B)`（reads 不在任一）、`C&.(A-B)`/`C&.(B-A)`（只在
   asm1/asm2）、`C&.#(A&B)`（共有）等 7 组集合，标签 `read-only /
@@ -94,6 +110,15 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
   `phased_block.bed`（列 Scaffold/Start/End/Phase/Purity/Switches/Markers）与
   `.phased_block.stats`（#Blocks/Sum/Min/Avg/N50/Max）。这是**相感知组装 QC**
   的参考实现。
+  - **mark 站点纯度判据**：对每个重叠的 hap 站点记 `mrk`（多数极性标记数，
+    +母/−父）与 `opp`（少数极性数），**仅当 `abs(mrk) >= (sum+3)/4`（即纯度
+    ≥75%）才入栈**；`mark[i].mrk` 的实际值 = 站内净多数减去两端延伸到相邻
+    极性段的长度差。`merge_blocks` 先把相邻同极性可靠块（长度≥`ANCHOR_LENGTH`
+    或 `abs(mrk)≥ANCHOR_MARK`）合并，再把不可靠块在相反极性可靠块间以
+    **`abs(score)` 最小化**切分。
+  - bed 的 Purity 列 = `100·ns/to`（该块内主导 hap-mer 占比）；Switches/Markers
+    即 `ns/to`；文件末尾另有一行 **`total`** 汇总整体主导比例。`.stats` 的
+    N50 由排序后的 `<troot>.block.sizes` 累积到 `≥ BTOT/2` 得到。
 - 内部组合 CNplot/ASMplot/HAPplot；`-k` 保留 `.cni/.asmi/.hpi` 中间数据
   供重复绘图。
 - **MerquryFK 本质是驱动脚本**：它自己不实现计数/集合并，而是通过 `system()`
@@ -103,17 +128,27 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
 
 ## 3b. KatComp / KatGC 的实现（pgr 可借鉴的流式扫表）
 
-- 二者都**直接流式扫 `.ktab` 表**（`Open_Kmer_Stream`），不做直方图/Logex：
-  - **KatComp**：两表 `T`/`U` **并行前缀归并**（`GoTo_Kmer_Index` 按前缀分片，
-    逐元素 `mycmp` 求交集/差集），累加 `plot[KF1][KF2]` **叉积矩阵**
-    （`JMAX×HMAX`，默认 HMAX=JMAX=1000，`-X/-Y` 可给上限）。
+- 二者都**直接流式扫 `.ktab` 表**（`Open_Kmer_Stream` + `Kmer_Stream` 分片
+  流式读，`GoTo_Kmer_Index` 按**前缀桶**定位到任意索引），不做直方图/Logex：
+  - **KatComp**：两表 `T`/`U` **并行前缀归并**（各线程按 `GoTo_Kmer_Index`
+    在前缀边界处切出 `[beg,end]` 分片，逐元素 `mycmp` 比较求交集/差集），
+    累加 `plot[KF1][KF2]` **叉积矩阵**（`JMAX×HMAX`，默认
+    HMAX=JMAX=1000，`-X/-Y` 可给上限）。**注意 `-y` 相对倍率默认 2.1**
+    （CNplot/ASMplot/MerquryFK 的 `YREL` 才是 1.1），且其 y 轴语义是
+    **source2 的 k-mer 频率**而非计数。
   - **KatGC**：扫单表，对每个 k-mer 算**GC 含量** `gcontent`（用预计算的
-    `GC[256]`/`GCR[256]` **字节查找表**逐字节查 C/G 数，比逐碱基判断快），
-    累加 `plot[GC][覆盖度]`（GC∈[0,KMER]，覆盖度∈[0,HMAX]）。
+    `GC[256]`/`GCR[256]` **字节查找表**逐字节查 C/G 数，比逐碱基判断快）：
+    `isgc[4] = {0,1,1,0}`（A/C/G/T→0,1,1,0），`GC[x]` 统计一字节内 4 个
+    2-bit 碱基的 C/G 数；因 kmer 末字节可能不满 4 碱基，`GCR[256]` 只算
+    前 `kmer%4` 个碱基，`gcontent` 对前 `kbyte-1` 字节用 `GC`、末字节用
+    `GCR`。累加 `plot[GC][覆盖度]`（GC∈[0,KMER]，覆盖度∈[0,HMAX]）。
   - 峰值语义：都从 x=2 起找"首个不单调下降点"再沿上升段扫全局最大
-    （与 CNplot 一致），`-x` 倍率默认 2.1。
-  - 输出矩阵（坐标带 `.5` 半格中心）到 `.kx`/`.kgc`，再 `Rscript` 画
-    contour/heat/combo。
+    （与 CNplot 一致），`-x` 倍率默认 2.1（KatGC 额外把 `XMAX` 封顶到
+    `HMAX`）。
+  - 输出矩阵（坐标为**半格中心** `i.5/j.5`）到 `.kx`/`.kgc`，再 `Rscript`
+    画 contour/heat/combo；**`val > ZMAX` 的值封顶写为 ZMAX**（ZMAX = 两维
+    峰值中的最大者，用于 R 色标归一）。`.kx` 头 `KF1\tKF2\tCount`，`.kgc`
+    头 `GCP\tKF\tCount`（其 y 输出是 GC 行索引 0..KMER，R 里再换算成 %GC）。
 
 ## 3c. HAPmaker 三阶段管线（三人家系 hap-mer 建表）
 
@@ -151,13 +186,26 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
 4. **HAPmaker（三人家系 hap-mer）**：本质是 Logex 集合运算（父母特有 ∩
    子代继承，见 §3c）——pgr 目前仍无 Logex（kmer.md §9 缺口 3），此能力未
    落地。
-5. **二进制格式对照**（对 pgr 有直接参考价值，均已在 §3/§3b 核实）：
-   - `.ktab`：stub + `.<root>.ktab.1..N` 分片；canonical k-mer，表项 =
-     `kbyte(=ceil(k/4))` 字节序列 + 2 字节 count；前缀压缩索引 `4^(4*ibyte)`。
-   - `.hist`：`int32 k | low | high | int64 ilowcnt | int64 max_inst |
-     int64[high-low+1]`，unique/instance 双模式。
-   - `.prof`：`.pidx.N`（每序列偏移）+ `.prof.N`（RLE 压缩 u16 逐碱基 count），
-     供 per-scaffold QV / 相位块用。
+5. **二进制格式对照**（对 pgr 有直接参考价值，均已在 §3/§3b/§4 核对，细节
+   见 libfastk.c `Load_Kmer_Table`/`Open_Kmer_Stream`/`Load_Histogram`/
+   `Open_Profiles`）：
+   - `.ktab`：**stub** `<root>.ktab` 头 = `int32 smer | int32 nthreads |
+     int32 minval | int32 ibyte` + `int64[ixlen]` **前缀压缩索引**
+     （`ixlen = 2^(8·ibyte) = 4^(4·ibyte)` 前缀桶，ibyte 通常 1~3）；
+     **分片** `.<root>.ktab.1..N` 每个 = `int32 kmer | int64 n` + `n` 个
+     **pbyte 字节表项**，`pbyte = tbyte-ibyte = (kbyte+2)-ibyte` =
+     后缀 `hbyte=(kbyte-ibyte)` 字节 + **2 字节 count**；canonical k-mer
+     （`is_minimal` + `compress_norm`/`compress_comp` 取正/反向补体较小者）。
+     **注意：分片不存前缀 ibyte 字节，前缀由 index 桶隐含**。
+   - `.hist`：`int32 k | low | high | int64 ilowcnt | int64 ihighcnt |
+     int64[high-low+1]`，unique/instance 双模式；`ilowcnt`/`ihighcnt` 是
+     opposite 模式下 low 以下/high 以上的实例计数（under/overflow），读取时
+     藏到 `hist[high+1/+2]`。
+   - `.prof`：stub = `int32 kmer | int32 nthreads`；`.pidx.N` = `int32 kmer |
+     int64 n | int64 n | int64[n]` 每序列偏移；`.prof.N` = **delta+RLE 混合
+     压缩的 u16 逐碱基 count**（字节高 2 位 `00` = 当前值 run 长度 x；`01` =
+     带符号 5-bit 小增量 ±(x&0x1f)；`1x` = 7/15-bit delta，`d=(d+x)&0x7fff`，
+     初始值 1-2 字节）。供 per-scaffold QV / 相位块用。
    这正是 kmer.md §10.2 三种格式（`.pkt`/`.pkp`/`.hist`）的**对照系**：
    pgr 的 `.pkt`/`.pkp` 自建单文件不兼容 FASTK，`.hist` 刻意兼容。
 

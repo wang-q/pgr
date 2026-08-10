@@ -1,6 +1,7 @@
 # FastGA 源码与论文分析
 
-> 整理于 2026-08，源自对 `FASTGA-main/` 目录源码（约 4.6 万行 C）及 README 的通读。
+> 整理于 2026-08，源自对 `FASTGA-main/` 目录源码（全部 `.c` 合计约 4.1 万行，
+> `wc -l` 实测 40653 行）及 README 的通读。
 > 2026-08-05 复核：`-S`（对称 adaptamer）已由 README 文档化，本机安装版二进制
 > 更新为 `[-vkMS]`（与源码 V1.5 一致），§5/§8 相应修正。
 > 2026-08-06 通读论文 PDF（Bioinformatics Advances 5(1):vbaf238）全文，
@@ -77,10 +78,22 @@ PAF / PSL
 ### 3.2 GIX：syncmer 稀疏 k-mer 索引（GIXmake.c）
 
 - 对每个 GDB 构建 k-mer 索引（`-k` 默认 40），但**不是全后缀数组**：只索引"以
-  (12,8) syncmer 起始"的 40-mer（GIXmake.c: `TMER=12, SMER=8, SOFF=4`；
-  `is_syncmer` 对 12-mer 的 8 个 s-mer 窗口取 canonical（正反链）最小值）。
+  (12,8) syncmer 起始"的 40-mer（GIXmake.c: `TMER=12, SMER=8, SOFF=4`）。
+  **实际检测是分布线程内的内联扫描**（GIXmake.c:220-311 / 480-601）：对 12-mer
+  窗口内 **5 个重叠 8-mer**（TMER−SMER+1=5；8-mer 由两个相邻 4-mer 半字拼成，
+  值 = `(nq[jq]<<8)|nh`，16-bit）取 canonical（正反链 `Comp`/`TMap`）最小值，
+  当最小 8-mer 落在窗口**左端点**（`pos4 == i-SOFF`）时触发，40-mer 锚在
+  `j = i-SOFF`（GIXmake.c:569）。
+  **独立的 `is_syncmer` 函数（GIXmake.c:131）是 `#ifdef DEBUG_SYNCMERS` 下的
+  死代码**，正常构建不参与（早前笔记误引为活动检测逻辑，已更正）。
 - 每个索引条目 = 40-mer + 位置 + 掩码前缀信息；排序表存为 `-T` 个隐藏
   `.ktab.<int>` 分片（`.gix` 只是代理文件）。
+- **新格式条目布局**（FastGA.c:5012-5016，`-DLCPs` 构建）：`kmer 后缀(KBYTES)`
+  + `mask/len 字节(CBYTE)` + `lcp 字节(LBYTE = CBYTE+1)` + `contig/post 载荷
+  (PAYOFF = LBYTE+1)`；GIXmake.c:1350 条目宽 `swide = MBYTES+PostBytes+ContBytes`，
+  `MBYTES = KBYTES+1`。排序在 GIXmake 内调 `msd_sort`（MSDsort.c），GIXmake
+  经 Makefile 以 `-DLCPs` 编译（记录相邻条目 lcp 到每条记录首字节）。
+- 排序表按首字节 1024 桶（`NUM_BUCK`）预分 + `Ksplit` 均衡分片后多线程桶排序。
 - **体量**：README 实测约 14 GB / Gbp；**论文口径 ~11 GB / Gbp、构建约
   15 s/Gbp**（M4 Max 16 核、8 线程）——两个数字统计口径不同，都远大于
   序列本身；人类 ~3 Gbp ≈ 33-42 GB。FastGA **默认在退出时自动删除自己
@@ -143,7 +156,8 @@ wave 划定的搜索区域。pgr 移植时把 tube 提升为正式概念（`Tube
 
 满足条件的链在"tube"（`alow..ahgh` × `dgmin..dgmax`）内触发 wave aligner
 （`Local_Alignment`）。self 比对（`SELF && ctg1==ctg2 && !comp`，FastGA.c:
-3220-3240）对 tube 扩展做对角线限制：tube 带全正（`dgmin > 0`）时
+3029 判定 `self`，对角线限制调用在 3245-3257；早前笔记误记 3220-3240，已更正）
+对 tube 扩展做对角线限制：tube 带全正（`dgmin > 0`）时
 `Local_Alignment(..., dgmin-1, -1)`、全负（`dgmax < 0`）时
 `Local_Alignment(..., -1, -(dgmax+1))`，带跨 0 的 tube 整管跳过——
 `Local_Alignment` 内 `minp = low-lbord` / `maxp = hgh+hbord` 成为 wave
@@ -224,8 +238,10 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 
 | 模块 | 职责 |
 |------|------|
-| `FastGA.c`（~4k 行）| 主流程、参数解析、种子扫描、anti-diagonal 链、调用 aligner |
-| `align.c`（~6.7k 行）| wave aligner（forward/reverse_wave、Local_Alignment）、Compute_Alignment、trace、Gap_Improver |
+| `FastGA.c`（~5.3k 行）| 主流程、参数解析、种子扫描、anti-diagonal 链、调用 aligner |
+| `align.c`（~7.1k 行）| wave aligner（forward/reverse_wave、Local_Alignment）、Compute_Alignment、trace、Gap_Improver |
+| `MSDsort.c`（~0.5k 行）| MSD radix 排序 `msd_sort`（GIXmake 的 k-mer 桶内排序用）|
+| `RSDsort.c`（~0.4k 行）| radix 排序 `rmsd_sort`（FastGA 主流程种子流排序用，FastGA.c:149 声明）|
 | `libfastk.c` / `FastKS.c` | FastK 生态 k-mer 计数库：读写 GIX 的 `.ktab` 表（Histogram / Kmer_Table / Kmer_Stream / Profile_Index）|
 | `GDB.c` / `GDB.h` | genome database：scaffold/contig 两级结构、2-bit 序列随机访问 |
 | `GIXmake.c` | syncmer 稀疏 k-mer 索引构建（k=40 + (12,8) syncmer，含 mask 支持）|
@@ -510,8 +526,10 @@ PAF / PSL（含 CIGAR）
   scaffold/contig 两级，N 按 `-n` 阈值拆 gap；元数据（.1gdb）与序列（.bps）分离，
   序列默认 EXTERNAL 文件态（fseeko 随机访问，见 §9.4）。
 - **GIX**（GIXmake.c）：只索引"以 (12,8) canonical syncmer 起始"的 k=40 k-mer
-  （`TMER=12, SMER=8, SOFF=4`；`is_syncmer` 对 12-mer 的 8 个 s-mer 窗口取
-  正反链最小值）。排序：首字节 1024 桶 → `Ksplit` 均衡分片 → 多线程桶排序，
+  （`TMER=12, SMER=8, SOFF=4`）；实际检测是分布线程内联扫描，对 12-mer 窗口
+  内 5 个重叠 8-mer 取 canonical 最小值、锚在窗口起点（`j = i-SOFF`，
+  GIXmake.c:569；独立的 `is_syncmer` 为 `DEBUG_SYNCMERS` 死代码，见 §3.2）。
+  排序：首字节 1024 桶 → `Ksplit` 均衡分片 → 多线程桶排序，
   输出 `-T` 个 `.ktab.<int>` 分片（Kmer_Stream 流式读取，libfastk.c）。
 - 参数：`-k 40`（k 大小）、`-f 10`（种子频率阈值，GIX 构建时同时算频率）。
 

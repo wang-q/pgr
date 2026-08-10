@@ -2,7 +2,9 @@
 
 > 初稿整理于 2026-02；2026-08-03 依据 `multiz-multiz/` 目录（v11.2）源码
 > 逐文件重读补全（multiz.c / mz_preyama.c / mz_yama.c / mz_scores.c），
-> 并记录 pgr 的直译进展。设计/实现记录见 [[fas-multiz.md]]。
+> 并记录 pgr 的直译进展。2026-08-11 再核对全部源码，修正 GAP 表第 4 条
+> 映射、补充 maf.c/multi_util.c 分析、quasi-natural gap 逐对累加语义及两处
+> 源码怪癖。设计/实现记录见 [[fas-multiz.md]]。
 
 本文档分析 UCSC `multiz-tba` 软件包的核心组件 `multiz`。源码在仓库
 `multiz-multiz/` 目录（2016 版 v11.2），环境已安装二进制
@@ -73,6 +75,10 @@ multiz [R=?] [M=?] [L=?] [S=?] file1 file2 v [out1 out2] [nohead] [all]
 关键点：multiz 是**逐重叠区的块流合并**，输出多块；单覆盖假设下每个参考
 位置只被合并一次。
 
+**源码怪癖**：`multiz()` 内残留一处调试代码
+`if (a1->components->start == 11305) test++;`（multiz.c:89-90），
+`test` 变量从不被使用，纯死代码，可忽略。
+
 ### 2.2 mz_preyama.c —— 预处理与边界
 
 `pre_yama(a1, a2, beg, end, radius, v)`：
@@ -99,6 +105,12 @@ multiz [R=?] [M=?] [L=?] [S=?] file1 file2 v [out1 out2] [nohead] [all]
    结果，a2 的参考只通过边界约束参与——这是 pgr 若想实现"参考也参与精修"可
    借鉴的模式（见 §3.3）。
 
+    **源码怪癖**：v=0 分支的 `mapping(A,1,K,1,M,...)`（mz_preyama.c:276）以
+    `a_row2=K` 传入，而此刻 A 在 `K--` 后仅含 0..K-1 共 K 行，读 `A[i][K]`
+    属越界（应传 `K-1`）；同函数的 B 侧调用 `mapping(B,0,L-1,...)`
+    （mz_preyama.c:308）传 `0..L-1` 则正确。属源码遗留问题，pgr 若直译 v=0
+    分支应规避（pgr 目前未实现 v=0，见 §3.2）。
+
 `mafBuild`：从 (K+L)×M_new 列矩阵重建 MAF 块——每行按参考坐标重算
 start/size，`nc->size == 0`（全 gap 行）丢弃，`score = mafScoreRange`。
 
@@ -117,7 +129,8 @@ start/size，`nc->size == 0`（全 gap 行）丢弃，`score = mafScoreRange`。
 
 **准自然 gap 修正**：对每条候选路径（上一步为 C/D/I），按"最后两条边"
 的 A/B dash 模式查 `GAP(s,t,u,v)` 表（见 §2.4），受 LB/RB 条件约束
-（如 C 的 x 修正要求 `row>1 && col>LB[row-2]+1`）。
+（如 C 的 x 修正要求 `row>1 && col>LB[row-2]+1`）。注意此修正按物种对
+(i,j) 双重循环**逐对累减**（见 §2.4 的重要语义），并非整列一次性查表。
 
 **端部 gap 免费**：I 的修正只在 `row<M`（末行不收 open），C 只在
 `col>1`（起点不收 open），D 只在 `0<col<N`（起点/终点不收 open）；
@@ -143,13 +156,21 @@ D→`A列+dashes`。
     ```
     gap open 400 / extend 30；`SS('-',x) = -gap_extend`，`SS('-','-') = 0`，
     其余未知字符 -100。
-*   **GAP(s,t,u,v) 表**（s/t/u/v 为最后两条边 A/B 侧是否 dash，1=dash）：
+*   **GAP(s,t,u,v) 表**（s/t = 前一条边的 A/B 侧是否 dash，u/v = 当前边的
+    A/B 侧是否 dash，1=dash）：
     16 种构型中 6 种收 gap_open：
     ```
     GAP(0,0,0,1) GAP(0,0,1,0) GAP(0,1,1,0)
     GAP(1,0,0,1) GAP(1,1,0,1) GAP(1,1,1,0)
     ```
-    即：边对 (xx/x-)、(xx/-x)、(x-/ -x)、(-x/xx)、(--/x-)、(--/-x)。
+    即边对（前边/后边）：(xx/x-)、(xx/-x)、(x-/ -x)、(-x/x-)、(--/x-)、
+    (--/-x)。
+    *   **重要语义**：准自然 gap 罚分在 yama 中对**每一对物种 (i,j) 逐对累加**
+        ——内层双重循环 `for i in K: for j in L:` 里查 `GAP(s,t,u,v)` 并累减到
+        候选值。因此 gap_open 不是对整列收一次，而是对"该处实际存在 gap 的
+        每个物种对"各收一次；某列只有部分物种有 gap 时，罚分按有 gap 的物种数
+        成比例。这正是 Altschul quasi-natural gap 与"固定 gap_open"的关键差异
+        （后者对所有物种对一视同仁）。
 *   **mafScoreRange**：MAF 块 SP 打分（列内所有物种对 SS + 相邻列 GAP2
     修正），供 `mafBuild` 写 `a score=`。
 
@@ -175,6 +196,42 @@ multiz 的带不是固定带宽，而是**参考锚定的动态边界数组**：
    tbp - LB[row]`），不是固定宽度矩阵；准自然 gap 修正条件也用 LB 保证
    带内有效。`yama` 开头断言带宽（`RB[row]-LB[row] >= MIN(N,10)`）与
    单调性，不满足直接 fatal。
+
+### 2.6 maf.c / multi_util.c / util.c —— MAF I/O 与共享工具
+
+**`maf.c`** 是迷你版 MAF 读写（header 注明 "version 12"，"Stolen from
+Jim Kent & seriously abused"），依赖 zlib，`.gz` 输入由 `gzopen`/`gzgets`
+透明支持：
+
+*   **mafOpen**: 校验首行 `##maf version=%d`（失败 fatal），解析 `scoring=`
+    字段。
+*   **mafNext**: 跳过 `#`/空行，块必须以 `a` 行开始；逐 `s` 行解析
+    `s src start size strand srcSize text`，做三重 sanity check：各组件
+    text 长度一致、`start+size <= srcSize`、text 中非 dash 计数 == 声称的
+    `size`；任一不符直接 fatal。注意 multiz 对坏数据是**硬失败（abort）**，
+    pgr 的 "Zero Panic" 约定需转为友好报错。
+*   **parseScoreLine**: 解析 `a` 行 `score=`、`amplifier=<row>`、`copy=<row>`
+    ——把对应行 `paralog` 标为 `'a'`/`'c'`（默认 `'s'` 单例）。
+*   **mafWrite**: 逐字段对齐列宽（src/start/size/srcSize 各取块内最长），
+    并按各组件 paralog 输出 `amplifier=`/`copy=`。
+*   **mafColDashRm**: 原位删除全 dash 列（供 make_part_ali_col 收尾）。
+
+**`multi_util.c`** 提供 multiz 全程共享的工具：
+
+*   **keep_ali(ali, beg)**: 从参考位置 beg 起保留 block 剩余部分（丢弃完全
+    落在 beg 之前的组件），重算各组件 start/size 与块 score。
+*   **make_part_ali_col / print_part_ali_col**: 按列区间 [cbeg,cend] 切出子块
+    （全 gap 行剔除），供 multiz 输出块前后未被合并的列。
+*   **mafPos2Col**: 参考位置 → 列号（遍历 text 跳过 dash）。
+*   **seperate_cp_wk**: 把 cp_list 中 `src==chr` 的块移到 wk_list（按参考
+    染色体分组，供 main 逐染色体调用 multiz）。
+*   **retrieve_first**: 弹出链表头。
+*   **parseSrcName / parseSrcName2**: 把 `src`（形如 `species.contig`）拆为
+    name 与 contig。
+
+**`util.c`**: `fatal`/`fatalf`（打印 argv0 前缀后 exit(1)）、`fatalfr`（追加
+strerror）、`ckalloc`（0 长度按 1 分配、失败 fatal）、`copy_string`，全局
+`argv0`。`util.h` 另定义了 `MAX`/`MIN` 宏与 `uchar = unsigned char`。
 
 ## 3. 对 pgr 的启示与落地
 

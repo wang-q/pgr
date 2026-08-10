@@ -71,19 +71,22 @@
 
 ```
 每个基因组.fa
-  ├─ rule faidx            → .fai（samtools faidx，供后续 2bit/坐标）
+  ├─ rule faidx            → .fai（samtools faidx，供后续坐标/掩膜）
   ├─ rule make_common_bf   → <prefix>.common.bf（C++ 级联 Bloom filter）
+  ├─ rule make_repeat_bf   → <prefix>.repeat.bf（实验性，默认关，repeat=False）
   ├─ rule indexlr          → <genome>.k<k>.w<w>.tsv（每基因组有序 minimizer 位置表）
   └─ rule ntsynt_synteny   → <prefix>.synteny_blocks.tsv（最终共线性块）
 ```
 
-四步中只有最后一步（`ntsynt_run.py`）是"算法"，前三步是索引/过滤预处理：
-1. **faidx**：建 .fai，供坐标回移与 pybedtools 掩膜用。
+只有最后一步（`ntsynt_run.py`）是"算法"，其余是索引/过滤预处理：
+1. **faidx**：建 .fai，供坐标与 pybedtools 掩膜用。gzipped 输入先用 `gunzip -c | samtools faidx -o -`。
 2. **make_common_bf**（C++，见 §4.1）：找**所有基因组共有**的 k-mer，建成一个 Bloom filter，
    供 indexlr 只保留共有 minimizer。
-3. **indexlr**（btllib）：对每个基因组做 minimizer 采样，用 common BF `-s` 过滤，
-   输出 `(k-mer 哈希, contig, 位置)` 的 TSV（按位置有序）。
-4. **ntsynt_run.py**：读所有基因组的 minimizer TSV → 建共享 minimizer 图 → 图简化/过滤 →
+3. **make_repeat_bf**（`ntsynt_make_repeat_bfs.py`，实验性，见 §4.2）：默认 `repeat=False` 关。
+4. **indexlr**（btllib）：对每个基因组做 minimizer 采样，命令行 `--long --seq --pos`；common 开时
+   加 `-s <common.bf>`、repeat 开时加 `-r <repeat.bf>`。输出 TSV 每行 `contig\t<mx:pos:seq> ...`，
+   即一行一个 contig、各 minimizer 以空格分隔、每个以 `哈希:位置:序列` 三段式编码（按位置有序）。
+5. **ntsynt_run.py**：读所有基因组的 minimizer TSV → 建共享 minimizer 图 → 图简化/过滤 →
    找路径 → 找共线性块 → 细化（`w_rounds` 递减）→ 合并共线块 → 输出 TSV。
 
 > **`--no-common`**：可跳过 common BF（`common=False`），此时图包含所有 minimizer，
@@ -135,6 +138,9 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
    `read_minimizers`（`ntjoin_utils.py:167`）有个**内在去重**：同一基因组内若某个 minimizer
    在多个位置出现（重复/多拷贝），它会被加入 `dup_mxs` 并从 `mx_info` **整体剔除**（不只删
    一个拷贝）——即"一遇重复即整删"，这是管线自带的重复序列过滤，无需 repeat BF 就生效。
+   （去重判据用 `mx` 哈希；若传入 repeat_bf，则按 `seq` 序列命中 `repeat_bf.contains(seq)` 也加入
+   `dup_mxs`。另外 `NtSyntSynteny.__init__` 会把 `FILES` 按字典序**逆序**排序，保证确定性。）
+   注：common BF 的 `s` 过滤在此步前只作用到 indexlr 产出。
 2. **make_minimizer_graph**（ntJoin）：先 `filter_minimizers`（`ntjoin_utils.py:152`）做
    **跨基因组 set 交集**——只保留**每个基因组都出现**的 minimizer（共线前提），再按 §2.3 建图。
    common BF 的 `s` 过滤在此步前只作用到 indexlr 产出，此处交集是最终把关。
@@ -146,7 +152,11 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
    - **门控**：受 `--simplify-graph` 控制——`ntsynt_run.py` 直接调用默认**关**，但顶层/管线默认
      **开**（除非 `--no-simplify-graph`）；细化每轮 `w_rounds` 也会再简化一次
      （`ntsynt_synteny.py:504-505`）。
-4. **filter_graph_global**：删 `weight < n` 的边（`ntsynt_synteny.py:312`）。
+4. **filter_graph_global**（`ntjoin.py:78`）：删 `weight < n` 的边。注意**守卫**：
+   若 `n <= min(weights)` 则**直接返回不改图**（ntJoin 单参考场景用）；ntSynt 里各基因组权重恒为 1
+   （`weights_list = [1]*len(FILES)`）、`n` 默认 = 基因组数 ≥2，故实际总是过滤。
+   注意**同名的 `filter_graph_global_flag_overlaps`**（`ntsynt_synteny.py:312`）是细化末轮用的变体，
+   会额外记录被删边的两端 `flagged_node_pairs`（见 §3.5），勿与全局过滤混淆。
 
 ### 3.3 路径发现与共线性块提取
 
@@ -190,6 +200,11 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 7. 最后一轮（`new_w == w_rounds[-1]`）：额外做 `filter_graph_global_flag_overlaps` +
    `refine_graph`（§3.5），然后 `merge_collinear_blocks`（§3.6）。
 
+> **细化的简化顺序怪癖**：每轮 `build_graph` 返回的新图存到**局部变量** `graph`，而
+> `run_graph_simplification(self.graph)` 作用在**旧的** `self.graph`（不含本轮新边），随后
+> `self.graph = filter_graph_global(graph)` 又用局部 `graph` 覆盖——即每轮简化结果实际被丢弃，
+> 只有末轮的 `filter_graph_global_flag_overlaps + refine_graph` 真正落到最终图上。
+
 ### 3.5 末端/重叠精修（最后一轮，`refine_graph`）
 
 `filter_graph_global_flag_overlaps`（`ntsynt_synteny.py:312`）先删 `< n` 边并记录被删边的
@@ -211,8 +226,14 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 | `merge` | `max(gap) >= --merge`（collinear_merge） |
 
 否则合并（把后块 minimizer 接到前块尾）。执行两次（`ntsynt_synteny.py:526-531`），
-每次合并后按 `-z`（block_size）过滤短块。独立脚本 `bin/ntsynt_merge_collinear.py`
-把同一逻辑做成可单独对已有 TSV 调用的工具。
+每次合并后按 `-z`（block_size）过滤短块。
+
+独立脚本 `bin/ntsynt_merge_collinear.py` 复用同一套 **broken_reason 分类逻辑**，可单独对已有
+TSV 调用；但它是**纯坐标层**合并，与主流程有两处差异需注意：
+- indel 阈值直接用 `gap_range > --indel`（默认 50000），**不是**主流程的 `--bp − k`；
+- 合并时按 strand 扩展 start/end 坐标（`+` 取后块 end、`-` 取前块 start），输出 `num_minimizers` 恒为 0，
+  且 `--merge` 默认 1000000。脚本先按"首个出现的 assembly"的 (contig, start) 排序再合并，
+  并把每块 broken_reason 重置为 `None` 后重算（首块恒为 `None`）。
 
 ## 4. 实现细节
 

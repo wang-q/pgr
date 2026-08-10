@@ -167,7 +167,8 @@ gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate
 - `ht16` / `ht32`: 开放寻址哈希表，存储参考中 k-mer 的位置
     - 哈希函数为 **MurMur64Hash**（定义于 `utils.h`，MurMurHash3 风格 fmix64；`lz_diff.cpp` 中实例化 `mmh`，`ht_pos = mmh(x) & ht_mask`），线性探测最多 `max_no_tries=64` 槽；表大小取 2 的幂（`ht_size / 0.7` 后 `while (ht_size & (ht_size-1)) ht_size &= ht_size-1; ht_size <<= 1`），负载因子 0.7
     - `short_ht_ver`: 参考长度 / hashing_step < 65535 时用 16-bit
-    - `USE_SPARSE_HT`: 每 4 位取一个 key（hashing_step=4），减少表大小
+    - `USE_SPARSE_HT`: 每 4 位取一个 key（hashing_step=4），减少表大小；
+      表中存的位置为 `i / hashing_step`（`make_index16/32`），读回时 `h_pos = ht[slot] * hashing_step`
 - `key_len = min_match_len - hashing_step + 1`。注意两处默认不一致：`CLZDiffBase` 构造函数默认 `min_match_len=18`（→ key_len=15），但 AGC CLI 默认 `min_match_length=20`（`application.h`）→ **实际 key_len=17**；`hashing_step=4` 由 `USE_SPARSE_HT`（`lz_diff.h`）定义
 - `key_mask`: 2×key_len 位的掩码
 
@@ -177,7 +178,10 @@ gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate
 - **特殊 literal `'!'`**: 表示 "与参考同位置相同"，解码时取 `reference[pred_pos]`
 - **Match**: `<diff_pos>,<len-min_match_len>.` 或 `<diff_pos>.`（到序列末尾的匹配，len=~0u）
     - `diff_pos = ref_pos - pred_pos`（有符号，ASCII 十进制）
-- **N-run**: `N_run_starter_code(30)` + `<len-min_Nrun_len>` + `N_code(4)`（≥4 个连续 N）
+- **N-run**: `N_run_starter_code(30)` + `<len-min_Nrun_len>` + `N_code(4)`（≥`min_Nrun_len=4` 个连续 N）
+- **"match to end" 省略长度**：仅当匹配同时到达**文本末尾**与**参考末尾**
+  （`i+len_bck+len_fwd == text_size && match_pos+len_bck+len_fwd == reference.size()-key_len`）时
+  才省略长度字段（`len=~0u`），解码端 `len = reference.size()-ref_pos` 补齐
 
 **V1 vs V2 差异**：
 
@@ -293,16 +297,42 @@ struct segment_desc_t {
 
 **元数据序列化**（V3）：
 
-- 使用前缀编码变长 uint32（1-5 字节，类似 UTF-8 编码）
-- 元数据拆分为 samples / contigs / details 三部分，分别 ZSTD 压缩后存入对应的 `collection-*` stream（见上文 Stream 命名约定）
+- 使用前缀编码变长 uint32（1-5 字节，类似 UTF-8 编码，`collection.h`）
+    - 前缀字节决定总长：`num < 2^7=128` → 1 字节；`num < 128+2^14` → 2 字节；
+      `num < 128+2^14+2^21` → 3 字节；`num < 128+2^14+2^21+2^28` → 4 字节；其余 5 字节
+      （`pref_1..5` / `thr_1..4` 常量，`pref_arr` 表按高 4 位快速查长度，`skip` 据此跳过）
+- 元数据按 `pack_cardinality`（`-b`）**批量化**，拆为 samples / contigs / details 三流，
+  各批独立 ZSTD 压缩后存入对应 `collection-*` stream：
+    - `collection-samples`：ZSTD **level 19**
+    - `collection-contigs`：ZSTD **level 18**（存储时与 details 并行 async）
+    - `collection-details`：每批 5 个子数组**分别** ZSTD **level 19** 后拼成一个 part
+      （part 内先是 5 组 `(raw_size, packed_size)` 前缀编码，再依次接 5 个压缩块）
+- **details 的 5 个子数组**（`serialize_contig_details`，`collection_v3.cpp`）：
+    - `[0]`：层级计数（batch 样本数 → 每样本 contig 数 → 每 contig segment 数）
+    - `[1]`：`group_id`（每个 segment，直接存）
+    - `[2]`：`in_group_id`——按 group 做增量：首个 `e=in_group_id`；后续
+      `in_group_id==0 → 0`、`==prev+1 → 1`、否则 `zigzag_encode(in_group_id, prev+1)+1`，
+      解码时以 `get_in_group_id(group_id)` 为 `prev+1` 反推（`zigzag` 见 `utils.h`）
+    - `[3]`：`raw_length`——相对预测器 `pred_raw_length`（初值 `segment_size+kmer_length`，
+      随后逐段更新为前段 raw_length）做 `zigzag_encode(raw_length, pred)` 
+    - `[4]`：`is_rev_comp`（0/1）
+  - 即在 `segment_desc_t` 的四字段中，仅 `group_id` 与 `is_rev_comp` 原样存储，
+    `in_group_id`、`raw_length` 都经过 zigzag 差分压缩（利用相邻 segment 高度相关）。
+- 上述序列化细节为 V3 特有（V1/V2 为 `collection-desc` / `collection-main+details` 单一压缩块）
 
 ## 版本演进
 
 | 版本 | file_version | LZ-diff | 元数据        | 说明                           |
 |------|--------------|---------|---------------|--------------------------------|
 | V1   | <2000        | V1      | collection_v1 | 初始版本                       |
-| V2   | 2000-2999    | V1      | collection_v2 | 改进元数据                     |
-| V3   | 3000+        | V2      | collection_v3 | 改进 LZ-diff + zstd 压缩元数据 |
+| V2   | 2000-2999    | V2      | collection_v2 | 改进元数据（zstd 压缩）        |
+| V3   | 3000+        | V2      | collection_v3 | 改进元数据（前缀编码+批量化）、流名改 base64 紧凑命名 |
+
+> **修正（源码核对）**：LZ-diff 版本切换点在 **2000**，而非 3000。`CSegment` 构造函数
+> （`segment.h`）按 `_archive_version < 2000 → CLZDiff_V1`，`>= 2000 → CLZDiff_V2`，
+> 即 **V2（2000–2999）已使用 CLZDiff_V2**。故"改进 LZ-diff"发生在 V2 而非 V3；V3 的增量
+> 主要在元数据（前缀编码、按 pack_cardinality 批量化、ZSTD 分流压缩）与流命名
+> （`seg-N-ref/delta` → `x{base64}r/d`）。旧表 V2 行标 V1 为误，已更正。
 
 当前版本: `AGC_FILE_MAJOR=3, AGC_FILE_MINOR=0` → 3000
 

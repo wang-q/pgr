@@ -21,11 +21,18 @@
 
 | 层次 | 位置 | 内容 |
 |---|---|---|
-| 哈希 | `src/oxli/kmer_hash.cc` | 2-bit 滚动哈希、Murmur、cyclic 三种 |
+| 哈希 | `src/oxli/kmer_hash.cc` | 2-bit 滚动哈希 `_hash`、MurmurHash3 `_hash_murmur`、cyclic `_hash_cyclic` 三种 |
 | 存储 | `include/oxli/storage.hh` | BitStorage / NibbleStorage / ByteStorage / QFStorage |
-| 表 | `src/oxli/hashtable.cc` + `include/oxli/hashtable.hh` | `Hashtable` 基类 + `Counttable`/`SmallCounttable`/`Nodetable`/`QFCounttable` 派生：建表、`consume_string`、`median_at_least` |
-| 绑定 | `khmer/_oxli/graphs.pyx` | `Countgraph`(←CpCounttable) / `SmallCountgraph` / `QFCounttable` |
+| 表 | `src/oxli/hashtable.cc` + `include/oxli/hashtable.hh` | `Hashtable` 基类（2-bit）→ `Hashgraph` 派生 `Countgraph`/`SmallCountgraph`/`Nodegraph`；`MurmurHashtable` 派生 `Counttable`/`SmallCounttable`/`Nodetable`/`QFCounttable`；`CyclicHashtable` 派生 `CyclicCounttable`。提供建表、`consume_string`、`median_at_least` |
+| 绑定 | `khmer/_oxli/graphs.pyx` | `Countgraph`/`SmallCountgraph`/`Nodegraph`（← `CpCountgraph`/`CpSmallCountgraph`/`CpNodegraph` → oxli::Hashgraph，**2-bit**）；`Counttable`/`SmallCounttable`/`Nodetable`/`QFCounttable`（← oxli::MurmurHashtable，**MurmurHash3**） |
 | 脚本 | `scripts/normalize-by-median.py` | diginorm 流程（422 行，逻辑很薄） |
+
+> **哈希选择的关键差异（§3 详述）**：diginorm 实际用的 `Countgraph` 继承
+> `Hashgraph`→`Hashtable`（基类 `new_kmer_iterator` 返回 `TwoBitKmerHashIterator`、
+> `hash_dna` 走 `_hash`），因此走 **2-bit 编码**；而独立表类
+> `Counttable`/`SmallCounttable`/`Nodetable`/`QFCounttable` 全部继承
+> `MurmurHashtable`，走 **MurmurHash3**。两种哈希的 canonical 化方式也不同
+> （2-bit 取 `min(f,r)`，murmur 取 `f^r`）。
 
 ## 3. k-mer 哈希（kmer_hash.cc / kmer_hash.hh）
 
@@ -41,11 +48,17 @@
   `f = (f << 2 | twobit(ch)) & bitmask`，
   `r = (r >> 2) | (twobit_comp(ch) << (2k-2))`。与 pgr 现有滚动方式同构。
 - **可选哈希**：MurmurHash3_x64_128（seed 0，正反链各一次，
-  canonical = `f ^ r`，自互补特判）；cyclic hash（fwd+rev 求和）。
-  表内寻址一律 `khash % tablesize`，tablesize 取**素数**
+  canonical = `f ^ r`，自互补特判 `rev==kmer` 时直接返回 `f` 不再异或）；cyclic
+  hash（fwd+rev 求和）。**注意**：在 3.0/oxli master 里"可选"已成部分类
+  的**默认**——`Counttable`/`SmallCounttable`/`Nodetable`/`QFCounttable` 都继承
+  `MurmurHashtable`（用 `_hash_murmur`），只有 `CyclicCounttable` 用 cyclic；
+  2-bit `_hash` 仅保留给基类 `Hashtable`（即 `Countgraph`/`Nodegraph` 等 graph
+  类）。因此 **canonical 化有两条路**：graph 类 2-bit 走 `min(f,r)`，
+  murmur 表类走 `f^r`（不保证等于 2-bit 的 min 语义），移植对照时须分清。
+- 表内寻址一律 `khash % tablesize`，tablesize 取**素数**
   （`get_n_primes_near_x(n, x)`：从 `x-1` 起向下数奇数、逐个判素数，
-  返回**不高于 x 的 n 个素数**；x 过小可能不足 n 个）。素数表规避
-  `%` 与 2 的幂取模的碰撞聚集热点。
+  返回**不高于 x 的 n 个素数**；`x==1` 时直接返回 `{1}`（非素数），
+  x 过小可能不足 n 个）。素数表规避 `%` 与 2 的幂取模的碰撞聚集热点。
 - **约束**：CLI 层强制 `k ≤ 32`（超出报错退出，`create_countgraph`/
   `create_nodegraph`）、`n_tables ≤ 20`（默认需 `--force` 才能越过）——
   k 上限来自 u64 2-bit 编码，n_tables 上限是经验值。
@@ -59,17 +72,49 @@
   `get_count` 取各表最小值（标准 CMS 的 min 语义）。
 - **饱和处理**：所有表都满（255）时，若 `_use_bigcount` 则改走
   `_bigcounts`（`KmerCountMap = unordered_map<HashIntoType,u16>`，
-  即 `BoundedCounterType = unsigned short`，上限 `MAX_BIGCOUNT=65535`）。
-  **默认关闭**——`Storage()` 构造把 `_use_bigcount` 置 false，
+  即 `BoundedCounterType = unsigned short`，上限 `MAX_BIGCOUNT=65535`，
+  首个超过的 key 记 `_max_count+1 = 256`）。
+  **默认关闭**——基类 `Storage()` 构造把 `_supports_bigcount=false`
+  `_use_bigcount=false`（`ByteStorage` 构造才置 `_supports_bigcount=true`），
   normalize-by-median 的 argparse 没有 `bigcount` 属性，不会开启；
-  只有 `load-into-counting.py`/`abundance-dist.py` 显式 `-b` 默认 True。
+  仅 `load-into-counting.py`/`abundance-dist.py` 加了
+  `-b/--no-bigcount, dest='bigcount', default=True`（即 **bigcount 默认开，
+  `-b` 关掉**），`create_countgraph` 里 `if hasattr(args,'bigcount')` 才调用
+  `set_use_bigcount`。
   两个并发细节：`add` 写 bigcount 前用 `__sync_bool_compare_and_swap`
   自旋锁保护；`get_count` 仅在 `min_count == max_count`（已饱和）时才去
-  `_bigcounts` 里查，未饱和时零开销。
-- 其他存储：`BitStorage`（nodegraph，1-bit 存在性）、
-  `NibbleStorage`（SmallCountgraph，4-bit，max 15）、`QFStorage`
-  （计数商过滤器 CQF，khmer 3.0 试验特性，每槽约 1.3 字节，
-  内存不能像 CMS 那样预先严格固定）。
+  `_bigcounts` 里查，未饱和时零开销。另注：`add` 里多线程可能让 u8 计数
+  略超出 `_max_count`（代码注释明示可接受的小 slop）。
+- **BitStorage（Nodegraph）= Bloom filter**：每表 `tablesize` 个 bit，
+  每表分配 `tablesize/8+1` 字节。`test_and_set_bits` 用
+  `__sync_fetch_and_or` 原子置位，`_occupied_bins` 只在**表 0** 置新位时
+  +1（作为全局代理），`_n_unique_kmers` 首次发现新 k-mer 原子 +1；
+  `get_count` 需**所有表**对应位都置 1 才返回 1（多表 bit AND，
+  即标准多哈希 Bloom filter）。`Nodegraph::update_from` 用按字节 OR 合并
+  （Bloom 可 union），并借 `__builtin_popcountll(me^tmp)` 统计新增 occupied
+  位。**1-bit 存在性 → nodegraph 只有 0/1，无计数**。
+- **NibbleStorage（SmallCountgraph）= 4-bit CMS**：每表 `tablesize/2+1`
+  字节，每字节两个 nibble。寻址：`_table_index=(k%tablesize)/2`，
+  `_mask`/`_shift` 由 `(k%tablesize)%2` 决定高/低半字节（240/15、4/0）。
+  `_max_count=15`，计数到 15 即饱和停加（防溢出）；每表配一个
+  `std::mutex`（固定 32 个 mutex 池，故断言 `n_tables ≤ 32`）。
+- **QFStorage（QFCounttable）= 计数商过滤器 CQF**：单表
+  `qf_init(&cf, 1ULL<<size, size+8, 0)`（size 必须 2 的幂，来自 Cython 校验；
+  第 2 参为槽数 `2^size`，第 3 参 `size+8` 为 key 位数，末参 value 位数=0 未用），
+  `add`/`get_count` 用 `khash % cf.range` 寻址，计数用 `qf_count_key_value`。
+  khmer 3.0 试验特性（底层 `third-party/cqf/gqf.h` 不在本快照内，为外部依赖），
+  每槽约 1.3 字节，槽被占满后会**停止接受 `add`**（内存不能像 CMS 那样
+  预先严格固定），`get_tablesizes` 返回 `cf.xnslots`。
+- **磁盘存储格式**（`SAVED_SIGNATURE="OXLI"`，`SAVED_FORMAT_VERSION=4`）：
+  头部固定 `OXLI`(4B) + version(1B) + `ht_type`(1B)，类型常量
+  `SAVED_COUNTING_HT=1`、`SAVED_HASHBITS=2`、`SAVED_SMALLCOUNT=7`、
+  `SAVED_QFCOUNT=8`。随后因类型而异——ByteStorage/Countgraph 文件：
+  `use_bigcount`(1B) + `ksize`(4B) + `n_tables`(1B) + `n_occupied`(8B)，
+  然后每表写 `tablesize`(8B)+该表原始字节（Nibble/Bit 分别为
+  `tablesize/2+1`、`tablesize/8+1` 字节/表），末尾写 `n_counts`(8B) +
+  逐条 bigcount 条目（`kmer` u64 + `count` u16）；`BitStorage`/`NibbleStorage`
+  文件则无 `use_bigcount` 段。`.gz` 用 zlib `gzread/gzwrite` 读写，按扩展名
+  自动分派（`ByteStorageFile` 看文件名末段是否 `gz`）。
 - 每字节桶数 `_buckets_per_byte`（`khmer/__init__.py` 字典）：
   countgraph=1、smallcountgraph=2、nodegraph=8、qfcounttable=1/1.26。
   注意 `calculate_graphsize` 给出的 `tablesize` 单位是**桶**（entries），
@@ -102,7 +147,8 @@ if not all(read.median_at_least(cutoff) for read in batch):
 - **成对策略**：`coverages_at_least = all(...)`——只要批内**任一条** median
   低于 cutoff，两条都保留（与 bbnorm 的 keepboth 同思路）。
 - **median_at_least 短路优化**（hashtable.cc）：不做全排序。设
-  `min_req = ceil((len-k+1)/2)`，统计 k-mer 计数 ≥ cutoff 的个数，
+  `min_req = 0.5 + float(len-k+1)/2`（对整数即 `ceil((len-k+1)/2)`），
+  统计 k-mer 计数 ≥ cutoff 的个数，
   一旦 ≥ min_req 即判 `median ≥ cutoff`（前 min_req 个先扫，失败才继续）。
 - **清洗**：`clean_input_reads` 把序列大写、`N → A`；短于 k 的 read 在
   `broken_paired_reader(min_length=k)` 处被过滤。
@@ -125,13 +171,17 @@ if not all(read.median_at_least(cutoff) for read in batch):
 4. **1TB 决策不变**：CMS 路线内存固定但精度随装填率下降（且 k=32 时
    khmer 的 2-bit 编码本身不占大内存，占内存的是计数表）；精确路线仍走
    pgr 自己的 `.pkt` + sort-merge。khmer 只补全"近似"一侧的细节。
-5. **canonical 化与 pgr `.pkt` 同族**：khmer `uniqify_rc = min(f, r)` 取
+5. **canonical 化与 pgr `.pkt` 同族**：diginorm 的 `Countgraph` 用 2-bit，
+   khmer `uniqify_rc = min(f, r)` 取
    正/反向互补两条 **packed 2-bit 数值**的较小者；pgr `.pkt` 的 canonical
    key 取"正/反向互补 2-bit 编码中**字典序**较小者"。在固定字母表下
    （左侧碱基是 packed 整数的高位），序列字典序 == packed 数值序，二者
    是**同一 canonical 化逻辑**（都取 fwd/rev 编码较小的那条）。pgr 的
    `.pkt` 与 khmer 在"选择哪条链"上结论一致，可互为一致性参照；区别只在
    pgr 精确排序去重、khmer 用哈希进概率表。
+   **告诫**：该同族关系**仅对 2-bit/graph 类成立**；khmer 的 murmur 表类
+   （`Counttable` 等）canonical 走 `f ^ r`，与 pgr `.pkt` 的字典序取小
+   **不是同一逻辑**，若拿 murmur 类表作对照需单独核对。
 6. **当前 pgr 状态核实（2026-08 审计）**：`pgr fq norm` 现走**精确
    canonical KmerTable** + bbnorm 逐 read 判定（truedepth/depthAL 分位数
    + toss），计数表非近似（见 `notes/audit/audit-fq.md`、
