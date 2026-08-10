@@ -35,6 +35,7 @@ fxhash = "0.2.1"
 murmurhash3 = "0.0.5"
 rand = { version = "0.9.0" }
 minimizer-iter = "1.2.1"
+sysinfo = "0.30.13"
 
 coitrees = "0.4"
 noodles-gff = "0.54.0"

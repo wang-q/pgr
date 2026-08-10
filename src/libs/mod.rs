@@ -29,6 +29,7 @@ pub mod rmblast;
 pub mod runlist;
 pub mod sd;
 pub mod syncmer;
+pub mod sys;
 pub mod translate;
 
 pub use fmt::axt;

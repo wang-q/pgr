@@ -62,3 +62,13 @@ Neither the BBTools output nor a pgr regression golden is committed.
 `pgr kmer norm` uses an exact canonical count table instead of bbnorm's
 `bits=16` approximate hash counts, so reads at the depth-3 boundary can
 differ from `bbnorm.sh` output.
+
+## clumpify dedupe (verified once, no golden)
+
+`pgr fq clump --dedupe --dupesubs 0` was byte-compared against BBTools 39.38
+`clumpify.sh ... threads=1 dedupe=t dupesubs=0` on the Lambda data (40000 ->
+39984 reads; R1 and R2 both exact, N wildcard; higher-quality copy kept) and
+matched byte for byte. No golden is committed; a small synthetic test covers
+the semantics. Note: with `threads>1`, BBTools dedupe output order is
+nondeterministic (clump/thread race; removed set identical), so byte
+comparison uses `threads=1`.

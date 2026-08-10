@@ -7,9 +7,12 @@
 
 use crate::libs::fmt::fq::write_fq;
 use crate::libs::fmt::seq::{SeqReader, SeqRecord};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use rayon::prelude::*;
 use std::cmp::Ordering;
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
 
 /// 62-bit k-mer mask for k=31 (2*k bits).
 const KMER_MASK: i64 = (1i64 << 62) - 1;
@@ -21,17 +24,231 @@ pub const DEFAULT_SEED: u64 = 1;
 const DEFAULT_HASHES: usize = 4;
 /// Default BBTools border size.
 const DEFAULT_BORDER: usize = 1;
+/// Input quality ASCII offset (BBTools stores phred internally).
+const QUALITY_BASE: u8 = 33;
+/// Maximum non-matching reads scanned past during dedupe (`scanlimit`).
+const SCAN_LIMIT: usize = 5;
+/// Options for the clumpify-compatible sort.
+#[derive(Debug, Clone)]
+pub struct ClumpOptions {
+    /// K-mer size (clumpify `k`).
+    pub k: usize,
+    /// Comparator seed (clumpify `seed`).
+    pub seed: u64,
+    /// Remove duplicate read pairs.
+    pub dedupe: bool,
+    /// Maximum substitutions allowed in a duplicate (clumpify `dupesubs`).
+    pub dupesubs: usize,
+    /// User memory cap in bytes (`--mem`); default 2 GiB.
+    pub mem: Option<u64>,
+    /// Override the external-path bucket count.
+    pub buckets: Option<usize>,
+    /// Force the sorting path; `Auto` decides from the memory budget.
+    pub mode: SortMode,
+}
+
+/// Sorting path selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortMode {
+    /// Pick the in-memory path when the estimate fits the budget.
+    Auto,
+    /// Always sort globally in memory.
+    Global,
+    /// Always use the external hash-bucket path.
+    Bucket,
+}
 
 /// Sorts paired reads by R1 pivot k-mer and writes them in the resulting
 /// order, reproducing `clumpify.sh` default output. `infiles` is one
-/// interleaved FASTQ or two files (R1, R2).
-pub fn clump<W: Write>(infiles: &[String], out: &mut W, k: usize, seed: u64) -> Result<()> {
+/// interleaved FASTQ or two files (R1, R2). With `dedupe`, whole-pair
+/// duplicates (R1 and R2 both matching within `dupesubs` substitutions) are
+/// removed, keeping the higher-quality copy.
+pub fn clump<W: Write>(infiles: &[String], out: &mut W, opts: &ClumpOptions) -> Result<()> {
+    let estimate = estimate_fastq_bytes(infiles);
+    let cap = crate::libs::sys::mem_cap(opts.mem);
+    match opts.mode {
+        SortMode::Auto => {
+            if estimate <= cap {
+                clump_in_memory(infiles, out, opts)?;
+            } else {
+                clump_buckets(infiles, out, opts, cap, estimate)?;
+            }
+        }
+        SortMode::Global => clump_in_memory(infiles, out, opts)?,
+        SortMode::Bucket => clump_buckets(infiles, out, opts, cap, estimate)?,
+    }
+    Ok(())
+}
+
+/// In-memory path: load all pairs, sort, optional dedupe.
+fn clump_in_memory<W: Write>(infiles: &[String], out: &mut W, opts: &ClumpOptions) -> Result<()> {
     let pairs = read_pairs(infiles)?;
-    let sorted = sort_pairs(pairs, k, seed);
-    for (r1, r2) in &sorted {
+    let keyed = sort_keyed(pairs, opts.k, opts.seed);
+    let kept = if opts.dedupe {
+        dedupe_pairs(keyed, opts.dupesubs)
+    } else {
+        keyed.into_iter().map(|k| k.pair).collect()
+    };
+    for (r1, r2) in &kept {
         write_record(out, r1)?;
         if let Some(r2) = r2 {
             write_record(out, r2)?;
+        }
+    }
+    Ok(())
+}
+
+/// External path: hash pairs into buckets by pivot k-mer, sort each bucket in
+/// memory, and emit buckets in order. Deterministic for fixed options; the
+/// order is bucket-concatenated (documented divergence from the in-memory
+/// global order, matching BBTools' own large-data behavior).
+fn clump_buckets<W: Write>(
+    infiles: &[String],
+    out: &mut W,
+    opts: &ClumpOptions,
+    cap: u64,
+    estimate: u64,
+) -> Result<()> {
+    let buckets = opts.buckets.unwrap_or_else(|| {
+        let per = ((cap as f64 * 0.8).max(1.0)) as u64;
+        ((estimate.div_ceil(per)).max(2) as usize).min(4096)
+    });
+    let tmp = temp_dir_for();
+    std::fs::create_dir_all(&tmp)
+        .with_context(|| format!("failed to create temp dir {}", tmp.display()))?;
+
+    let mut writers: Vec<Option<BufWriter<File>>> = Vec::with_capacity(buckets);
+    writers.resize_with(buckets, || None);
+    let codes = make_codes(opts.seed);
+    let write_result = for_each_pair(infiles, |r1, r2| {
+        let key = fill_max(r1.sequence(), opts.k, &codes);
+        let bucket = (key.kmer as u64 % buckets as u64) as usize;
+        if writers[bucket].is_none() {
+            let path = tmp.join(format!("bucket_{bucket:05}.fq"));
+            let f = File::create(&path)
+                .with_context(|| format!("failed to create {}", path.display()))?;
+            writers[bucket] = Some(BufWriter::new(f));
+        }
+        let w = writers[bucket].as_mut().unwrap();
+        write_record(w, r1)?;
+        if let Some(r2) = r2 {
+            write_record(w, r2)?;
+        }
+        Ok(())
+    });
+    for w in writers.iter_mut().flatten() {
+        w.flush()?;
+    }
+    drop(writers);
+    write_result?;
+
+    // Process buckets in parallel, but in memory-bounded waves so concurrent
+    // bucket sorts cannot exceed the memory budget.
+    let bucket_estimate = (estimate / buckets as u64).max(1);
+    let wave = ((cap as f64 * 0.8) / bucket_estimate as f64)
+        .ceil()
+        .max(1.0) as usize;
+    let process_result = (|| -> Result<()> {
+        let mut b = 0usize;
+        while b < buckets {
+            let end = (b + wave).min(buckets);
+            let chunk: Vec<usize> = (b..end).collect();
+            let results: Vec<(usize, Result<Vec<u8>>)> = chunk
+                .par_iter()
+                .map(|&bi| {
+                    let path = tmp.join(format!("bucket_{bi:05}.fq"));
+                    let bytes = (|| -> Result<Vec<u8>> {
+                        if !path.exists() {
+                            return Ok(Vec::new());
+                        }
+                        let pairs = read_pairs(&[path.to_string_lossy().into_owned()])?;
+                        let keyed = sort_keyed(pairs, opts.k, opts.seed);
+                        let kept = if opts.dedupe {
+                            dedupe_pairs(keyed, opts.dupesubs)
+                        } else {
+                            keyed.into_iter().map(|k| k.pair).collect()
+                        };
+                        let mut buf = Vec::new();
+                        for (r1, r2) in &kept {
+                            write_record(&mut buf, r1)?;
+                            if let Some(r2) = r2 {
+                                write_record(&mut buf, r2)?;
+                            }
+                        }
+                        Ok(buf)
+                    })();
+                    (bi, bytes)
+                })
+                .collect();
+            for (_, bytes) in results {
+                out.write_all(&bytes?)?;
+            }
+            b = end;
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    process_result
+}
+
+/// Creates a unique temporary directory for bucket files.
+fn temp_dir_for() -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("pgr-clump-{}-{nanos}", std::process::id()))
+}
+
+/// Conservative in-memory footprint estimate for FASTQ inputs: gzipped inputs
+/// are expanded ~4x and records carry ~2x overhead.
+fn estimate_fastq_bytes(infiles: &[String]) -> u64 {
+    infiles
+        .iter()
+        .map(|f| {
+            let bytes = std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+            if f.ends_with(".gz") {
+                bytes * 8
+            } else {
+                bytes * 2
+            }
+        })
+        .sum()
+}
+
+/// Streams interleaved pairs (1 file) or R1/R2 pairs (2 files).
+fn for_each_pair(
+    infiles: &[String],
+    mut f: impl FnMut(&SeqRecord, Option<&SeqRecord>) -> Result<()>,
+) -> Result<()> {
+    if infiles.len() == 2 {
+        let mut reader1 = SeqReader::new(&infiles[0])?;
+        let mut reader2 = SeqReader::new(&infiles[1])?;
+        let mut rec1 = SeqRecord::new();
+        let mut rec2 = SeqRecord::new();
+        loop {
+            if !reader1.read_record(&mut rec1)? {
+                break;
+            }
+            let has2 = reader2.read_record(&mut rec2)?;
+            f(&rec1, has2.then_some(&rec2))?;
+            if !has2 {
+                break;
+            }
+        }
+    } else {
+        let mut reader = SeqReader::new(&infiles[0])?;
+        let mut rec1 = SeqRecord::new();
+        let mut rec2 = SeqRecord::new();
+        loop {
+            if !reader.read_record(&mut rec1)? {
+                break;
+            }
+            let has2 = reader.read_record(&mut rec2)?;
+            f(&rec1, has2.then_some(&rec2))?;
+            if !has2 {
+                break;
+            }
         }
     }
     Ok(())
@@ -73,21 +290,113 @@ pub(crate) fn read_pairs(infiles: &[String]) -> Result<Vec<(SeqRecord, Option<Se
     Ok(pairs)
 }
 
+/// A pair with its pivot key and expected-error estimate.
+struct KeyedPair {
+    pair: (SeqRecord, Option<SeqRecord>),
+    key: ReadKey,
+    errors: f32,
+}
+
 /// Sorts pairs by R1 pivot k-mer (clumpify-compatible order).
-fn sort_pairs(
-    pairs: Vec<(SeqRecord, Option<SeqRecord>)>,
-    k: usize,
-    seed: u64,
-) -> Vec<(SeqRecord, Option<SeqRecord>)> {
+fn sort_keyed(pairs: Vec<(SeqRecord, Option<SeqRecord>)>, k: usize, seed: u64) -> Vec<KeyedPair> {
     let codes = make_codes(seed);
     let prob = prob_error();
-    let mut keyed: Vec<(ReadKey, usize)> = pairs
-        .iter()
-        .enumerate()
-        .map(|(i, (r1, _))| (fill_max(r1.sequence(), k, &codes), i))
+    let mut keyed: Vec<KeyedPair> = pairs
+        .into_iter()
+        .map(|pair| {
+            let key = fill_max(pair.0.sequence(), k, &codes);
+            let errors = expected_errors(&pair.0, pair.1.as_ref(), &prob);
+            KeyedPair { pair, key, errors }
+        })
         .collect();
-    keyed.sort_by(|(ka, ia), (kb, ib)| compare(&pairs, *ia, *ib, ka, kb, &prob));
-    keyed.into_iter().map(|(_, i)| pairs[i].clone()).collect()
+    keyed.par_sort_by(compare);
+    keyed
+}
+
+/// Removes whole-pair duplicates within clumps (Clump.removeDuplicates with
+/// `dupesubs` exact matching semantics).
+fn dedupe_pairs(keyed: Vec<KeyedPair>, dupesubs: usize) -> Vec<(SeqRecord, Option<SeqRecord>)> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < keyed.len() {
+        let kmer = keyed[i].key.kmer;
+        let mut j = i + 1;
+        while j < keyed.len() && keyed[j].key.kmer == kmer {
+            j += 1;
+        }
+        let mut discarded = vec![false; j - i];
+        for a in 0..j - i {
+            if discarded[a] {
+                continue;
+            }
+            let mut unequals = 0usize;
+            for b in a + 1..j - i {
+                if discarded[b] {
+                    continue;
+                }
+                if !key_equal(&keyed[i + a].key, &keyed[i + b].key) {
+                    break;
+                }
+                if pair_equal(&keyed[i + a].pair, &keyed[i + b].pair, dupesubs) {
+                    if keyed[i + b].errors >= keyed[i + a].errors {
+                        discarded[b] = true;
+                    } else {
+                        discarded[a] = true;
+                        break;
+                    }
+                } else {
+                    unequals += 1;
+                    if unequals > SCAN_LIMIT {
+                        break;
+                    }
+                }
+            }
+        }
+        for (a, d) in discarded.iter().enumerate() {
+            if !d {
+                out.push(keyed[i + a].pair.clone());
+            }
+        }
+        i = j;
+    }
+    out
+}
+
+/// ReadKey equality: kmer, strand, and window position must all match.
+fn key_equal(a: &ReadKey, b: &ReadKey) -> bool {
+    a.kmer == b.kmer && a.minus == b.minus && a.position == b.position
+}
+
+/// Whole-pair equality within `max_subs` substitutions (N is a wildcard).
+fn pair_equal(
+    a: &(SeqRecord, Option<SeqRecord>),
+    b: &(SeqRecord, Option<SeqRecord>),
+    max_subs: usize,
+) -> bool {
+    if !seq_equal(a.0.sequence(), b.0.sequence(), max_subs) {
+        return false;
+    }
+    match (&a.1, &b.1) {
+        (Some(a2), Some(b2)) => seq_equal(a2.sequence(), b2.sequence(), max_subs),
+        _ => true,
+    }
+}
+
+/// Byte equality within `max_subs` substitutions; N matches anything.
+fn seq_equal(a: &[u8], b: &[u8], max_subs: usize) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut subs = 0usize;
+    for (x, y) in a.iter().zip(b) {
+        if x != y && *x != b'N' && *y != b'N' {
+            subs += 1;
+            if subs > max_subs {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Pivot k-mer of a read: the highest-hash canonical k-mer window.
@@ -177,36 +486,26 @@ fn hash(kmer: i64, codes: &[[i64; 256]]) -> i64 {
 }
 
 /// Full comparator: key, sequence, expected errors, then header id.
-fn compare(
-    pairs: &[(SeqRecord, Option<SeqRecord>)],
-    ia: usize,
-    ib: usize,
-    ka: &ReadKey,
-    kb: &ReadKey,
-    prob: &[f32; 128],
-) -> Ordering {
-    let order = compare_key(ka, kb);
+fn compare(a: &KeyedPair, b: &KeyedPair) -> Ordering {
+    let order = compare_key(&a.key, &b.key);
     if order != Ordering::Equal {
         return order;
     }
-    let a = &pairs[ia].0;
-    let b = &pairs[ib].0;
-    let a2 = pairs[ia].1.as_ref();
-    let b2 = pairs[ib].1.as_ref();
-    let order = compare_sequence(a, a2, b, b2);
+    // BBTools KmerComparator.compareSequence defaults to true; clumpify
+    // always orders identical keys by sequence, then expected errors.
+    let order =
+        compare_sequence_records(&a.pair.0, a.pair.1.as_ref(), &b.pair.0, b.pair.1.as_ref());
     if order != Ordering::Equal {
         return order;
     }
-    let ea = expected_errors(a, a2, prob);
-    let eb = expected_errors(b, b2, prob);
-    if ea != eb {
-        return if ea > eb {
+    if a.errors != b.errors {
+        return if a.errors > b.errors {
             Ordering::Less
         } else {
             Ordering::Greater
         };
     }
-    id(a).cmp(&id(b))
+    id(&a.pair.0).cmp(&id(&b.pair.0))
 }
 
 /// ReadKey ordering: bigger k-mer first, plus strand first, bigger position first.
@@ -225,7 +524,7 @@ fn compare_key(a: &ReadKey, b: &ReadKey) -> Ordering {
 }
 
 /// Sequence comparison: longer first, then bytes, then mate, then quality sum.
-fn compare_sequence(
+fn compare_sequence_records(
     a1: &SeqRecord,
     a2: Option<&SeqRecord>,
     b1: &SeqRecord,
@@ -255,9 +554,12 @@ fn compare_bytes(a: &[u8], b: &[u8]) -> Ordering {
     }
 }
 
-/// Sum of raw quality bytes.
+/// Sum of phred quality bytes (order-equivalent to BBTools quality sums).
 fn quality_sum(rec: &SeqRecord) -> u32 {
-    rec.quality_scores().iter().map(|&q| q as u32).sum()
+    rec.quality_scores()
+        .iter()
+        .map(|&q| q.saturating_sub(QUALITY_BASE) as u32)
+        .sum()
 }
 
 /// Expected error count of a pair (float accumulation like BBTools).
@@ -266,7 +568,11 @@ fn expected_errors(a: &SeqRecord, a2: Option<&SeqRecord>, prob: &[f32; 128]) -> 
     let mut add = |rec: &SeqRecord| {
         for (i, &b) in rec.sequence().iter().enumerate() {
             let q = if b == b'A' || b == b'C' || b == b'G' || b == b'T' {
-                rec.quality_scores().get(i).copied().unwrap_or(0) as usize
+                rec.quality_scores()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_sub(QUALITY_BASE) as usize
             } else {
                 0
             };

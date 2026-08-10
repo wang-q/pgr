@@ -63,6 +63,19 @@ pgr fq clump [OPTIONS] <infiles>...
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 *   `-k, --kmer <int>`: K-mer size (default: 31).
 *   `--seed <int>`: Comparator seed (default: 1).
+*   `--dedupe`: Remove duplicate read pairs (R1 and R2 both exact within
+    `--dupesubs`, N wildcard; keeps the higher-quality copy).
+*   `--dupesubs <int>`: Maximum substitutions allowed in a duplicate
+    (default: 0).
+*   `--mem <size>`: In-memory sort budget (KMG, default 2g). Data estimated
+    to exceed `min(--mem, physical/2)` is sorted via external hash buckets
+    (deterministic, bucket-concatenated order).
+*   `--buckets <int>`: External-path hash bucket count (default: derived from
+    the memory budget).
+*   `--sort-mode <auto|global|bucket>`: Force the sorting path. `auto`
+    (default) picks by the memory budget; `global` always sorts in memory;
+    `bucket` always uses the external hash-bucket path (implied when
+    `--buckets` is given).
 
 ### Examples
 
@@ -74,6 +87,21 @@ pgr fq clump [OPTIONS] <infiles>...
 2.  **Sort an interleaved file with a different seed**:
     ```bash
     pgr fq clump in.fq.gz -o out.fq --seed 2
+    ```
+
+3.  **Remove exact duplicate pairs**:
+    ```bash
+    pgr fq clump R1.fq.gz R2.fq.gz -o out.fq --dedupe --dupesubs 0
+    ```
+
+4.  **Bound memory to 1 GiB** (larger data goes through external buckets):
+    ```bash
+    pgr fq clump R1.fq.gz R2.fq.gz -o out.fq --mem 1g
+    ```
+
+5.  **Force the external bucket path**:
+    ```bash
+    pgr fq clump R1.fq.gz R2.fq.gz -o out.fq --sort-mode bucket
     ```
 
 ---

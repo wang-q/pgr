@@ -60,7 +60,7 @@
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
 | M0 golden | 完成 | `tests/bbtools/Lambda/golden/`（39.38 + ordered=t + seed=1，全链确定性已验证） |
-| M1 `fq clump` | **完成，逐字节一致** | `cli_fq_clump.rs` 对照 `clumpify.fq.gz` |
+| M1 `fq clump` | **完成，逐字节一致** | `cli_fq_clump.rs` 对照 `clumpify.fq.gz`；dedupe 模式（`--dedupe --dupesubs 0`）已实现，与 threads=1 golden 一次性逐字节验证（golden 未入库，语义由合成测试覆盖，见 §4.4 M1 注） |
 | M2 `fq split`/`fq sample` | **完成，逐字节一致** | `cli_fq_split.rs`/`cli_fq_sample.rs` 对照 repair/reformat golden |
 | M3-M5 `fq trim-adapter` | **完成，逐字节一致** | `cli_fq_trim_adapter.rs` 对照 trim/filter golden |
 | M7 kmercountexact | **完成，逐字节一致** | `pgr kmer hist --khist-text/--peaks`（logScale + CallPeaks 全移植）对照 R.khist.txt/R.peaks.txt |
@@ -131,9 +131,10 @@ BBTools-40.01 源码已置于仓库根 `BBTools-40.01/`——该目录自带 `.g
 
 ### 4.3 目标 CLI（已实现，2026-08-10 定稿）
 
-- `pgr fq clump`：按 kmer 签名排序/聚类 reads（对齐 `clumpify.sh`；支持可选
-  `--dedupe` 去重，对齐 `dedupe dupesubs=0`，**未实现**；TB 级数据走外部
-  排序，**未实现**（当前全内存）。
+- `pgr fq clump`：按 kmer 签名排序/聚类 reads（对齐 `clumpify.sh`；`--dedupe
+  --dupesubs 0` 整对去重已实现——R1 与 R2 都精确匹配（N 通配）才算重复，
+  保留期望错误更少的那对；超内存数据走外部 hash 桶路径（`--mem` 控制，
+  确定性桶序，见 §4.6）。
 - `pgr fq split`：交错输入 → R1/R2/singles（对齐 `repair.sh rp`，是
   `fq interleave` 的反操作）。
 - `pgr fq sample`：按目标碱基数/比例降采样（对齐 `reformat.sh
@@ -157,8 +158,19 @@ BBTools-40.01 源码已置于仓库根 `BBTools-40.01/`——该目录自带 `.g
 
 ### 4.4 里程碑与验证
 
-1. **M1 `pgr fq clump`**：按 kmer 签名排序（+可选 dedupe），对齐 `clumpify.sh`。
-   → 与本地 39.38 `clumpify.sh` 输出逐字节比对（顺序、去重语义）。
+1. **M1 `pgr fq clump`**：按 kmer 签名排序（+`--dedupe` 整对去重），对齐
+   `clumpify.sh`。→ 与本地 39.38 `clumpify.sh` 输出逐字节比对（顺序、去重
+   语义）。注：dedupe golden 用 `threads=1` 生成——BBTools threads>1 时
+   dedupe 输出顺序不确定（clump 线程竞态），删除集合一致；pgr 的 dedupe
+   无论线程数都按排序序收集 clump（实现约定），因此 threads=1 golden 在
+   未来引入多线程后依然有效，测试不失效。golden 未入库（体积控制），
+   字节级一致性已一次性验证，日常由合成测试覆盖语义。
+   **去重标准（已确认，2026-08-10）**：采用 anchr 现行的**精确整对去重**
+   （R1 与 R2 都必须精确匹配，N 作通配符；R1 相同但 R2 不同不算重复）。
+   理由：整对唯一性在 1000× 以上覆盖度下极强，相同整对基本就是
+   PCR/光学重复，直接序列去重足够，无需官方 assemblyPipeline.sh 的
+   `dedupe optical`（需 flowcell 坐标解析 + 邻近判定，且 Lambda 数据无
+   坐标无法验证），optical 模式留待未来。
 2. **M2 `fq split` + `fq sample`** → 与本地 39.38 `repair.sh`/`reformat.sh` 在
    Lambda 数据上的输出逐字节比对（含格式），单元 + 集成测试。
 3. **M3 `fq trim-adapter`（无 tbo/tpe）**：参考序列建 kmer 表
@@ -192,8 +204,45 @@ BBTools-40.01 源码已置于仓库根 `BBTools-40.01/`——该目录自带 `.g
   完全复刻，待确认（下游 anchr 是否解析这些文件）。
 - **clumpify 排序语义**：字节级一致要求 read 顺序完全一致，需逐字节复刻
   `Clumpify.java` 的 kmer 签名、排序键、稳定性和去重语义（`dedupe
-  dupesubs=0`）；TB 级数据需外部排序（pgr 尚无此基础设施，见 M1）。
+  dupesubs=0`）。大数据下 pgr 走外部 hash 桶路径，输出为确定性桶序（与
+  BBTools 大数据行为一致，非全局序）——字节 golden 只在小数据（内存路径）
+  上定义。
 - **gz 流式**：pgr 已有 BGZF/FASTQ 基础设施（seq-reader），流水线内不落盘。
+
+### 4.6 内存模型与外部排序（2026-08-10 定稿）
+
+`pgr fq clump` 的排序内存上限：
+
+```
+mem_limit = min( --mem（默认 2g）,  物理内存 × 0.5,  数据估算 )
+```
+
+* `--mem`：用户显式预算（KMG 解析，语义同 `-Xmx`），大机器上的主保护；
+* 物理内存 × 0.5：低内存环境（如 1G 虚拟机）的兜底，防止排序挤爆机器；
+* 数据估算：gz 输入按文件大小 × 8（解压 ~4× × 记录开销 ~2×），明文 × 2；
+  只作路径决策用（估算 ≤ 上限 → 内存路径，否则桶路径），不引预扫额外 IO。
+* 物理内存/CPU 探测用 **sysinfo** crate（跨平台，Linux/macOS/Windows），
+  以后并行度自动判断（`logical_cpus`）复用同一依赖；已加 Cargo 依赖。
+
+外部路径：按 pivot k-mer 哈希分桶（`--buckets`，默认由 `mem_limit` 推导，
+上限 4096），桶文件写临时目录（`std::env::temp_dir()`，用完清理），逐桶
+内存排序 + dedupe（相同整对共享 pivot → 同桶，去重语义不变），按桶序拼接
+输出。确定性：同一输入 + 同一 `--mem` 下桶数与顺序固定。已验证：
+Lambda 上 `--mem 1m` 强制桶路径，输出确定、与内存路径 read 集合一致
+（普通 40000 与 dedupe 39984 都一致）；内存路径（默认 2g）字节 golden
+不变。BBTools 自身大数据走 KmerSort2/3 也是桶序，行为对齐。
+
+路径可强制（2026-08-10）：`--sort-mode auto|global|bucket`——auto 按内存
+预算自动选（默认），global 强制内存全局排序（小数据字节 golden 不变），
+bucket 强制外部桶路径；指定 `--buckets` 等价于隐含 bucket 模式（桶数不同
+顺序不同但确定、集合一致）。
+
+并行化（2026-08-10）：内存路径排序用 `par_sort_by`（比较器全序，结果
+不变）；桶路径按 **内存受限的 wave 分批并行**处理（wave 数 =
+`mem_limit×0.8 / 单桶估算`），每个 wave 内 rayon 并行读桶/排序/去重，
+按桶序写回——并行度自动受内存预算约束，不会吃掉 `--mem`。50 万对
+合成数据实测：`--mem 32m` 桶路径 ~9.0s（user 12s > wall 9s，并行生效）、
+`--mem 4g` 内存路径 ~7.6s，两者确定性且集合一致。
 
 ## 5. 验收标准（替换后的对比）
 
