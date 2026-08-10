@@ -294,3 +294,67 @@ fn command_fq_trim_adapter_changequality_and_qtrim_empty_edge() {
         )
     );
 }
+
+#[test]
+fn command_fq_trim_adapter_no_ref_quality_trim_only() {
+    // bbduk `qtrim=r trimq=... minlen=...` without a reference: no k-mer
+    // operations, only quality trim + length filter. Verified byte-for-byte
+    // against BBTools 39.38 on the same interleaved input.
+    let input = concat!(
+        "@p1/1\n",
+        "ACGTACGTACGTACGTACGT\n",
+        "+\n",
+        "IIIIIIIIIIIIIIIIIIII\n",
+        "@p1/2\n",
+        "ACGTACGTACGTACGTACGT\n",
+        "+\n",
+        "IIIIIIIIIIIIIIIIIIII\n",
+        "@p2/1\n",
+        "ACGTACGTACGTACGTACGT\n",
+        "+\n",
+        "IIIIIIIIIIIIIIIIIIII\n",
+        "@p2/2\n",
+        "ACGTACGTACGT\n",
+        "+\n",
+        "!!!!!!!!!!!!\n",
+    );
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            file.path().to_str().unwrap(),
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "--trimq",
+            "15",
+            "--minlen",
+            "10",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // p2/2 quality-trims to 1 bp (< minlen), so the whole pair is dropped.
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        concat!(
+            "@p1/1\n",
+            "ACGTACGTACGTACGTACGT\n",
+            "+\n",
+            "IIIIIIIIIIIIIIIIIIII\n",
+            "@p1/2\n",
+            "ACGTACGTACGTACGTACGT\n",
+            "+\n",
+            "IIIIIIIIIIIIIIIIIIII\n",
+        )
+    );
+}

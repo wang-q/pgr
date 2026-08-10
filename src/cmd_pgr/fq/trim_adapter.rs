@@ -15,6 +15,8 @@ reproduces BBTools 39.38 `bbduk.sh` output byte for byte for the anchr trim
 pipeline parameters (`ordered=t`, deterministic).
 
 Notes:
+* Without --ref, no k-mer operations run and the command only quality-trims
+  and filters (bbduk `qtrim=r minlen=...` without a reference)
 * `ktrim=r` right-trims at the first matching reference k-mer (`--ktrim`)
 * `--mink` enables short k-mer matching at read ends (adapters shorter than k)
 * `--hdist` stores single-substitution reference variants
@@ -48,7 +50,7 @@ Examples:
             Arg::new("ref")
                 .long("ref")
                 .num_args(1)
-                .help("Reference FASTA of adapters/contaminants"),
+                .help("Reference FASTA of adapters/contaminants (omit for quality-trim-only)"),
         )
         .arg(
             Arg::new("k")
@@ -161,7 +163,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .cloned()
         .collect();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let ref_file = args.get_one::<String>("ref").unwrap();
+    let ref_file = args.get_one::<String>("ref").cloned();
     let parallel = match args.get_one::<String>("parallel").unwrap().as_str() {
         "auto" => pgr::libs::sys::logical_cpus(),
         s => s

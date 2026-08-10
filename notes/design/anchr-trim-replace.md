@@ -327,6 +327,25 @@ bbnorm 在 anchr 里的唯一用途（khist/peaks 由后续 `kmercountexact.sh` 
 **倾向：精确**（外部桶路径即 1TB 答案）。转向近似的唯一场景：单机、
 极小内存、无大磁盘、接受判定噪声——非 pgr/anchr 语境。待用户定稿。
 
+**2026-08-10 复核（多参数交叉验证）补充**：
+
+* **changequality 缺失**（与 bbduk 同源）：bbnorm 读入时 N 质量强制 0、
+  ACGT 质量提到 2，输出质量随之变化；pgr 原样输出导致 Lambda 上数百处
+  `#` vs `!` 质量差异。已修复（读入时钳制 + 输出一致）。合成数据上
+  验证 N@2 → `!`（0）与 bbnorm 逐字节一致。
+* **minq=6 建表过滤缺失**：bbnorm 的 KmerCount（bits=16 → KmerCount4）
+  跳过含质量 <6 碱基的 kmer（`quals[i]<minQuality` 即重置）。已实现；
+  Lambda 输入无 ACGT<6（仅 N@2，N 的 kmer 本就被跳过），故无行为变化，
+  但真实低质量数据上正确。
+* **minprob=0.5 名义存在但不生效**：KmerCount4.addRead 只有 minQuality
+  检查、无概率乘积逻辑（minProb 在 bloom 包的 KmerCountAbstract 定义但
+  KmerCount4 不用；KmerTableSet 的 addKmersToTableAA 才有 prob 逻辑，非
+  bbnorm 路径）。最初误实现 minProb 导致差异从 21 对膨胀到 35 对，已回退。
+* **剩余差异纯判定**（精确表 vs bits=16 近似表的边界）：质量行 0 处
+  差异（无 c 型 diff）；整 read 差异 min3=21 对、min5=27、min10=31、
+  min20=37 对——近似表碰撞影响随 min 阈值增大而增多。外部桶路径与
+  内存路径输出一致（--mem 1k 实测）。
+
 **可选的收尾项（待确认）**：① 把 21 对差异正式定义为"精确语义 vs bbnorm
 近似语义"；② `.pkt` count 字段按 bits 截断（对齐 bbnorm bits=16 → u16，
 更激进可 u8）缩小落盘体积，判定字节不变（阈值在低端，截断到 65535
@@ -435,9 +454,14 @@ BBMerge 在 overlap merge 时从 read 对重叠/缺口反推 `bestInsert`
    与 bbduk 的 optimalMode（testOptimal）输出不一致，不能顶替。
 
 **结论：bbduk 全部参数里，对 anchr 有用的只剩 merge.era.sh 的纯 qtrim
-一项**。候选改法（待用户定）：`trim-adapter --ref` 改为可选——无 ref 时
+一项**。已实现（2026-08-10）：`trim-adapter --ref` 改为可选——无 ref 时
 跳过 kmer 匹配/ktrim/tbo/tpe，只做 qtrim/minlen/maxns/ftm/toss（qtrim
- 语义已与 39.38 逐字节核对）。改动很小。
+语义已与 39.38 逐字节核对）。实测 5 组无 ref 参数（含 merge 的 q25l60、
+minlen=0、ftm=5 组合）与 `bbduk.sh qtrim=r trimq=... minlen=...` 逐字节
+一致；新增回归测试 `no_ref_quality_trim_only`。merge.era.sh 替换时用
+`--no-ktrim --no-tbo --no-tpe --maxns=-1 --ftm 0 --trimq <qual> --minlen <len>`。
+注意：trim-adapter 输入语义为交错双端（1 文件）或 R1/R2（2 文件），
+不支持单端多条（单端文件会按交错解析，第二条被当作 mate）。
 
 **其余参数分类与用途标记**（anchr 均未用，pgr 不主动加）：
 

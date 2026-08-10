@@ -9,7 +9,7 @@ use crate::libs::fmt::fq::write_fq;
 use crate::libs::fmt::seq::SeqRecord;
 use crate::libs::fq::clump::temp_dir_for;
 use crate::libs::fq::pairs::PairReader;
-use crate::libs::kmer::{count, KmerTable};
+use crate::libs::kmer::{self, count, KmerTable};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::fs::File;
@@ -54,6 +54,59 @@ struct ReadStats {
     depth_al: i64,
 }
 
+/// bbnorm defaults for table construction (`bbnorm.sh` minq/minprob).
+const MINQ: u8 = 6;
+
+/// Applies bbduk/bbnorm's default `changequality` normalization on load:
+/// N bases get quality 0 and ACGT bases are raised to a minimum of 2.
+fn change_quality(seq: &[u8], qual: &mut [u8]) {
+    for (i, &b) in seq.iter().enumerate() {
+        let q = &mut qual[i];
+        if b == b'N' || b == b'n' {
+            *q = 0;
+        } else if matches!(b, b'A' | b'C' | b'G' | b'T' | b'a' | b'c' | b'g' | b't') && *q < 2 {
+            *q = 2;
+        }
+    }
+}
+
+/// Emits canonical k-mers of `seq` whose window contains no N and no base
+/// with quality below `minq` (bbnorm `minq` table filtering; bbnorm's
+/// `minprob` is not applied by the KmerCount table used for `bits=16`). The
+/// rolling window matches `kmer::canonical_keys`; quality must already be
+/// `changequality`-normalized.
+fn filtered_keys(seq: &[u8], qual: &[u8], k: usize, minq: u8, mut emit: impl FnMut(u128)) {
+    let n = seq.len();
+    if n < k {
+        return;
+    }
+    let kmask = if 2 * k >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << (2 * k)) - 1
+    };
+    let rc_top = (2 * k - 2) as u32;
+    let codes = kmer::base_codes();
+    let mut kx: u128 = 0;
+    let mut kxr: u128 = 0;
+    let mut valid = 0usize;
+    for (i, &b) in seq.iter().enumerate() {
+        let code = codes[b as usize];
+        if code == 4 || (i < qual.len() && qual[i] < minq) {
+            kx = 0;
+            kxr = 0;
+            valid = 0;
+        } else {
+            kx = ((kx << 2) | code as u128) & kmask;
+            kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
+            valid += 1;
+        }
+        if valid >= k {
+            emit(kx.min(kxr));
+        }
+    }
+}
+
 /// Filters reads by k-mer depth; writes survivors in input order.
 ///
 /// Uses the exact count table in memory when the estimated footprint fits
@@ -88,15 +141,31 @@ fn norm_in_memory<W: Write>(
     parallel: usize,
 ) -> Result<()> {
     let table = {
-        let mut seqs: Vec<Vec<u8>> = Vec::new();
+        let mut seqs: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for pair in PairReader::new(infiles)? {
             let (r1, r2) = pair?;
-            seqs.push(r1.sequence().to_vec());
+            let mut q1: Vec<u8> = r1
+                .quality_scores()
+                .iter()
+                .map(|&q| q.saturating_sub(33))
+                .collect();
+            change_quality(r1.sequence(), &mut q1);
+            seqs.push((r1.sequence().to_vec(), q1));
             if let Some(r2) = r2 {
-                seqs.push(r2.sequence().to_vec());
+                let mut q2: Vec<u8> = r2
+                    .quality_scores()
+                    .iter()
+                    .map(|&q| q.saturating_sub(33))
+                    .collect();
+                change_quality(r2.sequence(), &mut q2);
+                seqs.push((r2.sequence().to_vec(), q2));
             }
         }
-        Arc::new(count::build_table(&seqs, opts.k)?)
+        let mut keys = Vec::new();
+        for (seq, qual) in &seqs {
+            filtered_keys(seq, qual, opts.k, MINQ, |key| keys.push(key));
+        }
+        Arc::new(count::count_keys(keys, opts.k))
     };
     let opts = Arc::new(opts.clone());
     // Pass 2: score every read against the table in parallel, writing
@@ -248,9 +317,21 @@ fn count_buckets(
     let mut writers: Vec<Option<BufWriter<File>>> = (0..buckets).map(|_| None).collect();
     for pair in PairReader::new(infiles)? {
         let (r1, r2) = pair?;
-        write_bucket_keys(r1.sequence(), opts.k, buckets, tmp, &mut writers)?;
+        let mut q1: Vec<u8> = r1
+            .quality_scores()
+            .iter()
+            .map(|&q| q.saturating_sub(33))
+            .collect();
+        change_quality(r1.sequence(), &mut q1);
+        write_bucket_keys(r1.sequence(), &q1, opts.k, buckets, tmp, &mut writers)?;
         if let Some(r2) = r2 {
-            write_bucket_keys(r2.sequence(), opts.k, buckets, tmp, &mut writers)?;
+            let mut q2: Vec<u8> = r2
+                .quality_scores()
+                .iter()
+                .map(|&q| q.saturating_sub(33))
+                .collect();
+            change_quality(r2.sequence(), &mut q2);
+            write_bucket_keys(r2.sequence(), &q2, opts.k, buckets, tmp, &mut writers)?;
         }
     }
     for w in writers.iter_mut().flatten() {
@@ -381,13 +462,14 @@ fn score_chunk<W: Write>(
 /// Writes every canonical k-mer of `seq` to its bucket file.
 fn write_bucket_keys(
     seq: &[u8],
+    qual: &[u8],
     k: usize,
     buckets: usize,
     tmp: &Path,
     writers: &mut [Option<BufWriter<File>>],
 ) -> Result<()> {
     let mut keys = Vec::new();
-    crate::libs::kmer::canonical_keys(seq, k, |_, key| keys.push(key));
+    filtered_keys(seq, qual, k, MINQ, |key| keys.push(key));
     for key in keys {
         let b = bucket_of(key, buckets);
         if writers[b].is_none() {
@@ -496,7 +578,16 @@ fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> anyhow::Result<()> {
     } else {
         format!("{} {}", rec.name(), comment)
     };
-    write_fq(w, &header, rec.sequence(), rec.quality_scores())?;
+    let mut qual: Vec<u8> = rec
+        .quality_scores()
+        .iter()
+        .map(|&q| q.saturating_sub(33))
+        .collect();
+    change_quality(rec.sequence(), &mut qual);
+    for q in qual.iter_mut() {
+        *q = q.saturating_add(33);
+    }
+    write_fq(w, &header, rec.sequence(), &qual)?;
     Ok(())
 }
 

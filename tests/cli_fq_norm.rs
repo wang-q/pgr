@@ -111,3 +111,41 @@ fn command_fq_norm_external_path_matches_in_memory_path() {
         std::fs::read(&mem_out).unwrap()
     );
 }
+
+#[test]
+fn command_fq_norm_changequality_n_quality() {
+    // bbnorm applies `changequality` on load: N bases get quality 0 in the
+    // output (Lambda cross-checks show byte-identical quality lines).
+    let mut input = String::new();
+    for i in 0..100 {
+        input.push_str(&format!(
+            "@r{i}\n{}\n+\n{}\n",
+            "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTNNNNACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+            "I".repeat(84)
+        ));
+    }
+    let file = write_temp(&input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "norm",
+            file.path().to_str().unwrap(),
+            "-k",
+            "31",
+            "--min",
+            "3",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let out = std::fs::read_to_string(&out).unwrap();
+    let qual = out.lines().nth(3).unwrap();
+    // The four N bases (positions 40-43) must carry quality 0 ('!').
+    assert_eq!(&qual[40..44], "!!!!");
+    assert_eq!(&qual[..40], "I".repeat(40));
+}

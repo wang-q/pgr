@@ -44,8 +44,9 @@ pub struct AdapterTrimOptions {
     pub ftm: usize,
     /// Discard a pair when either mate fails (`tossbrokenreads`).
     pub toss_broken_reads: bool,
-    /// Reference FASTA of adapters/contaminants (`ref`).
-    pub ref_file: String,
+    /// Reference FASTA of adapters/contaminants (`ref`); `None` skips all
+    /// k-mer operations and only quality-trims/filters.
+    pub ref_file: Option<String>,
     /// Input quality ASCII offset (33 or 64).
     pub quality_base: u8,
     /// Discard reads with more than this many matching k-mers (filter mode;
@@ -950,7 +951,10 @@ pub fn trim_adapter<W: Write>(
     opts: &AdapterTrimOptions,
     parallel: usize,
 ) -> Result<()> {
-    let (table, names) = build_table(&opts.ref_file, opts)?;
+    let (table, names) = match &opts.ref_file {
+        Some(f) => build_table(f, opts)?,
+        None => (HashMap::new(), vec![String::new()]),
+    };
     let table = Arc::new(table);
     let stats = Arc::new(MatchStats::new(names));
     let prob = prob_error();

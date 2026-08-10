@@ -199,7 +199,9 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
 
 ### Options
 
-*   `--ref <file>`: Reference FASTA of adapters/contaminants (required).
+*   `--ref <file>`: Reference FASTA of adapters/contaminants. Omit it to
+    skip all k-mer operations and only quality-trim and filter (bbduk
+    `qtrim=r minlen=...` without a reference).
 *   `-k, --k <int>`: K-mer size (default: 23).
 *   `--mink <int>`: Minimum short k-mer size at read ends (default: 11).
 *   `--hdist <int>`: Reference hamming distance (default: 1).
@@ -237,6 +239,13 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
         -o out.fq --parallel 8
     ```
 
+4.  **Quality-trim only (no reference, bbduk `qtrim=r` style)**:
+    ```bash
+    pgr fq trim-adapter unmerged.raw.fq.gz -o unmerged.trim.fq.gz \
+        --no-ktrim --no-tbo --no-tpe \
+        --maxns=-1 --ftm 0 --trimq 25 --minlen 60
+    ```
+
 ---
 
 ## norm
@@ -245,6 +254,10 @@ Removes reads whose k-mer coverage is below a minimum depth, following the
 BBTools 39.38 `bbnorm.sh passes=1 bits=16 min=<n> target=9999999` read
 decision logic. Counts are exact (canonical table); bbnorm's `bits=16`
 approximate hash counts can differ on reads near the depth boundary.
+The bbnorm defaults `changequality` (N bases get quality 0, ACGT bases a
+minimum of 2) and `minq=6` (k-mers containing bases below quality 6 are
+excluded from the count table) are applied; bbnorm's nominal `minprob=0.5`
+is not, matching the KmerCount table bbnorm actually uses for `bits=16`.
 
 ```bash
 pgr fq norm [OPTIONS] <infiles>...
