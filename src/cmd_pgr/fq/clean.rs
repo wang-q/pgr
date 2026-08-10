@@ -388,12 +388,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(other) => anyhow::bail!("invalid --mask-kmers value: {other}"),
         None => (None, false),
     };
+    if kmask.is_none()
+        && (args.get_flag("mask_fully_covered") || *args.get_one::<usize>("trim_pad").unwrap() != 0)
+    {
+        anyhow::bail!("--mask-fully-covered and --trim-pad require --mask-kmers");
+    }
+    if kmask.is_some() && ref_file.is_none() {
+        anyhow::bail!("--mask-kmers requires --ref");
+    }
     let maxlength = *args.get_one::<usize>("maxlength").unwrap();
     let opts = AdapterTrimOptions {
         k: *args.get_one::<usize>("k").unwrap(),
         mink: *args.get_one::<usize>("min_k").unwrap(),
         hdist: *args.get_one::<usize>("hamming_distance").unwrap(),
-        ktrim_right: true,
+        // bbduk ktrim vs kmask: the main k-mer operation is right-trimming by
+        // default and masking only when --mask-kmers is given.
+        ktrim_right: kmask.is_none(),
         tbo: !args.get_flag("no_trim_by_overlap"),
         tpe: !args.get_flag("no_trim_pair_evenly"),
         qtrim_right,

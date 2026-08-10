@@ -86,6 +86,11 @@ pub fn sample<W: Write>(infile: &str, out: &mut W, target_bases: i64, seed: u64)
             } else {
                 0
             };
+        // All remaining pairs are empty (0 bases) once `remaining` hits 0;
+        // stop rather than divide by zero on a trailing empty record.
+        if remaining == 0 {
+            break;
+        }
         let prob = target as f64 / remaining as f64;
         if rng.next_double() < prob {
             target -= bases;

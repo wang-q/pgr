@@ -315,3 +315,28 @@ fn command_fq_clump_parallel_out_of_range_is_friendly_error() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+fn command_fq_clump_buckets_out_of_range_is_friendly_error() {
+    // Regression: --buckets 0 would divide by zero in the external path
+    // (`key % buckets`); it must be rejected with a friendly error before
+    // any bucket processing.
+    let file = write_temp("@r1/1\nACGTACGT\n+\nIIIIIIII\n@r1/2\nTGCATGCA\n+\nIIIIIIII\n");
+    for b in ["0", "4097"] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&[
+                "fq",
+                "clump",
+                file.path().to_str().unwrap(),
+                "--buckets",
+                b,
+                "-o",
+                "stdout",
+            ])
+            .run_fail();
+        assert!(
+            stderr.contains("--buckets") || stderr.contains("1..=4096"),
+            "buckets={b} stderr: {stderr}"
+        );
+    }
+}

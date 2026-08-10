@@ -18,6 +18,12 @@ fn write_temp(content: &str) -> tempfile::NamedTempFile {
     f
 }
 
+fn write_ref(content: &str) -> tempfile::NamedTempFile {
+    let mut f = tempfile::Builder::new().suffix(".fa").tempfile().unwrap();
+    f.write_all(content.as_bytes()).unwrap();
+    f
+}
+
 #[test]
 fn command_fq_trim_adapter_matches_bbtools_trim_golden() {
     // Byte-level comparison against BBTools 39.38
@@ -495,4 +501,132 @@ IIIIIIIIIIIIIIIIIIII
     assert!(text.contains("@r2\n"), "pair1 must survive: {text}");
     assert!(!text.contains("@r3"), "pair2 must fail mbq: {text}");
     assert!(!text.contains("@r5"), "pair3 must fail mcb: {text}");
+}
+
+#[test]
+fn command_fq_clean_kmask_masks_instead_of_trims() {
+    // Regression: --mask-kmers must switch the main k-mer operation from
+    // right-trimming to masking (bbduk kmask). Adapter k-mers become N and the
+    // full read is kept, whereas the default ktrim=right would cut them off.
+    let ref_file = write_ref(">adapter\nGATCGGAAGAGCACACGTCTGAACTCCAGTCAC\n");
+    let input = format!(
+        "@r1\nACGTACGTACGTACGTGATCGGAAGAGCACACGTCTGAACTCCAGTCAC\n+\n{}\n",
+        "I".repeat(49)
+    );
+    let file = write_temp(&input);
+    let out_dir = tempfile::tempdir().unwrap();
+
+    let masked = out_dir.path().join("masked.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--ref",
+            ref_file.path().to_str().unwrap(),
+            "--mask-kmers",
+            "N",
+            "--qtrim",
+            "f",
+            "--max-ns=-1",
+            "--force-trim-mod",
+            "0",
+            "--minlen",
+            "0",
+            "-o",
+            masked.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let text = std::fs::read_to_string(&masked).unwrap();
+    let seq = text.lines().nth(1).unwrap();
+    assert_eq!(
+        seq.len(),
+        49,
+        "read must not be trimmed in kmask mode: {seq}"
+    );
+    assert_eq!(
+        seq,
+        "ACGTACGTACGTACGT".to_string() + &"N".repeat(33),
+        "adapter k-mers must be masked with N"
+    );
+
+    // Same input without --mask-kmers keeps the default ktrim=right: the
+    // adapter is cut off, not masked.
+    let trimmed = out_dir.path().join("trimmed.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--ref",
+            ref_file.path().to_str().unwrap(),
+            "--qtrim",
+            "f",
+            "--max-ns=-1",
+            "--force-trim-mod",
+            "0",
+            "--minlen",
+            "0",
+            "-o",
+            trimmed.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let seq = std::fs::read_to_string(&trimmed)
+        .unwrap()
+        .lines()
+        .nth(1)
+        .unwrap()
+        .to_string();
+    assert!(seq.len() < 49, "ktrim=right must trim the adapter: {seq}");
+    assert!(!seq.contains('N'), "no masking without --mask-kmers: {seq}");
+}
+
+#[test]
+fn command_fq_clean_kmask_mask_only_options_require_mask_kmers() {
+    // --mask-fully-covered / --trim-pad only apply to masking; using them
+    // without --mask-kmers is a misconfiguration and must be a friendly error.
+    let ref_file = write_ref(">adapter\nGATCGGAAGAGCACACGTCTGAACTCCAGTCAC\n");
+    let file = write_temp("@r1\nACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIII\n");
+
+    for extra in [&["--mask-fully-covered"][..], &["--trim-pad", "3"][..]] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&[
+                "fq",
+                "clean",
+                file.path().to_str().unwrap(),
+                "--ref",
+                ref_file.path().to_str().unwrap(),
+                "-o",
+                "stdout",
+            ])
+            .args(extra)
+            .run_fail();
+        assert!(stderr.contains("--mask-kmers"), "stderr: {stderr}");
+    }
+}
+
+#[test]
+fn command_fq_clean_kmask_requires_ref() {
+    // --mask-kmers only does something with a reference; without one it is a
+    // silent no-op, so it must be rejected as documented ("requires --ref").
+    let file = write_temp("@r1\nACGTACGT\n+\nIIIIIIII\n");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--mask-kmers",
+            "N",
+            "-o",
+            "stdout",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--mask-kmers") && stderr.contains("--ref"),
+        "stderr: {stderr}"
+    );
 }

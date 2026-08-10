@@ -1,5 +1,8 @@
 # pgr fa / 2bit 命令族代码审核记录（2026-08-05）
 
+> 原 `audit-fa-fq-2bit.md`。`fq` 部分已拆分至独立记录 `audit-fq.md`，
+> 本文件现仅覆盖 fa / 2bit。
+
 对 `pgr fa`（18 个子命令）与 `pgr 2bit`（5 个子命令）命令族及相关库文件
 （`libs/fmt/fa`、`libs/fmt/twobit`、`libs/translate`、`libs/io`、
 `libs/ds/range`、`libs/nt`、`libs/loc`、`libs/fasta/{chunk,stat,dedup,filter}`）

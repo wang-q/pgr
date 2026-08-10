@@ -129,6 +129,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         args.get_one::<String>("mem").unwrap(),
     )?);
     let buckets = args.get_one::<usize>("buckets").copied();
+    if let Some(b) = buckets {
+        if !(1..=4096).contains(&b) {
+            anyhow::bail!("--buckets must be in 1..=4096, got {}", b);
+        }
+    }
     let mode = match args.get_one::<String>("sort_mode").unwrap().as_str() {
         "global" => pgr::libs::fq::clump::SortMode::Global,
         "bucket" => pgr::libs::fq::clump::SortMode::Bucket,

@@ -128,3 +128,42 @@ fn command_fq_sample_missing_bases_is_clap_error() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+fn command_fq_sample_trailing_empty_records_do_not_panic() {
+    // Regression: an input ending in empty (0-base) records used to divide by
+    // zero once `remaining` reached 0. It must complete without panicking.
+    let input = "\
+@a
+ACGT
++
+!!!!
+@b
+
++
+
+@c
+
++
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "sample",
+            file.path().to_str().unwrap(),
+            "--bases",
+            "100",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // The first (only non-empty) pair is kept; no crash.
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.starts_with("@a\nACGT\n"), "{text}");
+}
