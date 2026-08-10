@@ -107,3 +107,24 @@ fn command_fq_sample_deterministic_and_targeted() {
         assert!(pair[0].ends_with("/1") && pair[1].ends_with("/2"));
     }
 }
+
+#[test]
+fn command_fq_sample_missing_bases_is_clap_error() {
+    // Regression: omitting --bases used to panic on an unwrap of the missing
+    // argument; it must now be a clean clap usage error (non-zero exit, no
+    // panic).
+    let file = write_temp("@r/1 c1\nAAAA\n+\nIIII\n");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "sample",
+            file.path().to_str().unwrap(),
+            "-o",
+            "stdout",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--bases") || stderr.contains("required"),
+        "stderr: {stderr}"
+    );
+}

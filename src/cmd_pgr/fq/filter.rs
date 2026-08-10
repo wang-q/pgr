@@ -116,12 +116,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let ref_file = args.get_one::<String>("ref").cloned();
-    let parallel = match args.get_one::<String>("parallel").unwrap().as_str() {
-        "auto" => pgr::libs::sys::logical_cpus(),
-        s => s
-            .parse::<usize>()
-            .map_err(|_| anyhow::anyhow!("invalid --parallel: {}", s))?,
-    };
+    let parallel =
+        crate::cmd_pgr::args::parse_parallel_auto(args.get_one::<String>("parallel").unwrap())?;
     let opts = AdapterTrimOptions {
         k: *args.get_one::<usize>("k").unwrap(),
         mink: *args.get_one::<usize>("min_k").unwrap(),

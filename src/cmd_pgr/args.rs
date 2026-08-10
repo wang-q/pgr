@@ -227,6 +227,22 @@ pub fn parallel_arg_with_default(default: &'static str) -> Arg {
         .help("Number of threads for parallel processing (1..=1024)")
 }
 
+/// Parse a `--parallel` value that may be `auto` (logical CPU count) or an
+/// integer in `1..=1024`. Returns a friendly error for invalid or out-of-range
+/// values before any thread pool is created.
+pub fn parse_parallel_auto(s: &str) -> anyhow::Result<usize> {
+    if s == "auto" {
+        return Ok(pgr::libs::sys::logical_cpus());
+    }
+    let n: usize = s
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid --parallel: {}", s))?;
+    if !(1..=1024).contains(&n) {
+        anyhow::bail!("--parallel must be in 1..=1024, got {}", n);
+    }
+    Ok(n)
+}
+
 /// `--no-ns` flag (output size without Ns).
 pub fn no_ns_arg() -> Arg {
     Arg::new("no_ns")

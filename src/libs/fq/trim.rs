@@ -43,7 +43,7 @@ pub enum Method {
     Mott,
 }
 
-/// Options for `fq trim-q`.
+/// Options for `fq trim-qual`.
 #[derive(Clone, Copy, Debug)]
 pub struct TrimOptions {
     /// Quality threshold (Phred score).

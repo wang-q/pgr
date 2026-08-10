@@ -4,8 +4,16 @@
 
 ## Subcommands
 
-*   `interleave`: Interleave paired-end sequences from one or two files.
+*   `interleave` (`il`): Interleave paired-end sequences from one or two files.
 *   `to-fa`: Convert FASTQ files to FASTA format.
+*   `clump`: Sort reads by k-mer signature (clumpify-compatible).
+*   `split`: Split interleaved FASTQ into R1/R2/singles files.
+*   `sample`: Subsample reads to a target base count.
+*   `clean`: Adapter k-mer trimming, quality and composition filtering (bbduk).
+*   `filter`: Discard reads matching reference k-mers (bbduk kfilter).
+*   `norm`: Filter reads by k-mer depth (bbnorm-style cutoff).
+*   `range`: Extract FASTQ records by name or region.
+*   `trim-qual`: Trim reads by quality score (sickle/cutadapt-style).
 
 ---
 
@@ -122,6 +130,22 @@ This command preserves sequence names and supports multiple input files.
 ```bash
 pgr fq to-fa [OPTIONS] <infiles>...
 ```
+
+### Options
+
+*   `-o, --outfile <file>`: Output filename (default: stdout).
+
+### Examples
+
+1.  **Convert a FASTQ file to FASTA**:
+    ```bash
+    pgr fq to-fa input.fq -o output.fa
+    ```
+
+2.  **Convert multiple FASTQ files to a single FASTA**:
+    ```bash
+    pgr fq to-fa input1.fq input2.fq -o output.fa
+    ```
 
 ---
 
@@ -273,7 +297,7 @@ options show the bbduk name in parentheses.
 
 2.  **Clean without a reference (bbduk `qtrim=r minlen=...` style)**:
     ```bash
-    pgr fq clean unmerged.raw.fq.gz -o unmerged.trim.fq.gz \
+    pgr fq clean unmerged.raw.fq.gz -o unmerged.trim.fq \
         --no-trim-by-overlap --no-trim-pair-evenly \
         --max-ns=-1 --force-trim-mod 0 --trim-quality 25 --minlen 60
     ```
@@ -355,21 +379,7 @@ pgr fq norm [OPTIONS] <infiles>...
     pgr fq norm reads.fq.gz -k 31 --min 3 -o out.fq
     ```
 
-### Options
-
-*   `-o, --outfile <file>`: Output filename (default: stdout).
-
-### Examples
-
-1.  **Convert a FASTQ file to FASTA**:
-    ```bash
-    pgr fq to-fa input.fq -o output.fa
-    ```
-
-2.  **Convert multiple FASTQ files to a single FASTA**:
-    ```bash
-    pgr fq to-fa input1.fq input2.fq -o output.fa
-    ```
+---
 
 ## range
 
@@ -402,3 +412,47 @@ pgr fq range reads.fq "read1:10-100" -o out.fq
 pgr fq range reads.fq -r names.txt -c 10 -o out.fq
 pgr fq range R1.fq --mate R2.fq read1 -o r1.out.fq --outfile-2 r2.out.fq
 ```
+
+---
+
+## trim-qual
+
+Trims low-quality bases from read ends using a sliding window (default) or the
+Mott cumulative-quality algorithm. Quality trimming only; adapters are not
+removed (use `pgr fq clean`/`pgr fq filter` for adapter/contaminant trimming).
+
+```bash
+pgr fq trim-qual [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--outfile-2 <file>`: R2 output file (paired-end; omit for interleaved
+    output).
+*   `--outfile-single <file>`: Output file for surviving single-end reads.
+*   `-q, --qual-threshold <float>`: Quality threshold (default: 20).
+*   `-l, --length-threshold <int>`: Minimum kept length; shorter reads are
+    discarded (default: 20).
+*   `--method <sliding|mott>`: Trimming algorithm (default: sliding).
+*   `--no-fiveprime`: Disable 5' trimming.
+*   `--quality-base <33|64|auto>`: Input quality encoding (default: auto).
+*   `--polyg-right <int>`: Trim 3' poly-G tails of at least this length
+    (0 disables).
+
+### Examples
+
+1.  **Single-end trimming**:
+    ```bash
+    pgr fq trim-qual in.fq -o out.fq
+    ```
+
+2.  **Paired-end with separate outputs and singles**:
+    ```bash
+    pgr fq trim-qual R1.fq R2.fq -o r1.fq --outfile-2 r2.fq --outfile-single s.fq
+    ```
+
+3.  **Paired-end interleaved output**:
+    ```bash
+    pgr fq trim-qual R1.fq R2.fq -o interleaved.fq
+    ```

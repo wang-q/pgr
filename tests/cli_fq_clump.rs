@@ -293,3 +293,25 @@ fn command_fq_clump_dupesubs_tolerance() {
     );
     assert!(out1.contains("@c1/1"));
 }
+
+#[test]
+fn command_fq_clump_parallel_out_of_range_is_friendly_error() {
+    // Regression: an out-of-range --parallel must be rejected with a friendly
+    // error before a thread pool is created.
+    let file = write_temp("@r1/1\nACGTACGT\n+\nIIIIIIII\n@r1/2\nTGCATGCA\n+\nIIIIIIII\n");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "clump",
+            file.path().to_str().unwrap(),
+            "--parallel",
+            "1000000",
+            "-o",
+            "stdout",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--parallel") || stderr.contains("1..=1024"),
+        "stderr: {stderr}"
+    );
+}

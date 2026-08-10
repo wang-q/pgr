@@ -149,3 +149,25 @@ fn command_fq_norm_changequality_n_quality() {
     assert_eq!(&qual[40..44], "!!!!");
     assert_eq!(&qual[..40], "I".repeat(40));
 }
+
+#[test]
+fn command_fq_norm_parallel_out_of_range_is_friendly_error() {
+    // Regression: an out-of-range --parallel must be rejected with a friendly
+    // error before a thread pool is created.
+    let file = write_temp("@r1\nACGTACGT\n+\nIIIIIIII\n");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "norm",
+            file.path().to_str().unwrap(),
+            "--parallel",
+            "1000000",
+            "-o",
+            "stdout",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--parallel") || stderr.contains("1..=1024"),
+        "stderr: {stderr}"
+    );
+}

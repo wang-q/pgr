@@ -23,13 +23,13 @@ Notes:
 
 Examples:
 1. Single-end trimming:
-   pgr fq trim-q in.fq -o out.fq
+   pgr fq trim-qual in.fq -o out.fq
 
 2. Paired-end with separate outputs and singles:
-   pgr fq trim-q R1.fq R2.fq -o r1.fq --outfile-2 r2.fq --outfile-single s.fq
+   pgr fq trim-qual R1.fq R2.fq -o r1.fq --outfile-2 r2.fq --outfile-single s.fq
 
 3. Paired-end interleaved output:
-   pgr fq trim-q R1.fq R2.fq -o interleaved.fq
+   pgr fq trim-qual R1.fq R2.fq -o interleaved.fq
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
@@ -99,7 +99,7 @@ Examples:
         )
 }
 
-/// Execute the trim-q command.
+/// Execute the trim-qual command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")

@@ -1,10 +1,10 @@
-# pgr fa / fq / 2bit 命令族代码审核记录（2026-08-05）
+# pgr fa / 2bit 命令族代码审核记录（2026-08-05）
 
-对 `pgr fa`（18 个子命令）、`pgr fq`（2 个子命令）与 `pgr 2bit`（5 个子命令）
-命令族及相关库文件（`libs/fmt/fa`、`libs/fmt/fq`、`libs/fmt/twobit`、
-`libs/translate`、`libs/io`、`libs/ds/range`、`libs/nt`、`libs/loc`、
-`libs/fasta/{chunk,stat,dedup,filter}`）和全部测试/文档进行审核。三个命令族
-结构相近，合并为一份记录。以下仅保留有借鉴意义的结论；验证过程已精简。
+对 `pgr fa`（18 个子命令）与 `pgr 2bit`（5 个子命令）命令族及相关库文件
+（`libs/fmt/fa`、`libs/fmt/twobit`、`libs/translate`、`libs/io`、
+`libs/ds/range`、`libs/nt`、`libs/loc`、`libs/fasta/{chunk,stat,dedup,filter}`）
+和全部测试/文档进行审核。`pgr fq` 命令族已拆分为独立记录 `audit-fq.md`。
+以下仅保留有借鉴意义的结论；验证过程已精简。
 
 ## 与外部参考实现的语义一致性核对
 
@@ -30,8 +30,6 @@
   的 seek 无位置串扰：所有读取方法均在使用前显式 seek，缓存命中时不再 seek。
 - `translate` 反向链坐标：ORF 的 `end*3` 不超过该框碱基数，`dna_len - end*3`
   不会下溢，坐标恒 ≥ 1。
-- `fq is_fq` 对目录输入：`File::open` 成功但 `read_exact` 失败（EISDIR），返回
-  友好错误而非 panic。
 
 ## 已知限制（有意保留）
 
@@ -55,8 +53,6 @@
 - `fa split about -c N -o stdout`：`about` 模式按 `max_files`（默认 999）轮转并
   `break`，在 stdout 上仅输出前 `max_files` 分块容量内的记录。默认 `-c` 为
   `usize::MAX` 不受影响；流式 stdout 与按大小分块本就矛盾，极端组合。
-- `fq interleave` 双文件格式只按 infile[0] 检测（`is_fq` 只探测第一个文件），
-  若第二个格式不同会在读取时报错（非静默）。
 - `read_u32_vec` 在畸形文件给出超大 `count` 时会尝试分配巨大缓冲（可能 OOM
   abort）。属全局既有模式与畸形输入鲁棒性范畴。
 
@@ -72,12 +68,12 @@
 - **`mask_sequence` 对多字节 UTF-8 序列 panic**：以 `&str` 切片按字节偏移操作，
   遇多字节字符触发 char 边界 panic。修复：重写为直接操作 `&[u8]` 字节。
 
-### 数据安全（`-o` 同输入保护，fa/fq/2bit）
+### 数据安全（`-o` 同输入保护，fa/2bit）
 
 - **流式命令允许 `-o` 覆盖输入文件**（先打开输出截断、后读输入，静默清空数据）。
   修复：`count`/`size`/`n50`/`masked`/`one`/`some`/`order`/`rc`/`replace`/
   `range`/`window`/`dedup`（含 `--dups-file`）/`filter`/`to-2bit`/`gz` 及
-  `fq to-fa`/`fq interleave`、全部 5 个 `2bit` 子命令（含 `some` 的 list、
+  全部 5 个 `2bit` 子命令（含 `some` 的 list、
   `range` 的 rgfile）统一加入 `ensure_outfile_distinct`。`six-frame` 初漏，后补。
 - **`split`/`window --chunk-records` 输出为目录/派生文件，可覆盖输入**。修复：
   在 `gen_fh`/`create_writer` 生成输出路径时用 `same_path` 与输入比对，命中即
@@ -93,23 +89,12 @@
   此时输出已创建）。修复：压缩分支打开输出前对非 `stdin` 输入做 `is_dir()` 前置
   检查。
 
-### 输入校验 / 静默错误（fa/fq）
+### 输入校验 / 静默错误（fa）
 
 - **`fa read_names` 未跳过 `#` 注释行**（`some`/`order`/`range` 等），修复：在
   `read_names` 跳过空行与 `#` 开头行。
 - **`fa gz --reindex` 静默忽略 `-o`**（reindex 分支直接对 `infile` 建索引）。
   修复：reindex 分支检测到 `-o` 即报错（reindex 输出位置固定为输入旁）。
-- **`fq interleave` 双文件交错对读取计数不匹配静默截断**（`std::iter::zip` 取较短
-  者）。修复：新增泛型 `interleave_pair_iter`，任一 `None` 而另一 `Some` 时
-  `bail!`。
-
-### 行为一致性 / 算法（fq）
-
-- **`fq interleave` 单文件虚拟 R2 两路径不一致**：单 FQ→FA 为 `"\n"`（空序列）、
-  单 FA→FA 为 `"N"`；帮助与 `docs/fq.md` 均声明 "N's"。修复：统一为 `b"N"`。
-- **`fq interleave` 双文件路径返回的最终索引错误**：`interleave_pair_iter(..)?`
-  返回的更新 `idx` 被丢弃，最终返回未递增的 `start`，违背 pub fn 契约。修复：
-  两双文件分支改为 `idx = interleave_pair_iter(..)?`。
 
 ### 统计 / 算法正确性（fa）
 
@@ -124,13 +109,12 @@
 
 ### 文档一致性（一次性小修，已精简）
 
-`fa some/order/mask` 与 `fq to-fa` 的 gzip 输出示例误导（`io::writer` 写端不压缩，
-压缩由专门 `fa gz` 子命令负责）→ 示例改 `-o output.fa` 并仅指明输入可为 gzipped；
+`fa some/order/mask` 的 gzip 输出示例误导（`io::writer` 写端不压缩，压缩由专门
+`fa gz` 子命令负责）→ 示例改 `-o output.fa` 并仅指明输入可为 gzipped；
 `fa --no-ns`、`fa six-frame` 帮助文本与行为对齐。
 
 ## 结论
 
-`fa`（18 子命令）、`fq`（2 子命令）与 `2bit`（5 子命令）命令族合计修复 25 处
-缺陷（Zero-Panic 3、数据安全 9、输入校验/静默错误 3、行为一致性/算法 2、文档
-一致性 4、统计正确性 2、算法正确性 2），关键修复均附回归测试与文档澄清。经多轮
-纵深复审收敛，未再发现新问题。
+`fa`（18 子命令）与 `2bit`（5 子命令）命令族合计修复 23 处缺陷（Zero-Panic 3、
+数据安全 8、输入校验/静默错误 2、文档一致性 4、统计正确性 2、算法正确性 2），
+关键修复均附回归测试与文档澄清。经多轮纵深复审收敛，未再发现新问题。

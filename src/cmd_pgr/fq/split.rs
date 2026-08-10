@@ -35,6 +35,7 @@ Examples:
             Arg::new("outfile_2")
                 .long("outfile-2")
                 .num_args(1)
+                .required(true)
                 .help("R2 output file (required)"),
         )
         .arg(

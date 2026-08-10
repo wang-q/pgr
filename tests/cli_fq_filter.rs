@@ -12,6 +12,12 @@ fn read_gz(path: &str) -> Vec<u8> {
     out
 }
 
+fn write_temp(content: &str) -> tempfile::NamedTempFile {
+    let mut f = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    std::io::Write::write_all(&mut f, content.as_bytes()).unwrap();
+    f
+}
+
 #[test]
 fn command_fq_filter_matches_bbtools_filter_golden() {
     // Byte-level comparison against BBTools 39.38
@@ -71,4 +77,28 @@ fn command_fq_filter_stats_match_bbtools() {
         "#Name\tReads\tReadsPct\n",
     );
     assert_eq!(std::fs::read_to_string(&stats).unwrap(), expected);
+}
+
+#[test]
+fn command_fq_filter_parallel_out_of_range_is_friendly_error() {
+    // Regression: an out-of-range --parallel must be rejected with a friendly
+    // error before a thread pool is created.
+    let file = write_temp("@r1\nACGTACGT\n+\nIIIIIIII\n");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "filter",
+            file.path().to_str().unwrap(),
+            "--ref",
+            "tests/bbtools/Lambda/illumina_adapters.fa",
+            "--parallel",
+            "1000000",
+            "-o",
+            "stdout",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--parallel") || stderr.contains("1..=1024"),
+        "stderr: {stderr}"
+    );
 }

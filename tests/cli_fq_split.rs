@@ -198,3 +198,28 @@ BBBB
         "@r1/2 c2\nTGCA\n+\n####\n"
     );
 }
+
+#[test]
+fn command_fq_split_missing_outfile2_is_clap_error() {
+    // Regression: omitting --outfile-2 used to panic on an unwrap of the
+    // missing argument; it must now be a clean clap usage error (non-zero
+    // exit, no panic).
+    let input = "\
+@r1/1 c1
+ACGT
++
+!!!!
+@r1/2 c2
+TGCA
++
+####
+";
+    let file = write_temp(input);
+    let (_, stderr) = PgrCmd::new()
+        .args(&["fq", "split", file.path().to_str().unwrap(), "-o", "stdout"])
+        .run_fail();
+    assert!(
+        stderr.contains("--outfile-2") || stderr.contains("required"),
+        "stderr: {stderr}"
+    );
+}

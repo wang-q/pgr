@@ -83,12 +83,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             args.get_one::<String>("mem").unwrap(),
         )?),
     };
-    let parallel = match args.get_one::<String>("parallel").unwrap().as_str() {
-        "auto" => pgr::libs::sys::logical_cpus(),
-        s => s
-            .parse::<usize>()
-            .map_err(|_| anyhow::anyhow!("invalid --parallel: {}", s))?,
-    };
+    let parallel =
+        crate::cmd_pgr::args::parse_parallel_auto(args.get_one::<String>("parallel").unwrap())?;
     if !(2..=31).contains(&opts.k) {
         anyhow::bail!("--kmer must be in 2..=31, got {}", opts.k);
     }

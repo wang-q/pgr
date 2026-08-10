@@ -35,6 +35,7 @@ Examples:
             Arg::new("bases")
                 .long("bases")
                 .num_args(1)
+                .required(true)
                 .value_parser(value_parser!(i64))
                 .help("Target number of output bases"),
         )

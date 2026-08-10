@@ -411,6 +411,28 @@ IIIIIIIIIIIIIIIIIIII
 }
 
 #[test]
+fn command_fq_trim_adapter_parallel_out_of_range_is_clap_error() {
+    // Regression: an out-of-range --parallel must be rejected with a friendly
+    // error before a thread pool is created, not spawn 1025+ worker threads.
+    let file = write_temp("@r1\nACGTACGT\n+\nIIIIIIII\n");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--parallel",
+            "1000000",
+            "-o",
+            "stdout",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--parallel") || stderr.contains("1..=1024"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn command_fq_trim_adapter_maq_mbq_and_mcb_filters() {
     // maq=20 keeps r1 (avg Q30), mbq=5 discards r2 (has a Q0 base), mcb=10
     // discards r3 (N run breaks consecutive ACGT).
