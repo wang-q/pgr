@@ -366,6 +366,36 @@ fn command_kmer_gc_tex_renders_heatmap() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_kmer_gc_real_lambda() -> anyhow::Result<()> {
+    // Real Lambda reads: the GC x coverage matrix peak must sit in the same
+    // coverage band as the BBTools CallPeaks main peak (56).
+    let temp = tempfile::TempDir::new()?;
+    let out = temp.path().join("g.kgc");
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "gc",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    let peak = stderr
+        .split("peak ")
+        .nth(1)
+        .and_then(|s| s.split([')', ',', ' ']).next())
+        .and_then(|s| s.parse::<u64>().ok())
+        .expect("stderr must report a peak");
+    assert!(
+        (50..=60).contains(&peak),
+        "GC peak {peak} must sit in the ~56x coverage band"
+    );
+    Ok(())
+}
+
+#[test]
 fn command_kmer_qhist_end_to_end() -> anyhow::Result<()> {
     let temp = tempfile::TempDir::new()?;
     let fq = temp.path().join("in.fq");
@@ -415,6 +445,36 @@ fn command_kmer_qhist_end_to_end() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_kmer_qhist_real_lambda() -> anyhow::Result<()> {
+    // Real Lambda reads: the auto quality base is Phred+33 (threshold 38),
+    // and the depth-1 error k-mers (single high-quality occurrence) match
+    // the kmercountexact golden count at depth 1.
+    let temp = tempfile::TempDir::new()?;
+    let out = temp.path().join("q.hist");
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "qhist",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("threshold 38"), "stderr: {stderr}");
+    let text = std::fs::read_to_string(&out)?;
+    let first = text
+        .lines()
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    assert_eq!(first, ["1", "0", "38961"]);
+    Ok(())
+}
+
+#[test]
 fn command_kmer_qhist_rejects_fasta() -> anyhow::Result<()> {
     let temp = tempfile::TempDir::new()?;
     let fa = temp.path().join("in.fa");
@@ -431,6 +491,38 @@ fn command_kmer_qhist_rejects_fasta() -> anyhow::Result<()> {
         ])
         .run_fail();
     assert!(stderr.contains("requires FASTQ"), "stderr: {stderr}");
+    Ok(())
+}
+
+#[test]
+fn command_kmer_qcheck_real_lambda() -> anyhow::Result<()> {
+    // Real Lambda reads carry sequencing errors; quorum-style checking must
+    // flag a few percent but keep the overwhelming majority.
+    let temp = tempfile::TempDir::new()?;
+    let kept = temp.path().join("kept.fq");
+    let discarded = temp.path().join("discarded.fq");
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "qcheck",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            kept.to_str().unwrap(),
+            "--discard-file",
+            discarded.to_str().unwrap(),
+        ])
+        .run();
+    let n_kept = std::fs::read_to_string(&kept)?.lines().count() / 4;
+    let n_disc = std::fs::read_to_string(&discarded)?.lines().count() / 4;
+    assert_eq!(n_kept + n_disc, 36384, "all reads must be classified");
+    let frac = n_disc as f64 / (n_kept + n_disc) as f64;
+    assert!(
+        (0.02..=0.05).contains(&frac),
+        "flagged fraction {frac:.3} ({n_disc}/{}) must be a few percent",
+        n_kept + n_disc
+    );
     Ok(())
 }
 
@@ -522,6 +614,48 @@ fn command_kmer_gsize_estimates_coverage_and_size() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_kmer_gsize_real_lambda_matches_bbtools_peak() -> anyhow::Result<()> {
+    // Real Lambda PE reads (BBTools filter golden). BBTools CallPeaks gives
+    // main peak 56 (tests/bbtools/Lambda/golden/R.peaks.txt); gsize must
+    // reproduce that peak instead of the count-1 error k-mer mode that
+    // dominates raw read data.
+    let temp = tempfile::TempDir::new()?;
+    let pkt = temp.path().join("t.pkt");
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            pkt.to_str().unwrap(),
+        ])
+        .run();
+    let (stdout, _) = common::PgrCmd::new()
+        .args(&["kmer", "gsize", "-t", pkt.to_str().unwrap()])
+        .run();
+    let mut peak = 0u64;
+    let mut size = 0f64;
+    for line in stdout.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() == 2 {
+            match cols[0] {
+                "peak_coverage" => peak = cols[1].parse()?,
+                "genome_size" => size = cols[1].parse()?,
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(peak, 56, "peak must match BBTools CallPeaks main peak");
+    assert!(
+        (45000.0..=50000.0).contains(&size),
+        "genome size {size} far from the 48502 bp Lambda genome"
+    );
+    Ok(())
+}
+
+#[test]
 fn command_kmer_gsize_model_fit() -> anyhow::Result<()> {
     let temp = tempfile::TempDir::new()?;
     let fq = temp.path().join("reads.fq");
@@ -563,6 +697,57 @@ fn command_kmer_gsize_model_fit() -> anyhow::Result<()> {
     assert!(
         (500.0..=10000.0).contains(&size),
         "genome size {size} far from 1000 bp"
+    );
+    Ok(())
+}
+
+#[test]
+fn command_kmer_gsize_model_real_lambda() -> anyhow::Result<()> {
+    // Real Lambda PE reads (BBTools filter golden). Unlike the synthetic
+    // 60x test, the fit leaves the degenerate bias=0 Poisson boundary:
+    // kmercov/bias/length agree with R genescopefk.R to ~0.1% and the
+    // length estimate is within 4% of the 48502 bp Lambda genome.
+    let temp = tempfile::TempDir::new()?;
+    let pkt = temp.path().join("t.pkt");
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            pkt.to_str().unwrap(),
+        ])
+        .run();
+    let (stdout, _) = common::PgrCmd::new()
+        .args(&["kmer", "gsize", "-t", pkt.to_str().unwrap(), "--model"])
+        .run();
+    let mut kmercov = 0f64;
+    let mut bias = 0f64;
+    let mut size = 0f64;
+    for line in stdout.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() == 2 {
+            match cols[0] {
+                "kmercov" => kmercov = cols[1].parse()?,
+                "bias" => bias = cols[1].parse()?,
+                "genome_size" => size = cols[1].parse()?,
+                _ => {}
+            }
+        }
+    }
+    assert!(
+        (50.0..=60.0).contains(&kmercov),
+        "kmercov {kmercov} far from the R/BBTools ~55x fit"
+    );
+    assert!(
+        (0.5..=1.0).contains(&bias),
+        "bias {bias} must leave the degenerate Poisson boundary"
+    );
+    assert!(
+        (44000.0..=49000.0).contains(&size),
+        "genome size {size} far from the 48502 bp Lambda genome"
     );
     Ok(())
 }

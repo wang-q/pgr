@@ -15,6 +15,10 @@ clean，代码已提交）**：
   fairy/khmer 源码分析不改变 norm 精确/近似决策；bbnorm 深度分箱暂不做。
   细节见 `design/anchr-trim-replace.md` §4.0/§4.8–4.11、
   `references/fairy.md`、`references/khmer.md`。
+- `pgr kmer` 用 Lambda 真实数据验证（table/hist/gsize/gc/qhist/qcheck/
+  profile 全跑通；修复 gsize peak 估计：全局众数 → CallPeaks 主峰，
+  peak=56 与 BBTools 一致、genome_size 47786 bp）。细节见
+  `design/kmer.md` §10.8。
 
 **挂账/待决**：
 
@@ -27,8 +31,9 @@ clean，代码已提交）**：
 3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
    直方图，pgr 无 SAM 命令，用户决定放着。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。
-5. 剩余命令可再核对（有 golden 未多参数交叉验证）：`fq clump`（dedupe
-   单次 threads=1 验证）、`kmer hist`、`fq split`。
+5. 剩余命令可再核对：`fq split`；`fq clump` 多参数 golden 验证**不做**
+   （体积控制，见 `design/anchr-trim-replace.md` §4.4 M1 注）。
+   `kmer` 系列已用 Lambda 真实数据验证完成（见上）。
 
 ---
 

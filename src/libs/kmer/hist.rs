@@ -1,5 +1,6 @@
 //! FASTK-compatible k-mer frequency histogram (`.hist`).
 
+use super::khist;
 use super::KmerTable;
 use anyhow::Context;
 use std::io::Write;
@@ -40,20 +41,17 @@ pub struct GenomeEstimate {
 
 /// Estimate coverage and genome size from a count table.
 ///
-/// `peak_cov` is the frequency with the most distinct k-mers; for
-/// single-copy genomes `genome_size = total_kmers / peak_cov` approximates
-/// the haploid length (this is the cheap pre-GenomeScope estimate; model
-/// fitting is a separate step).
+/// `peak_cov` is the main k-mer frequency peak (BBTools CallPeaks, skipping
+/// the error k-mers that dominate real reads); `genome_size =
+/// total_kmers / peak_cov` approximates the haploid length (cheap
+/// pre-GenomeScope estimate; model fitting is a separate step).
 pub fn estimate(table: &KmerTable) -> GenomeEstimate {
-    let h = from_table(table);
     let total_distinct = table.keys.len() as u64;
     let total_kmers: u128 = table.counts.iter().map(|&c| c as u128).sum();
-    let peak_cov = h
-        .hist
-        .iter()
-        .enumerate()
-        .max_by_key(|(_, &v)| v)
-        .map(|(i, _)| (i + 1) as u64)
+    let peak_cov = khist::call_peaks(&khist::histogram(table, khist::HIST_MAX))
+        .into_iter()
+        .max_by_key(|p| p.volume)
+        .map(|p| p.center as u64)
         .unwrap_or(0);
     let genome_size = if peak_cov > 0 {
         total_kmers as f64 / peak_cov as f64

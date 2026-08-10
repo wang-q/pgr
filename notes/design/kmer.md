@@ -536,3 +536,38 @@ quorum `hash_with_quality` 的 nval 编码 `(count<<1)|quality` 更新语义经
 * profile 落盘需求来源：MerquryFK 的 QV/completeness/trio 分型是
   self + 相对 profile 逐位置比较（`MerquryFK.c scan_asm`、`hap_plotter.c`），
   pgr 若做组装质量评估需要 `.pkp` 数据流；当前直方图不经过 profile。
+
+### 10.8 真实数据验证（2026-08-10，Lambda SRR5042715）
+
+用 BBTools 迁移引入的 Lambda 真实双端 reads（`tests/bbtools/Lambda/golden/
+filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据验证，
+并修复了 gsize 的 peak 估计：
+
+* **table/hist（k=31）**：87941 unique 31-mers 与 BBTools `#unique_kmers`
+  一致；khist-text/peaks 与 golden 逐字节一致（已有测试，M7）。
+* **gsize 修复**：原 `estimate()` 取全局频次众数，真实数据下 count=1 的
+  错误 kmer 主导 → peak=1、genome_size 267 万 bp（真实 48.5 kb 的 55 倍）。
+  改为复用 `khist::call_peaks`（BBTools 完整移植）取体积最大峰 center →
+  peak=56（= R.peaks `#main_peak`）、genome_size=47786 bp（误差 1.5%）。
+  合成 30× 回归不变。新增真实数据回归测试
+  `command_kmer_gsize_real_lambda_matches_bbtools_peak`（引用现有 golden，
+  不新增测试料）。
+* **gsize --model**：kmercov=55.3、genome_size=46873 bp（误差 3.4%）、
+  bias=0.713、converged=true；与 R `genescopefk.R` 同直方图对照：
+  summary 除路径行外逐字节一致、参数千分位级吻合
+  （`design/genescopefk.md` §5.1）。
+* **gc**：peak 53（31 GC × 111 count 矩阵；KatGC 峰值语义，与 CallPeaks
+  的 56 因算法不同略有差异，合理）。
+* **qhist**：auto 检测 Phred+33 → threshold=38 正确；输出 quorum
+  `histo_mer_database` 格式；~80× 覆盖下所有 kmer 至少一次全高质量窗口
+  → low=0（quorum 高质量主导语义，合理）。
+* **qcheck**：kept 35221 / flagged 1163（3.2%，真实测序错误量级合理）。
+* **profile**：self/relative 各 36384 profiles 正常。
+* **测试覆盖改进**：原 `--model` 合成测试（60× 1kb reads）拟合落在
+  病态 bias=0/d=0 泊松退化边界（length 高估 4.8×，断言区间 (500,10000)
+  仅为容忍该病态），只证明"能跑通"。新增真实数据测试
+  `command_kmer_gsize_model_real_lambda`（kmercov≈55/bias≈0.7/
+  length≈46789，覆盖正常拟合区域）及 `command_kmer_gc_real_lambda`（peak
+  ∈ 50..60）、`command_kmer_qhist_real_lambda`（threshold 38 + depth-1
+  计数 = golden 38961）、`command_kmer_qcheck_real_lambda`（flagged
+  2–5%）；全部引用现有 golden，不新增测试料，合成行为测试保留。

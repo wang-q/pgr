@@ -129,6 +129,28 @@ tr -s ' ' '\t' | cut -f 2` → COV=55.8；`summary.txt` 经 `sed '1,6 d'` +
 表格式处理的输出与 R 过同一管线**逐行结构一致**（仅 Model Fit /
 Error Rate 数值不同）。
 
+### 5.1 真实数据对照（2026-08-10，Lambda SRR5042715，k=31，p=1）
+
+同一直方图（`tests/bbtools/Lambda/golden/filter.fq.gz`，87941 distinct
+31-mers → 两列文本）分别喂 R `genescopefk.R -k 31 -p 1` 与 pgr
+`gsize --model`：
+
+| 项 | pgr gsize --model | R genescopefk.R |
+|---|---|---|
+| d | 0 | 0 |
+| kmercov | 55.3469 | 55.35 |
+| bias | 0.712524 | 0.7125 |
+| length 参数 | 46872.5 | 46870 |
+| Genome Haploid Length | 46,789 bp | 46,789 bp |
+| Model Fit | 94.4207% | 94.4206% |
+| Read Error Rate | 0.105793% | 0.105788% |
+
+与合成 hist.tsv 对照同等级：summary.txt 除 input/output 路径行外逐字节
+一致（Model Fit/Error Rate 差 0.0001%）；参数估计千分位级吻合；SE 有
+差异（R 的 nls vcov vs pgr `P^T R^T R P` 近似，kmercov SE 0.109 vs
+0.098）。Lambda 真实基因组 48502 bp：kmercov 55.3（BBTools CallPeaks
+main_peak 56）、length 46789（误差 3.5%）。
+
 ## 6. 注意事项 / 教训
 
 - **rsstrace 陷阱**：minpack.lm 的 `rsstrace[0]` 会被首轮 fdjac2 的扰动
