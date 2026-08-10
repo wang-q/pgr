@@ -1,11 +1,11 @@
-# pgr fq trim-q：按质量分数修剪（设计稿）
+# pgr fq trim-qual：按质量分数修剪（设计稿）
 
 > 定位：`fq` 子命令，按质量分数修剪读段两端（不做去接头）。与
 > [sickle.md](../references/sickle.md)、[cutadapt.md](../references/cutadapt.md)
 > 两篇参考笔记配套。设计输入来自业务侧真实用法——anchr 的
 > `templates/trim.tera.sh#L135`。
 >
-> 状态：**已实现（2026-08）**，设计细节见 [fq-trim-q.md](fq-trim-q.md) 全文与 §7。
+> 状态：**已实现（2026-08）**，设计细节见 [fq-trim-qual.md](fq-trim-qual.md) 全文与 §7。
 
 ## 0. 需求来源：anchr 中 sickle 的真实用法
 
@@ -32,21 +32,21 @@ parallel --no-run-if-empty --linebuffer -k -j 2 "\
 | **sanger 编码** | `-t sanger`（质量偏移 33） |
 
 > **要点**：anchr 的 hone 是"同批数据用不同质量/长度阈值各修剪一份，供下游组装
-> 参数寻优"。故 `fq trim-q` 的核心价值不只是单次修剪，而是**低成本、可并列的
+> 参数寻优"。故 `fq trim-qual` 的核心价值不只是单次修剪，而是**低成本、可并列的
 > 多阈值批量修剪**。
 
 ## 1. CLI 设计
 
 ### 1.1 命名
 
-`pgr fq trim-q`（用户已确认）。`-q`（quality）显式表明"按质量分数修剪"，与
+`pgr fq trim-qual`（用户已确认）。`-q`（quality）显式表明"按质量分数修剪"，与
 "去接头"（`trim`/trimming）区分。子命令用连字符风格，与 `pgr fq to-fa`、
 `pgr fq interleave` 一致。
 
 ### 1.2 参数（已定稿）
 
 ```
-pgr fq trim-q [options] <infiles...>
+pgr fq trim-qual [options] <infiles...>
 
 Input:
   <infiles...>  单端 1 个文件；双端 2 个文件（分别对应 R1/R2）
@@ -71,7 +71,7 @@ Options:
 
 anchr 的场景是"一批阈值各跑一遍"。两个可选方案：
 
-- **A（推荐，最小）**：`fq trim-q` 单次处理一组阈值。参数扫描由外层
+- **A（推荐，最小）**：`fq trim-qual` 单次处理一组阈值。参数扫描由外层
   `parallel`/shell 循环完成（与 anchr 现状一致），pgr 不内置。
 - **B**：内置多阈值扫描（类似 `--qual 15,20,25 --len 50,60,70` 笛卡尔积）。
   与 anchr 的 `Q{qual}L{len}` 目录结构对应，但属"便利功能"，需求不足不先做。
@@ -199,7 +199,7 @@ anchr 的场景是"一批阈值各跑一遍"。两个可选方案：
 
 ## 7. 实现记录（2026-08）
 
-**落地**：`pgr fq trim-q` 已实现并验证。
+**落地**：`pgr fq trim-qual` 已实现并验证。
 
 - 代码：`src/libs/fq/trim.rs`（滑窗/Mott 算法、质量编码检测、单/双端编排）、
   `src/cmd_pgr/fq/trim_q.rs`（clap 薄壳）、`src/libs/fmt/seq.rs`（`SeqRecord`
@@ -219,7 +219,7 @@ anchr 的场景是"一批阈值各跑一遍"。两个可选方案：
 - 验证：lib 单元 13 个（滑窗/Mott 切点、编码检测、polyG、越界报错）+ 集成 14 个
   （单端/双端/交错/singles、mott、auto 与显式编码、gzip、错误路径）；
   `cargo clippy --all-targets -- -D warnings` clean；全量 lib 685 + 集成套件全绿。
-- 吞吐 sanity（release，103 MB / 50 万条 100 bp 读）：trim-q 0.23 s；同文件
+- 吞吐 sanity（release，103 MB / 50 万条 100 bp 读）：trim-qual 0.23 s；同文件
   `fq to-fa` 0.13 s。修剪相对纯解析+写出的开销约 +0.1 s，无异常掉速。
 - 基准测试：按约定本命令不引入 criterion 基准（全新命令、O(n) 算法、瓶颈在既有
   FAFQ 解析）；未来若对修剪算法做 SIMD 化，再按"先写基准"原则补。

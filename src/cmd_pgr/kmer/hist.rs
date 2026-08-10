@@ -1,4 +1,5 @@
 use clap::{Arg, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for hist.
 pub fn make_subcommand() -> Command {
@@ -34,6 +35,18 @@ Examples:
         .arg(super::profile::table_arg())
         .arg(super::profile::kmer_arg())
         .arg(crate::cmd_pgr::args::outfile_arg_required())
+        .arg(
+            Arg::new("khist_text")
+                .long("khist-text")
+                .num_args(1)
+                .help("Write the kmercountexact-style text histogram (khist.txt)"),
+        )
+        .arg(
+            Arg::new("peaks")
+                .long("peaks")
+                .num_args(1)
+                .help("Write the kmercountexact-style peaks summary (peaks.txt)"),
+        )
 }
 
 /// Execute the hist command.
@@ -51,6 +64,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
     let hist = pgr::libs::kmer::hist::from_table(&table);
     pgr::libs::kmer::hist::write(std::path::Path::new(outfile), &hist)?;
+    let khist_text = args.get_one::<String>("khist_text");
+    let peaks = args.get_one::<String>("peaks");
+    if khist_text.is_some() || peaks.is_some() {
+        let hist = pgr::libs::kmer::khist::histogram(&table, pgr::libs::kmer::khist::HIST_MAX);
+        if let Some(f) = khist_text {
+            let mut w = pgr::writer(f)?;
+            pgr::libs::kmer::khist::write_khist_text(
+                &mut w,
+                &hist,
+                pgr::libs::kmer::khist::HIST_MAX,
+            )?;
+            w.flush()?;
+        }
+        if let Some(f) = peaks {
+            let mut w = pgr::writer(f)?;
+            let unique = table.keys.len() as u64;
+            let peaks_out = pgr::libs::kmer::khist::call_peaks(&hist);
+            pgr::libs::kmer::khist::write_peaks_text(&mut w, &peaks_out, k, unique, &hist)?;
+            w.flush()?;
+        }
+    }
     log::info!(
         "==> Wrote histogram of {} distinct {}-mers to {}",
         table.keys.len(),

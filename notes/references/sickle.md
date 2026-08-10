@@ -13,7 +13,7 @@
 - **质量编码**：支持 Sanger / Illumina / Solexa（Solexa 为线性近似）。Illumina 1.3–1.7 用 `+64`，CASAVA ≥ 1.8 即 Sanger（`+33`）。
 - **格式细节**：输出时可把 `+` 行后的重复 header 替换为单个 `+`（CASAVA ≥ 1.8 默认格式）；支持 gzip 输入/可选 gzip 输出；`-n` 可在首个 N 处截断。
 
-> **范围说明**：pgr 不需要复现 sickle 的 C 实现。若实现 **`fq trim-q`**（按质量分数修剪，见 §4），应移植其**滑动窗口修剪算法**（`sliding.c`，约 100 行 C）。`kseq.h` 的流式读取由 noodles 替代，`getopt` CLI 由 clap 替代。
+> **范围说明**：pgr 不需要复现 sickle 的 C 实现。若实现 **`fq trim-qual`**（按质量分数修剪，见 §4），应移植其**滑动窗口修剪算法**（`sliding.c`，约 100 行 C）。`kseq.h` 的流式读取由 noodles 替代，`getopt` CLI 由 clap 替代。
 
 ## 2. 核心概念 (Key Concepts)
 
@@ -112,9 +112,11 @@ qual[five..three]
 
 pgr 的 `fq` 命令目前只有 `to_fa`（FASTQ→FASTA）与 `interleave`（双端交错），**没有质量修剪子命令**。sickle 填补的正是这个空白。
 
-### 4.2 潜在移植点：`pgr fq trim-q`
+### 4.2 潜在移植点：`pgr fq trim-qual`
 
-> **命名说明**：质量修剪子命令命名为 `fq trim-q`（而非 `fq trim`），用 `-q`（quality）明确表示"按质量分数修剪"，避免与"去接头"(`trim`/trimming) 混淆。
+> **命名说明**：质量修剪子命令命名为 `fq trim-qual`（而非 `fq trim`），
+> 采用 "trim-<目标>" 家族命名（与 `fq trim-adapter` 配对），明确表示"按质量
+> 分数修剪"，避免与"去接头"(`trim`/trimming) 混淆。
 
 若未来实现，可参考但不直接照搬：
 
@@ -155,7 +157,7 @@ pgr 的 `fq` 命令目前只有 `to_fa`（FASTQ→FASTA）与 `interleave`（双
 | **Leading/Trailing** | Trimmomatic、fastp | 只切两端低于阈值的连续碱基，不处理中间 | 最保守，常配合滑窗使用 |
 | **逐读动态窗口** | fastp | 滑窗 + 基于读长的动态窗口，单遍 O(n) | 对短读优化，作者将复杂度从 O(n²) 降为 O(n) |
 
-**对 `fq trim-q` 的建议**：
+**对 `fq trim-qual` 的建议**：
 - 滑窗仍是默认选择（忠实对齐 Trimmomatic `SLIDINGWINDOW` 语义，最通用）。
 - 可将 **Mott 算法**作为 `--method mott` 选项与滑窗（`--method sliding`）并存，提供更精细的修剪路径。
 - 现代工具差异主要在**多线程**与**单遍多操作**（质控统计+过滤+修剪一次扫描），这些 pgr 用 noodles + rayon 天然契合，不作为算法选型依据。

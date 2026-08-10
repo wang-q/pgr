@@ -3,9 +3,9 @@ use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fq::trim::{Method, QualityBase, TrimOptions};
 use std::io::Write;
 
-/// Build the clap subcommand for trim-q.
+/// Build the clap subcommand for trim-qual.
 pub fn make_subcommand() -> Command {
-    Command::new("trim-q")
+    Command::new("trim-qual")
         .about("Trims reads by quality score")
         .after_help(
             r###"

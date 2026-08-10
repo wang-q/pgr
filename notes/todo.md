@@ -72,10 +72,10 @@
 
 **上一会话（fq 系列）已完成**：
 
-- **`fq trim-q`（sickle 替代，已实现）**：`libs/fq/trim.rs` +
+- **`fq trim-qual`（sickle 替代，已实现）**：`libs/fq/trim.rs` +
   `cmd_pgr/fq/trim_q.rs`；滑窗/Mott、质量编码 auto（BBDuk 算法）、双端 +
   singles + interleaved、`--polyg-right`；设计 =
-  `design/fq-trim-q.md`（已实现）。
+  `design/fq-trim-qual.md`（已实现）。
 - **`fq range`（一期，FASTA `.loc` 模式）**：`libs/loc.rs`
   （`create_fq_loc`/`open_fq_indexed`/`query_fq_locs`/
   `normalize_pair_name`）+ `cmd_pgr/fq/range.rs`；name 归一化（strip

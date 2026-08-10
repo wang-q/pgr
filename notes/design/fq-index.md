@@ -4,7 +4,7 @@
 > 对齐，含 name 归一化与交错 `#n` 消歧）；双端 S2 待二期。
 >
 > 配套：[seq-reader.md](seq-reader.md)（FAFQ 读取与 BGZF 基础设施）、
-> [fq-trim-q.md](fq-trim-q.md)（fq 命令组现状）。
+> [fq-trim-qual.md](fq-trim-qual.md)（fq 命令组现状）。
 
 ## 0. 动机
 
@@ -80,7 +80,7 @@ Options（与 fa range 一致）：
 | 索引格式 | `name\t偏移\tsize` | 完全一致 | 定稿 |
 | 子段语法 | `chr1:1-1000` | 复用 `ds::Range`，`read1:10-200` | 方案 A 定稿 |
 | 负链 `(-)` | 反向互补 | 不支持（切片时忽略 strand） | 已定 |
-| 子段输出 `+` 行 | — | 输出单个 `+`（与 trim-q 一致） | 已定 |
+| 子段输出 `+` 行 | — | 输出单个 `+`（与 trim-qual 一致） | 已定 |
 | 重复 name | IndexMap 后者覆盖 | 归一化 key + `#n` 消歧（不丢数据） | 已定 |
 | 索引重建 | mtime 判断（`loc_is_fresh`） | 同 | 定稿 |
 | 缓存 | LRU<FastaRecord> | LRU<原始记录字节 Vec<u8>> | 定稿 |
@@ -117,7 +117,7 @@ FASTQ 双端数据的 name 有三种常见模式：
 | 方案 | CLI 形态 | 说明 |
 |---|---|---|
 | **S1 单文件（fa 对齐，最小）** | `fq range R1.fq "read1/1"` | 一次一个文件；配对由用户自行在 R2.fq 重复；交错文件需消歧 |
-| **S2 双端感知** | `fq range R1.fq R2.fq "read1" -o r1.fq --outfile-2 r2.fq`；交错输入单文件 → 交错输出 | pair name 归一化；对齐 `fq trim-q` 的双端输出形态 |
+| **S2 双端感知** | `fq range R1.fq R2.fq "read1" -o r1.fq --outfile-2 r2.fq`；交错输入单文件 → 交错输出 | pair name 归一化；对齐 `fq trim-qual` 的双端输出形态 |
 
 推荐 **S2**（符合"取 pair"直觉），分两期落地：
 
@@ -143,7 +143,7 @@ FASTQ 双端数据的 name 有三种常见模式：
 
 1. ~~一期做 S1 还是 S2~~ → 已按 S1 实现（一期），S2 待二期。
 2. ~~`#n` 消歧是否可接受~~ → 已按 `#n` 实现并验证。
-3. 双端输出（二期）是否严格对齐 `fq trim-q` 的 `-o/--outfile-2` 形态？
+3. 双端输出（二期）是否严格对齐 `fq trim-qual` 的 `-o/--outfile-2` 形态？
 
 ## 6. 测试计划（实现阶段）
 

@@ -1,6 +1,6 @@
 # cutadapt: Mott/BWA 式质量修剪与接头去除
 
-> 整理于 2026-08，源自对 `cutadapt-main/`（v5.2, 2025-10-23）源码的分析。目的：承接 [sickle.md](./sickle.md) 中"现代质量修剪算法对比"的结论——滑窗仍是默认，cutadapt 的 `-q` 提供了**唯一真正不同的算法方向**（Mott/BWA 累积质量法）。本文聚焦**按质量分数修剪**（非接头去除），为 pgr 的 `fq trim-q` 提供算法与 CLI 参考。接头/适配器部分仅作背景，pgr 当前只关心质量修剪。
+> 整理于 2026-08，源自对 `cutadapt-main/`（v5.2, 2025-10-23）源码的分析。目的：承接 [sickle.md](./sickle.md) 中"现代质量修剪算法对比"的结论——滑窗仍是默认，cutadapt 的 `-q` 提供了**唯一真正不同的算法方向**（Mott/BWA 累积质量法）。本文聚焦**按质量分数修剪**（非接头去除），为 pgr 的 `fq trim-qual` 提供算法与 CLI 参考。接头/适配器部分仅作背景，pgr 当前只关心质量修剪。
 
 ## 1. 简介
 
@@ -11,7 +11,7 @@
 - **算法来源**：注释明确说明与 **BWA 的 `bwa_trim_read`** 相同（`qualtrim.pyx:29-33`）。这与经典 Mott 算法同源（BWA `-q` 即 Mott 算法），累计和取最小。
 - **变体**：`nextseq_trim_index`（NextSeq polyG 暗循环）、`poly_a_trim_index`（poly-A/poly-T）、`expected_errors`（Edgar 2015 期望错误数）。
 
-> **范围说明**：pgr 若实现 `fq trim-q`，应移植 `quality_trim_index`（Mott/BWA 累积质量法）作为 `--method mott`，与继承自 sickle 的滑窗（`--method sliding`）并存，见 §4。
+> **范围说明**：pgr 若实现 `fq trim-qual`，应移植 `quality_trim_index`（Mott/BWA 累积质量法）作为 `--method mott`，与继承自 sickle 的滑窗（`--method sliding`）并存，见 §4。
 
 ## 2. 核心算法：`quality_trim_index`（Mott/BWA 累积质量法）
 
@@ -94,7 +94,7 @@ class QualityTrimmer(SingleEndModifier):
 
 cutadapt 的 read 修饰器按固定顺序执行，质量修剪在**接头修剪之后**。典型顺序：去接头 → 合并/质控 → 质量修剪 → poly-A 修剪 → 长度/错误过滤。pgr 移植时若只想做纯质量修剪，顺序不存在依赖问题。
 
-## 4. 对 pgr 的启示：`fq trim-q`
+## 4. 对 pgr 的启示：`fq trim-qual`
 
 ### 4.1 移植核心：Mott/BWA 累积质量法
 
@@ -126,7 +126,7 @@ fn quality_trim_index(qual: &[u8], cutoff_front: i32, cutoff_back: i32, base: u8
 
 ### 4.2 与滑窗共存（`--method`）
 
-根据 [sickle.md](./sickle.md) §4.5 的结论，`fq trim-q` 建议提供两种质量修剪算法：
+根据 [sickle.md](./sickle.md) §4.5 的结论，`fq trim-qual` 建议提供两种质量修剪算法：
 
 - `--method sliding`（默认）：忠实移植 sickle/Trimmomatic 滑窗语义，直观通用。
 - `--method mott`：移植 `quality_trim_index`，可修中间低质量区，作为更精细的备选。
@@ -139,7 +139,7 @@ fn quality_trim_index(qual: &[u8], cutoff_front: i32, cutoff_back: i32, base: u8
 2. **5'/3' 独立 cutoff**：`-q 5,3` 允许两端不同阈值，比 sickle 的单阈值灵活。pgr 可支持 `--qual-front`/`--qual-back` 或 `--quality-cutoff FRONT,BACK`。
 3. **`--quality-base` 可配置**：默认 33，但保留覆盖能力（Solexa +64 等）。
 4. **NextSeq polyG 变体**：`nextseq_trim_index` 把 G 质量强制为 `cutoff-1`，简单优雅地处理 NovaSeq/NextSeq 的暗循环 G 尾巴。若 pgr 面向现代测序平台，值得作为 `--nextseq` 选项移植。
-5. **期望错误数过滤**（`expected_errors`）：现代长读/高保真数据常用整条读的期望错误数而非逐碱基质量做过滤，可作为 `fq trim-q` 之外的 `fq` 过滤功能参考。
+5. **期望错误数过滤**（`expected_errors`）：现代长读/高保真数据常用整条读的期望错误数而非逐碱基质量做过滤，可作为 `fq trim-qual` 之外的 `fq` 过滤功能参考。
 
 ### 4.4 与 pgr 现有约束的应对
 

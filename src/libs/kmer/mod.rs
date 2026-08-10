@@ -9,6 +9,7 @@ pub mod extract;
 pub mod gc;
 pub mod genomescope;
 pub mod hist;
+pub mod khist;
 pub mod nbinom;
 pub mod profile;
 pub mod qcheck;

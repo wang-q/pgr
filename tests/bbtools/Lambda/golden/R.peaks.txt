@@ -1,0 +1,16 @@
+#k	31
+#unique_kmers	87941
+#error_kmers	39927
+#genomic_kmers	48014
+#main_peak	56
+#genome_size_in_peaks	48014
+#genome_size	48504
+#haploid_genome_size	48504
+#fold_coverage	56
+#haploid_fold_coverage	56
+#ploidy	1
+#percent_repeat_in_peaks	0.000
+#percent_repeat	0.000
+#start	center	stop	max	volume
+8	11	15	31	139
+22	56	97	2077	48014

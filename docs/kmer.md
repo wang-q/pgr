@@ -40,6 +40,34 @@ pgr kmer table reads.fq.gz -k 21 -o reads.pkt
 pgr kmer table a.fa b.fa.gz -k 17 -o all.pkt
 ```
 
+### hist
+
+Builds a k-mer frequency histogram from sequences or an existing table and
+writes it in the FastK `.hist` binary layout (readable by Histex, KatGC, and
+GenomeScope tooling). With `--khist-text` and `--peaks`, it also writes the
+BBTools `kmercountexact.sh` text outputs (`#Depth Count logScale` histogram
+and the peaks summary), byte-identical to kmercountexact with default
+parameters.
+
+```bash
+pgr kmer hist [OPTIONS] --outfile <outfile> [infile]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `infile` | Input FASTA/FASTQ file to process (unless `--table` is given) |
+| `-t, --table <file>` | Reuse a k-mer table (`.pkt`); k is read from the table |
+| `-k, --kmer <int>` | K-mer size (required unless `--table` is given) |
+| `-o, --outfile <file>` | Output `.hist` filename |
+| `--khist-text <file>` | Also write the kmercountexact text histogram |
+| `--peaks <file>` | Also write the kmercountexact peaks summary |
+
+```bash
+pgr kmer hist reads.fq.gz -k 31 -o reads.hist \
+    --khist-text reads.khist.txt --peaks reads.peaks.txt
+```
+
+
 ### profile
 
 Generates one k-mer count profile per sequence (read or chromosome) and

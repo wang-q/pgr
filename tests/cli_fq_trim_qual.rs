@@ -29,7 +29,7 @@ fn command_fq_trim_q_single_end() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -53,7 +53,7 @@ fn command_fq_trim_q_length_threshold_drops_trimmed_reads() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -79,7 +79,7 @@ fn command_fq_trim_q_no_fiveprime() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out_default.to_str().unwrap(),
@@ -94,7 +94,7 @@ fn command_fq_trim_q_no_fiveprime() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out_no5.to_str().unwrap(),
@@ -144,7 +144,7 @@ fn command_fq_trim_q_paired_separated_with_singles() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             r1_path.to_str().unwrap(),
             r2_path.to_str().unwrap(),
             "-o",
@@ -205,7 +205,7 @@ fn command_fq_trim_q_paired_interleaved() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             r1_path.to_str().unwrap(),
             r2_path.to_str().unwrap(),
             "-o",
@@ -242,7 +242,7 @@ fn command_fq_trim_q_mott_method() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -276,7 +276,7 @@ fn command_fq_trim_q_auto_detects_phred64() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out_auto.to_str().unwrap(),
@@ -291,7 +291,7 @@ fn command_fq_trim_q_auto_detects_phred64() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out_33.to_str().unwrap(),
@@ -327,7 +327,7 @@ fn command_fq_trim_q_polyg_right() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -359,7 +359,7 @@ fn command_fq_trim_q_gzipped_input() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             in_path.to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -382,7 +382,7 @@ fn command_fq_trim_q_rejects_fasta_input() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -403,7 +403,7 @@ fn command_fq_trim_q_rejects_invalid_quality() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -425,7 +425,7 @@ fn command_fq_trim_q_rejects_outfile2_with_single_input() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             file.path().to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -450,7 +450,7 @@ fn command_fq_trim_q_output_same_as_input_rejected() {
     .unwrap();
 
     PgrCmd::new()
-        .args(&["fq", "trim-q", &path, "-o", &path])
+        .args(&["fq", "trim-qual", &path, "-o", &path])
         .assert()
         .failure()
         .stderr(predicates::str::contains("is also an input file"));
@@ -476,7 +476,7 @@ fn command_fq_trim_q_outputs_distinct() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-q",
+            "trim-qual",
             r1_path.to_str().unwrap(),
             r2_path.to_str().unwrap(),
             "-o",
