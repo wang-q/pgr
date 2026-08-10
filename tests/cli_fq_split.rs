@@ -110,3 +110,91 @@ fn command_fq_split_matches_bbtools_repair_golden() {
         );
     }
 }
+
+#[test]
+fn command_fq_split_stdout_matches_golden() {
+    // R1 written to stdout must match the BBTools repair golden byte for
+    // byte; R2/singles files match as in the file-output test.
+    let out_dir = tempfile::tempdir().unwrap();
+    let r2 = out_dir.path().join("r2.fq");
+    let s = out_dir.path().join("s.fq");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "split",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-o",
+            "stdout",
+            "--outfile-2",
+            r2.to_str().unwrap(),
+            "--outfile-single",
+            s.to_str().unwrap(),
+        ])
+        .run();
+
+    assert_eq!(
+        stdout.as_bytes(),
+        read_gz("tests/bbtools/Lambda/golden/R1.fq.gz"),
+        "stdout R1 differs from golden"
+    );
+    assert_eq!(
+        std::fs::read(&r2).unwrap(),
+        read_gz("tests/bbtools/Lambda/golden/R2.fq.gz"),
+        "R2 differs from golden"
+    );
+    assert_eq!(
+        std::fs::read(&s).unwrap(),
+        read_gz("tests/bbtools/Lambda/golden/Rs.fq.gz"),
+        "singles differs from golden"
+    );
+}
+
+#[test]
+fn command_fq_split_without_singles_discards_trailing_read() {
+    // A trailing read without its mate is discarded with a warning when no
+    // --outfile-single is given.
+    let input = "\
+@r1/1 c1
+ACGT
++
+!!!!
+@r1/2 c2
+TGCA
++
+####
+@solo/1 c3
+AAAA
++
+BBBB
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let r1 = out_dir.path().join("r1.fq");
+    let r2 = out_dir.path().join("r2.fq");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fq",
+            "split",
+            file.path().to_str().unwrap(),
+            "-o",
+            r1.to_str().unwrap(),
+            "--outfile-2",
+            r2.to_str().unwrap(),
+        ])
+        .run();
+
+    assert!(
+        stderr.contains("unpaired read discarded"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&r1).unwrap(),
+        "@r1/1 c1\nACGT\n+\n!!!!\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&r2).unwrap(),
+        "@r1/2 c2\nTGCA\n+\n####\n"
+    );
+}

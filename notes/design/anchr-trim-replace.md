@@ -513,5 +513,41 @@ minlen=0、ftm=5 组合）与 `bbduk.sh qtrim=r trimq=... minlen=...` 逐字节
 
 ---
 
+### 4.12 bbduk 功能扩展（2026-08-10，第一梯队）
+
+对照 BBTools-40.01 源码为 `fq trim-adapter` 补齐 trim.era.sh 之外的
+bbduk 功能（默认关闭，不影响既有 golden）。**14 组 Lambda 真实数据黑盒
+对照全部逐字节一致**：
+
+* **qtrim 扩展**：`--qtrim r|l|rl|w`（原仅 `r`）。`rl/l` 走
+  `testOptimal` 双向 Kadane（保留最高质量连续段）；`w` 走
+  `testRightWindow`（窗口和 < `max(window*trimq,1)` 即从右剪，默认
+  window=4，`--qtrim-window` 可调）。对照：r/l/rl/w 各全量一致。
+* **polymer**：`--trim-poly-a`（A/T 两端）、`--trim-poly-g-left/right`、
+  `--trim-poly-c-left/right`（`detectPolyLeft/Right`，允许
+  `--max-non-poly` 个间断）、`--filter-poly-g/c`（检测左端前缀后整条
+  丢弃）。对照：trimpolya+trimpolygright、trimpolycright+trimpolya、
+  filterpolyg 各一致。
+* **质量/组成过滤**：`--maq/--maqb`（按错误概率平均，
+  `expectedErrors/len → probErrorToPhred`）、`--mbq`（最低碱基质量）、
+  `--maxnrate`（40.01 新增，N 比例）、`--mcb`（连续 ACGT）、
+  `--minlen-fraction`（mlf，动态 minlen）、`--maxlength`。
+  对照：maq+mbq、mcb+mlf+maxlength（39.38）、maxnrate（40.01）各一致。
+* **GC 过滤**：`--mingc/--maxgc` + `--no-pair-gc`（gcpairs=f；默认按对
+  平均 GC），在 forceTrim 前用初始长度判定。对照一致。
+* **forcetrim**：`--forcetrim-left/right/right2`（与既有 `--ftm` 组合，
+  `b=min(b0,b1,b2)` 后 `trimByAmount(a, len-b-1, 1)`）。对照一致。
+* **kmask**：`--kmask <symbol|lc|t>` + `--mask-fully-covered` +
+  `--trim-pad`（ktrimN 模式，替代 trim）：全 k 命中标记
+  `[i-(k-1-trimPad), i+trimPad+1)`，短 kmer（mink）标记两端；lc 转小写、
+  t/N 掩码并清零质量。对照：kmask=N、kmask=lc、maskfullycovered 各一致。
+* **陷阱**：`testOptimal` 的 left = `maxLoc-maxCount+1` 必须用有符号运算
+  （`19usize-20usize` 先下溢）；`trimByAmount` 的保留段用
+  `copyWithin(left..len-right)`（两次 drain 在 left>keep 时越界）；
+  处理顺序对齐 bbduk：GC → forceTrim → kmer → tbo → polymer → qtrim →
+  minlen/maxlength → maq/mbq/maxns/maxnrate/mcb。
+
+---
+
 *参考来源: [trim.tera.sh](../../../anchr/templates/trim.tera.sh)（anchr 项目，只读） |
 BBTools-40.01 源码 | [fq-trim-qual.md](fq-trim-qual.md) | [seq-reader.md](seq-reader.md)*

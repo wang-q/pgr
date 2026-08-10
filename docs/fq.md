@@ -209,10 +209,40 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
 *   `--no-tbo`: Disable overlap trimming.
 *   `--no-tpe`: Disable even pair trimming.
 *   `--no-qtrim`: Disable quality trimming.
-*   `--trimq <int>`: Quality threshold for `qtrim=r` (default: 15).
+*   `--qtrim <r|l|rl|w|f>`: Quality trim mode (default: `r`; `w` uses a
+    sliding window of `--qtrim-window`, `f` disables).
+*   `--qtrim-window <int>`: Window size for `--qtrim w` (default: 4).
+*   `--trimq <int>`: Quality threshold for qtrim (default: 15).
 *   `--minlen <int>`: Minimum kept read length (default: 60).
+*   `--minlen-fraction <float>`: Minimum read length as a fraction of the
+    original (`mlf`; default: 0).
 *   `--maxns <int>`: Maximum allowed N bases; negative disables (default: 0).
+*   `--maxnrate <float>`: Discard reads with more than this fraction of Ns
+    (default: 1, disabled).
 *   `--ftm <int>`: Right-trim lengths to a multiple (default: 5).
+*   `--forcetrim-left <int>`: Trim bases left of this position.
+*   `--forcetrim-right <int>`: Trim bases right of this position.
+*   `--forcetrim-right2 <int>`: Trim this many bases on the right end.
+*   `--trim-poly-a <int>`: Trim poly-A/T tails of at least this length.
+*   `--trim-poly-g-left/--trim-poly-g-right <int>`: Trim poly-G prefixes/tails
+    of at least this length.
+*   `--filter-poly-g <int>`: Discard reads with a poly-G prefix of at least
+    this length (poly-C equivalents: `--trim-poly-c-left/right`,
+    `--filter-poly-c`).
+*   `--max-non-poly <int>`: Allowed non-polymer bases inside a polymer run
+    (default: 1).
+*   `--maq <float>`: Discard reads with average quality below this.
+*   `--maqb <int>`: Use only this many leading bases for `--maq`.
+*   `--mbq <int>`: Discard reads with any base below this quality.
+*   `--mcb <int>`: Discard reads without this many consecutive ACGT bases.
+*   `--maxlength <int>`: Discard reads longer than this (default: 0 = off).
+*   `--mingc <float>` / `--maxgc <float>`: Discard reads with GC content
+    below/above these bounds.
+*   `--no-pair-gc`: Check GC per read instead of the pair average.
+*   `--kmask <symbol|lc|t>`: Mask matching k-mers with a symbol (`t` = `N`)
+    or lowercase them (`lc`) instead of trimming; requires `--ref`.
+*   `--mask-fully-covered`: Only mask bases fully covered by matching k-mers.
+*   `--trim-pad <int>`: Extra bases to mask around matching k-mers.
 *   `--no-toss-broken-reads`: Keep surviving mates of discarded reads.
 *   `-p, --parallel <int|auto>`: Worker threads (default: logical CPU count);
     output order is preserved for any thread count.

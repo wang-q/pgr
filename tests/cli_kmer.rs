@@ -192,6 +192,53 @@ fn command_kmer_profile_self_and_relative() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_kmer_profile_real_lambda() -> anyhow::Result<()> {
+    // Real Lambda reads: self and relative profiles both cover all 36384
+    // reads and write the .pkp format.
+    let temp = tempfile::TempDir::new()?;
+    let pkt = temp.path().join("t.pkt");
+    let self_pkp = temp.path().join("self.pkp");
+    let rel_pkp = temp.path().join("rel.pkp");
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            pkt.to_str().unwrap(),
+        ])
+        .run();
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "profile",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-k",
+            "31",
+            "-o",
+            self_pkp.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("36384 profiles"), "stderr: {stderr}");
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "profile",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "-t",
+            pkt.to_str().unwrap(),
+            "-o",
+            rel_pkp.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(&std::fs::read(&self_pkp)?[0..4], b"PKPP");
+    assert_eq!(&std::fs::read(&rel_pkp)?[0..4], b"PKPP");
+    Ok(())
+}
+
+#[test]
 fn command_kmer_reads_fastq_and_stdin() -> anyhow::Result<()> {
     let temp = tempfile::TempDir::new()?;
     let fq = temp.path().join("in.fq");

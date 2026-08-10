@@ -570,4 +570,5 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
   length≈46789，覆盖正常拟合区域）及 `command_kmer_gc_real_lambda`（peak
   ∈ 50..60）、`command_kmer_qhist_real_lambda`（threshold 38 + depth-1
   计数 = golden 38961）、`command_kmer_qcheck_real_lambda`（flagged
-  2–5%）；全部引用现有 golden，不新增测试料，合成行为测试保留。
+  2–5%）、`command_kmer_profile_real_lambda`（36384 profiles，self/
+  relative）；全部引用现有 golden，不新增测试料，合成行为测试保留。

@@ -34,6 +34,10 @@ pub struct AdapterTrimOptions {
     pub tpe: bool,
     /// Right quality trim (`qtrim=r`).
     pub qtrim_right: bool,
+    /// Left quality trim (`qtrim=l` / `qtrim=rl`).
+    pub qtrim_left: bool,
+    /// Quality trim sliding window (`qtrim=w`; 0 disables window mode).
+    pub qtrim_window: usize,
     /// Quality threshold for `qtrim=r` (`trimq`).
     pub trimq: u8,
     /// Discard reads shorter than this (`minlen`).
@@ -42,6 +46,12 @@ pub struct AdapterTrimOptions {
     pub maxns: i64,
     /// Right-trim lengths to a multiple of this (`ftm`; 0 disables).
     pub ftm: usize,
+    /// Trim bases left of this position (`forcetrimleft`; 0 disables).
+    pub force_trim_left: usize,
+    /// Trim bases right of this position (`forcetrimright`; 0 disables).
+    pub force_trim_right: usize,
+    /// Trim this many bases on the right end (`forcetrimright2`; 0 disables).
+    pub force_trim_right2: usize,
     /// Discard a pair when either mate fails (`tossbrokenreads`).
     pub toss_broken_reads: bool,
     /// Reference FASTA of adapters/contaminants (`ref`); `None` skips all
@@ -52,6 +62,54 @@ pub struct AdapterTrimOptions {
     /// Discard reads with more than this many matching k-mers (filter mode;
     /// used when `ktrim_right` is false).
     pub max_bad_kmers: usize,
+    /// Trim poly-A/T tails of at least this length (`trimpolya`).
+    pub trim_poly_a: usize,
+    /// Trim poly-G prefixes of at least this length (`trimpolygleft`).
+    pub trim_poly_g_left: usize,
+    /// Trim poly-G tails of at least this length (`trimpolygright`).
+    pub trim_poly_g_right: usize,
+    /// Discard reads with a poly-G prefix of at least this length
+    /// (`filterpolyg`).
+    pub filter_poly_g: usize,
+    /// Trim poly-C prefixes of at least this length (`trimpolycleft`).
+    pub trim_poly_c_left: usize,
+    /// Trim poly-C tails of at least this length (`trimpolycright`).
+    pub trim_poly_c_right: usize,
+    /// Discard reads with a poly-C prefix of at least this length
+    /// (`filterpolyc`).
+    pub filter_poly_c: usize,
+    /// Allowed non-polymer bases inside a polymer run (`maxnonpoly`).
+    pub max_non_poly: usize,
+    /// Discard reads with average quality below this (`minavgquality`).
+    pub min_avg_quality: f64,
+    /// Use only this many leading bases for `maq` (`maqb`; 0 = all).
+    pub min_avg_quality_bases: usize,
+    /// Discard reads with any base below this quality (`minbasequality`).
+    pub min_base_quality: u8,
+    /// Discard reads with more than this fraction of Ns (`maxnrate`;
+    /// 1 = disabled).
+    pub max_n_rate: f64,
+    /// Minimum read length as a fraction of the original (`mlf`; 0 = off).
+    pub min_len_fraction: f64,
+    /// Discard reads longer than this (`maxlength`).
+    pub max_length: usize,
+    /// Discard reads without this many consecutive ACGT bases (`mcb`).
+    pub min_consecutive_bases: usize,
+    /// Discard reads with GC content below this (`mingc`).
+    pub min_gc: f64,
+    /// Discard reads with GC content above this (`maxgc`).
+    pub max_gc: f64,
+    /// Average GC over the pair (`gcpairs`).
+    pub use_pair_gc: bool,
+    /// Replace matching k-mers with this symbol (`kmask`; `None` = trim
+    /// mode, `Some(b'N')` = mask with N).
+    pub kmask_symbol: Option<u8>,
+    /// Lowercase masked bases (`kmask=lc`).
+    pub kmask_lowercase: bool,
+    /// Only mask bases fully covered by k-mers (`maskfullycovered`).
+    pub kmask_fully_covered: bool,
+    /// Extra bases to mask around matching k-mers (`trimpad`).
+    pub trim_pad: usize,
     /// Optional path for per-reference match statistics (`bbduk stats=`).
     pub stats: Option<String>,
 }
@@ -431,6 +489,37 @@ impl ReadBuf {
             }
         }
     }
+
+    /// Trim amounts from both ends (`TrimRead.trimByAmount`): when the
+    /// requested trim would leave fewer than `min_result` bases, the right
+    /// trim is clamped to `max(1, len - min_result)` and the left trim is
+    /// zeroed (len=1 empties the read).
+    fn trim_by_amount(&mut self, left_trim: usize, right_trim: usize, min_result: usize) {
+        let len = self.len();
+        if len < 1 {
+            return;
+        }
+        let min_result = len.min(min_result);
+        let mut left_trim = left_trim.min(len);
+        let mut right_trim = right_trim.min(len);
+        if left_trim + right_trim + min_result > len {
+            right_trim = 1.max(len.saturating_sub(min_result));
+            left_trim = 0;
+        }
+        if left_trim + right_trim > 0 {
+            let keep = len - left_trim - right_trim;
+            self.seq.copy_within(left_trim..len - right_trim, 0);
+            self.seq.truncate(keep);
+            if self.qual.len() >= left_trim + right_trim {
+                let qlen = self.qual.len();
+                self.qual
+                    .copy_within(left_trim..qlen.saturating_sub(right_trim), 0);
+                self.qual.truncate(keep);
+            } else {
+                self.qual.clear();
+            }
+        }
+    }
 }
 
 /// k-mer right trimming (bbduk `ktrim=r`). Returns bases trimmed.
@@ -504,6 +593,140 @@ fn ktrim(
         read.trim_to_position(0, right, 1);
     }
     (before - read.len(), id0)
+}
+
+/// Mask matching k-mers (`bbduk kmask`, ktrimN mode). Returns bases masked.
+///
+/// Full-k k-mers mark `[i-(k-1-trimPad), i+trimPad+1)`; short k-mers
+/// (`mink`) mark the read tips. `maskfullycovered` inverts to only bases
+/// fully covered by matching k-mers.
+fn kmask(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashMap<i64, u32>) -> usize {
+    let masks = Masks::new(opts.k);
+    let min_len = 1.max(opts.k.min(opts.mink));
+    if read.len() < min_len || table.is_empty() {
+        return 0;
+    }
+    let bases = read.seq.clone();
+    let n = bases.len();
+    let mut marked = vec![false; n];
+    let mut found = 0usize;
+    let mut id0 = 0u32;
+    let minus = opts.k.saturating_sub(1).saturating_sub(opts.trim_pad);
+    let plus = opts.trim_pad + 1;
+    let fully = opts.kmask_fully_covered;
+    if fully {
+        marked.fill(true);
+    }
+
+    let mut kmer = 0i64;
+    let mut rkmer = 0i64;
+    let mut len = 0usize;
+    for (i, &b) in bases.iter().enumerate() {
+        let x = symbol_to_number0(b);
+        let x2 = symbol_to_complement_number0(b);
+        kmer = ((kmer << BPB) | x) & masks.mask;
+        rkmer = ((rkmer >> BPB) | (x2 << masks.shift2)) & masks.mask;
+        len += 1;
+        if len >= opts.k {
+            let lo = i.saturating_sub(minus);
+            let hi = (i + plus).min(n);
+            if let Some(id) = get_value(kmer, rkmer, masks.kmask, table) {
+                if id0 == 0 {
+                    id0 = id;
+                }
+                found += 1;
+                if fully {
+                    marked[lo..hi].fill(false);
+                } else {
+                    marked[lo..hi].fill(true);
+                }
+            } else if fully {
+                marked[lo..hi].fill(false);
+            }
+        }
+    }
+
+    // Short k-mers at both read tips.
+    if opts.mink > 0 && opts.mink < opts.k {
+        // Left end (reference suffix table).
+        kmer = 0;
+        rkmer = 0;
+        len = 0;
+        let lim = opts.k.min(n);
+        for (i, &b) in bases.iter().take(lim).enumerate() {
+            let x = symbol_to_number0(b);
+            let x2 = symbol_to_complement_number0(b);
+            kmer = ((kmer << BPB) | x) & masks.mask;
+            rkmer |= x2 << (BPB * len as u32);
+            len += 1;
+            if len >= opts.mink {
+                let hi = (i + opts.trim_pad + 1).min(n);
+                if let Some(id) = get_value(kmer, rkmer, masks.length_mask[len], table) {
+                    if id0 == 0 {
+                        id0 = id;
+                    }
+                    found += 1;
+                    if fully {
+                        marked[0..hi].fill(false);
+                    } else {
+                        marked[0..hi].fill(true);
+                    }
+                } else if fully {
+                    marked[0..hi].fill(false);
+                }
+            }
+        }
+        // Right end (reference prefix table).
+        kmer = 0;
+        rkmer = 0;
+        len = 0;
+        let lim = n as i64 - opts.k as i64;
+        let mut i = n as i64 - 1;
+        while i > lim {
+            let b = bases[i as usize];
+            let x = symbol_to_number0(b);
+            let x2 = symbol_to_complement_number0(b);
+            kmer |= x << (BPB * len as u32);
+            rkmer = ((rkmer << BPB) | x2) & masks.mask;
+            len += 1;
+            if len >= opts.mink {
+                let lo = (i as usize).saturating_sub(opts.trim_pad);
+                if let Some(id) = get_value(kmer, rkmer, masks.length_mask[len], table) {
+                    if id0 == 0 {
+                        id0 = id;
+                    }
+                    found += 1;
+                    if fully {
+                        marked[lo..n].fill(false);
+                    } else {
+                        marked[lo..n].fill(true);
+                    }
+                } else if fully {
+                    marked[lo..n].fill(false);
+                }
+            }
+            i -= 1;
+        }
+    }
+
+    if found == 0 {
+        return 0;
+    }
+    let mut masked = 0usize;
+    for (i, &m) in marked.iter().enumerate() {
+        if m {
+            masked += 1;
+            if opts.kmask_lowercase {
+                read.seq[i] = bases[i].to_ascii_lowercase();
+            } else {
+                read.seq[i] = opts.kmask_symbol.unwrap_or(b'N');
+                if opts.kmask_symbol == Some(b'N') && !read.qual.is_empty() {
+                    read.qual[i] = 0;
+                }
+            }
+        }
+    }
+    masked
 }
 
 /// BBMergeOverlapper.mateByOverlapRatioJava (no-quality path, strict mode).
@@ -702,15 +925,18 @@ fn prob_error() -> [f32; 128] {
     r
 }
 
-/// Quality right trim (TrimRead.trimFast with optimalMode).
-fn qtrim_right(read: &mut ReadBuf, trimq: u8, prob: &[f32; 128]) -> usize {
+/// Optimal quality trim amounts on both ends (TrimRead.testOptimal).
+///
+/// Kadane maximum-subarray over `avgErrorRate - probError`: the max-sum
+/// contiguous run is kept, everything left of it and right of it is trimmed.
+fn test_optimal(read: &ReadBuf, trimq: u8, prob: &[f32; 128]) -> (usize, usize) {
     if read.len() == 0 {
-        return 0;
+        return (0, 0);
     }
     let bases = read.seq.clone();
     let qual = read.qual.clone();
     if qual.is_empty() {
-        return 0;
+        return (0, 0);
     }
     // avgErrorRate = phredToProbError(trimq), like Parser.trimE().
     let avg_error_rate = 10f64.powf(-0.1 * trimq as f64) as f32;
@@ -741,25 +967,242 @@ fn qtrim_right(read: &mut ReadBuf, trimq: u8, prob: &[f32; 128]) -> usize {
             count = 0;
         }
     }
-    let right = if max_score > 0.0 {
-        read.len() - max_loc as usize - 1
-    } else {
-        read.len()
-    };
-    let before = read.len();
-    if right > 0 {
-        // TrimRead.trimByAmount(r, 0, right, 1, false): when the requested
-        // trim would leave fewer than 1 base, clamp to len-1 (or 1 for
-        // len=1, which empties the read).
-        let len = read.len();
-        let right_trim = if right >= len { 1.max(len - 1) } else { right };
-        if right_trim > 0 {
-            let keep = len - right_trim;
-            read.seq.truncate(keep);
-            read.qual.truncate(keep.min(read.qual.len()));
+    if max_score <= 0.0 {
+        return (0, read.len());
+    }
+    let left = (max_loc - max_count + 1).max(0) as usize;
+    let right = read.len() - max_loc as usize - 1;
+    (left, right)
+}
+
+/// Sliding-window quality trim amount on the right (TrimRead.testRightWindow).
+///
+/// Windows with total quality below `max(window * trimq, 1)` are trimmed
+/// from the right end; `window` defaults to 4 in BBDuk.
+fn test_right_window(read: &ReadBuf, trimq: u8, window: usize) -> usize {
+    let qual = &read.qual;
+    if qual.len() < window {
+        return 0;
+    }
+    let thresh = (window as u32 * trimq as u32).max(1);
+    let mut sum = 0u32;
+    for (i, &q) in qual.iter().enumerate() {
+        sum += q as u32;
+        let j = i as i64 - window as i64;
+        if j >= -1 {
+            if j >= 0 {
+                sum -= qual[j as usize] as u32;
+            }
+            if sum < thresh {
+                return qual.len() - j as usize - 1;
+            }
         }
     }
+    0
+}
+
+/// Apply quality trimming to both ends (TrimRead.trimFast).
+fn qtrim(read: &mut ReadBuf, opts: &AdapterTrimOptions, prob: &[f32; 128]) -> usize {
+    if read.len() == 0 {
+        return 0;
+    }
+    let (left, right) = if opts.qtrim_window > 0 {
+        (0, test_right_window(read, opts.trimq, opts.qtrim_window))
+    } else {
+        let (l, r) = test_optimal(read, opts.trimq, prob);
+        (
+            if opts.qtrim_left { l } else { 0 },
+            if opts.qtrim_right { r } else { 0 },
+        )
+    };
+    let before = read.len();
+    if left + right > 0 {
+        read.trim_by_amount(left, right, 1);
+    }
     before - read.len()
+}
+
+/// GC fraction over ACGT bases only (`Read.gc`); Ns do not count.
+fn gc_fraction(seq: &[u8]) -> f64 {
+    let mut at = 0usize;
+    let mut gc = 0usize;
+    for &b in seq {
+        match b {
+            b'A' | b'a' | b'T' | b't' => at += 1,
+            b'G' | b'g' | b'C' | b'c' => gc += 1,
+            _ => {}
+        }
+    }
+    if gc < 1 {
+        0.0
+    } else {
+        gc as f64 / (at + gc) as f64
+    }
+}
+
+/// Consecutive count of `base` from the left end (`Read.countLeft`).
+fn count_left(seq: &[u8], base: u8) -> usize {
+    seq.iter().take_while(|&&b| b == base).count()
+}
+
+/// Consecutive count of `base` from the right end (`Read.countRight`).
+fn count_right(seq: &[u8], base: u8) -> usize {
+    seq.iter().rev().take_while(|&&b| b == base).count()
+}
+
+/// Left polymer run length allowing up to `max_non_poly` gaps
+/// (`BBDukProcessor.detectPolyLeft`).
+fn detect_poly_left(seq: &[u8], min_poly: usize, max_non_poly: usize, base: u8) -> usize {
+    if seq.len() < min_poly {
+        return 0;
+    }
+    let mut trim_to = -1i64;
+    let mut polymer = 0usize;
+    let mut nonpoly = 0usize;
+    for (i, &b) in seq.iter().enumerate() {
+        if nonpoly > max_non_poly {
+            break;
+        }
+        if b == base {
+            polymer += 1;
+            if polymer >= min_poly {
+                nonpoly = 0;
+                trim_to = i as i64;
+            }
+        } else {
+            polymer = 0;
+            nonpoly += 1;
+        }
+    }
+    (trim_to + 1) as usize
+}
+
+/// Right polymer run length allowing up to `max_non_poly` gaps
+/// (`BBDukProcessor.detectPolyRight`).
+fn detect_poly_right(seq: &[u8], min_poly: usize, max_non_poly: usize, base: u8) -> usize {
+    if seq.len() < min_poly {
+        return 0;
+    }
+    let mut trim_to = seq.len() as i64;
+    let mut polymer = 0usize;
+    let mut nonpoly = 0usize;
+    for i in (0..seq.len()).rev() {
+        if nonpoly > max_non_poly {
+            break;
+        }
+        if seq[i] == base {
+            polymer += 1;
+            if polymer >= min_poly {
+                nonpoly = 0;
+                trim_to = i as i64;
+            }
+        } else {
+            polymer = 0;
+            nonpoly += 1;
+        }
+    }
+    seq.len() - trim_to as usize
+}
+
+/// Trim poly-A/T tails of at least `min_poly` (`BBDukProcessor.trimPolyA`).
+fn trim_poly_a(read: &mut ReadBuf, min_poly: usize) -> usize {
+    if read.len() < min_poly {
+        return 0;
+    }
+    let left = {
+        let l = count_left(&read.seq, b'A').max(count_left(&read.seq, b'T'));
+        if l < min_poly {
+            0
+        } else {
+            l
+        }
+    };
+    let right = {
+        let r = count_right(&read.seq, b'A').max(count_right(&read.seq, b'T'));
+        if r < min_poly {
+            0
+        } else {
+            r
+        }
+    };
+    if left + right == 0 {
+        return 0;
+    }
+    read.trim_by_amount(left, right, 1);
+    left + right
+}
+
+/// Trim polymer runs of `base` on either end (`BBDukProcessor.trimPoly`).
+fn trim_poly(
+    read: &mut ReadBuf,
+    min_left: usize,
+    min_right: usize,
+    max_non_poly: usize,
+    base: u8,
+) -> usize {
+    let left = if min_left > 0 {
+        detect_poly_left(&read.seq, min_left, max_non_poly, base)
+    } else {
+        0
+    };
+    let right = if min_right > 0 {
+        detect_poly_right(&read.seq, min_right, max_non_poly, base)
+    } else {
+        0
+    };
+    if left + right == 0 {
+        return 0;
+    }
+    read.trim_by_amount(left, right, 1);
+    left + right
+}
+
+/// Average quality by error probability over the first `max_bases`
+/// (`Read.avgQualityByProbabilityDouble`).
+fn avg_quality(read: &ReadBuf, prob: &[f32; 128], max_bases: usize) -> f64 {
+    let qual = &read.qual;
+    if qual.is_empty() {
+        return 0.0;
+    }
+    let limit = if max_bases < 1 {
+        qual.len()
+    } else {
+        max_bases.min(qual.len())
+    };
+    let mut e = 0f32;
+    for i in 0..limit {
+        if is_fully_defined(read.seq[i]) {
+            e += prob[qual[i] as usize];
+        }
+    }
+    let p = e / limit as f32;
+    if p >= 1.0 {
+        0.0
+    } else if p <= 0.000001 {
+        60.0
+    } else {
+        -10.0 * (p as f64).log10()
+    }
+}
+
+/// Lowest quality score (`Read.minQuality`).
+fn min_quality(read: &ReadBuf) -> u8 {
+    read.qual.iter().copied().min().unwrap_or(0)
+}
+
+/// Longest consecutive ACGT run (`Read.hasMinConsecutiveBases`).
+fn max_consecutive_bases(seq: &[u8]) -> usize {
+    let mut best = 0usize;
+    let mut len = 0usize;
+    for &b in seq {
+        if symbol_to_number(b) < 0 {
+            len = 0;
+        } else {
+            len += 1;
+            best = best.max(len);
+        }
+    }
+    best
 }
 
 /// Process one interleaved pair (or single); returns surviving pair.
@@ -777,21 +1220,81 @@ fn process_pair(
             s.total_reads.fetch_add(1, Ordering::Relaxed);
         }
     }
-    let minlen = opts.minlen;
-    // forceTrimModulo (ftm) before k-mer trimming.
-    if opts.ftm > 0 {
-        for r in [Some(&mut *r1), r2.as_deref_mut()].into_iter().flatten() {
-            if r.len() > 0 {
-                let b0 = r.len() - 1 - r.len() % opts.ftm;
-                r.trim_to_position(0, b0, 1);
+    let initial_len1 = r1.len();
+    let initial_len2 = r2.as_ref().map_or(0, |r| r.len());
+    let minlen1 = (initial_len1 as f64 * opts.min_len_fraction).max(opts.minlen as f64) as usize;
+    let minlen2 = (initial_len2 as f64 * opts.min_len_fraction).max(opts.minlen as f64) as usize;
+
+    // GC filter on initial lengths (before forceTrim).
+    if opts.min_gc > 0.0 || opts.max_gc < 1.0 {
+        let gc1 = if initial_len1 > 0 {
+            gc_fraction(&r1.seq)
+        } else {
+            -1.0
+        };
+        let gc2 = if initial_len2 > 0 {
+            gc_fraction(&r2.as_ref().unwrap().seq)
+        } else {
+            gc1
+        };
+        let (gc1, gc2) = if opts.use_pair_gc && r2.is_some() {
+            let gc = (gc1 * initial_len1 as f64 + gc2 * initial_len2 as f64)
+                / (initial_len1 + initial_len2) as f64;
+            (gc, gc)
+        } else {
+            (gc1, gc2)
+        };
+        if !r1.discarded && (gc1 < opts.min_gc || gc1 > opts.max_gc) {
+            r1.discarded = true;
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded && (gc2 < opts.min_gc || gc2 > opts.max_gc) {
+                r2.discarded = true;
             }
         }
     }
-    if r1.len() < minlen {
+
+    // forceTrim (ftl/ftr/ftr2/ftm) before k-mer trimming.
+    if opts.force_trim_left > 0
+        || opts.force_trim_right > 0
+        || opts.force_trim_right2 > 0
+        || opts.ftm > 0
+    {
+        for r in [Some(&mut *r1), r2.as_deref_mut()].into_iter().flatten() {
+            if r.len() > 0 {
+                let len = r.len();
+                let a = if opts.force_trim_left > 0 {
+                    opts.force_trim_left
+                } else {
+                    0
+                };
+                let b0 = if opts.ftm > 0 {
+                    len.saturating_sub(1) - len % opts.ftm
+                } else {
+                    len
+                };
+                let b1 = if opts.force_trim_right > 0 {
+                    opts.force_trim_right
+                } else {
+                    len
+                };
+                let b2 = if opts.force_trim_right2 > 0 {
+                    len.saturating_sub(1) - opts.force_trim_right2
+                } else {
+                    len
+                };
+                let b = b0.min(b1).min(b2);
+                if a > 0 || b < len {
+                    r.trim_by_amount(a, len.saturating_sub(b + 1), 1);
+                }
+            }
+        }
+    }
+    if r1.len() < minlen1 {
         r1.discarded = true;
     }
     if let Some(r2) = r2.as_deref_mut() {
-        if r2.len() < minlen {
+        if r2.len() < minlen2 {
             r2.discarded = true;
         }
     }
@@ -805,7 +1308,7 @@ fn process_pair(
             if let (Some(s), Some(id)) = (stats, id0) {
                 s.record(id, len_before);
             }
-            if r1.len() < minlen {
+            if r1.len() < minlen1 {
                 r1.discarded = true;
             }
         }
@@ -817,7 +1320,7 @@ fn process_pair(
                 if let (Some(s), Some(id)) = (stats, id0) {
                     s.record(id, len_before);
                 }
-                if r2.len() < minlen {
+                if r2.len() < minlen2 {
                     r2.discarded = true;
                 }
             }
@@ -832,6 +1335,16 @@ fn process_pair(
                         r2.trim_to_position(0, r1.len() - 1, 1);
                     }
                 }
+            }
+        }
+    } else if opts.kmask_symbol.is_some() || opts.kmask_lowercase {
+        // kmask mode (bbduk ktrimN).
+        if !r1.discarded {
+            let _ = kmask(r1, opts, table);
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded {
+                let _ = kmask(r2, opts, table);
             }
         }
     } else if !table.is_empty() {
@@ -906,31 +1419,196 @@ fn process_pair(
         }
     }
 
-    // Quality trim + final filters.
-    if opts.qtrim_right {
+    // Polymer trimming (bbduk order: A, G, C) after k-mer handling.
+    if opts.trim_poly_a > 0 && !remove {
         if !r1.discarded {
-            qtrim_right(r1, opts.trimq, prob);
-            if r1.len() < minlen {
+            trim_poly_a(r1, opts.trim_poly_a);
+            if r1.len() < minlen1 {
                 r1.discarded = true;
             }
         }
         if let Some(r2) = r2.as_deref_mut() {
             if !r2.discarded {
-                qtrim_right(r2, opts.trimq, prob);
-                if r2.len() < minlen {
+                trim_poly_a(r2, opts.trim_poly_a);
+                if r2.len() < minlen2 {
                     r2.discarded = true;
                 }
             }
         }
     }
-    if !r1.discarded && opts.maxns >= 0 && r1.count_undefined() > opts.maxns as usize {
+    if (opts.trim_poly_g_left > 0 || opts.trim_poly_g_right > 0 || opts.filter_poly_g > 0)
+        && !remove
+    {
+        if !r1.discarded {
+            if opts.filter_poly_g > 0
+                && detect_poly_left(&r1.seq, opts.filter_poly_g, opts.max_non_poly, b'G')
+                    >= opts.filter_poly_g
+            {
+                r1.discarded = true;
+            } else if opts.trim_poly_g_left > 0 || opts.trim_poly_g_right > 0 {
+                trim_poly(
+                    r1,
+                    opts.trim_poly_g_left,
+                    opts.trim_poly_g_right,
+                    opts.max_non_poly,
+                    b'G',
+                );
+                if r1.len() < minlen1 {
+                    r1.discarded = true;
+                }
+            }
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded {
+                if opts.filter_poly_g > 0
+                    && detect_poly_left(&r2.seq, opts.filter_poly_g, opts.max_non_poly, b'G')
+                        >= opts.filter_poly_g
+                {
+                    r2.discarded = true;
+                } else if opts.trim_poly_g_left > 0 || opts.trim_poly_g_right > 0 {
+                    trim_poly(
+                        r2,
+                        opts.trim_poly_g_left,
+                        opts.trim_poly_g_right,
+                        opts.max_non_poly,
+                        b'G',
+                    );
+                    if r2.len() < minlen2 {
+                        r2.discarded = true;
+                    }
+                }
+            }
+        }
+    }
+    if (opts.trim_poly_c_left > 0 || opts.trim_poly_c_right > 0 || opts.filter_poly_c > 0)
+        && !remove
+    {
+        if !r1.discarded {
+            if opts.filter_poly_c > 0
+                && detect_poly_left(&r1.seq, opts.filter_poly_c, opts.max_non_poly, b'C')
+                    >= opts.filter_poly_c
+            {
+                r1.discarded = true;
+            } else if opts.trim_poly_c_left > 0 || opts.trim_poly_c_right > 0 {
+                trim_poly(
+                    r1,
+                    opts.trim_poly_c_left,
+                    opts.trim_poly_c_right,
+                    opts.max_non_poly,
+                    b'C',
+                );
+                if r1.len() < minlen1 {
+                    r1.discarded = true;
+                }
+            }
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded {
+                if opts.filter_poly_c > 0
+                    && detect_poly_left(&r2.seq, opts.filter_poly_c, opts.max_non_poly, b'C')
+                        >= opts.filter_poly_c
+                {
+                    r2.discarded = true;
+                } else if opts.trim_poly_c_left > 0 || opts.trim_poly_c_right > 0 {
+                    trim_poly(
+                        r2,
+                        opts.trim_poly_c_left,
+                        opts.trim_poly_c_right,
+                        opts.max_non_poly,
+                        b'C',
+                    );
+                    if r2.len() < minlen2 {
+                        r2.discarded = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Quality trim (r/l/rl/w).
+    if (opts.qtrim_left || opts.qtrim_right || opts.qtrim_window > 0) && !remove {
+        if !r1.discarded {
+            qtrim(r1, opts, prob);
+            if r1.len() < minlen1 {
+                r1.discarded = true;
+            }
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded {
+                qtrim(r2, opts, prob);
+                if r2.len() < minlen2 {
+                    r2.discarded = true;
+                }
+            }
+        }
+    }
+
+    // minlen / maxlength after trimming.
+    if !r1.discarded && (r1.len() < minlen1 || r1.len() > opts.max_length) {
         r1.discarded = true;
     }
     if let Some(r2) = r2.as_deref_mut() {
-        if !r2.discarded && opts.maxns >= 0 && r2.count_undefined() > opts.maxns as usize {
+        if !r2.discarded && (r2.len() < minlen2 || r2.len() > opts.max_length) {
             r2.discarded = true;
         }
     }
+
+    // Quality / composition filters (bbduk order: maq, mbq, maxns,
+    // maxnrate, mcb).
+    if opts.min_avg_quality > 0.0 {
+        if !r1.discarded && avg_quality(r1, prob, opts.min_avg_quality_bases) < opts.min_avg_quality
+        {
+            r1.discarded = true;
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded
+                && avg_quality(r2, prob, opts.min_avg_quality_bases) < opts.min_avg_quality
+            {
+                r2.discarded = true;
+            }
+        }
+    }
+    if opts.min_base_quality > 0 {
+        if !r1.discarded && min_quality(r1) < opts.min_base_quality {
+            r1.discarded = true;
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded && min_quality(r2) < opts.min_base_quality {
+                r2.discarded = true;
+            }
+        }
+    }
+    if opts.maxns >= 0 {
+        if !r1.discarded && r1.count_undefined() > opts.maxns as usize {
+            r1.discarded = true;
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded && r2.count_undefined() > opts.maxns as usize {
+                r2.discarded = true;
+            }
+        }
+    }
+    if opts.max_n_rate < 1.0 {
+        if !r1.discarded && r1.count_undefined() as f64 > opts.max_n_rate * r1.len() as f64 {
+            r1.discarded = true;
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded && r2.count_undefined() as f64 > opts.max_n_rate * r2.len() as f64 {
+                r2.discarded = true;
+            }
+        }
+    }
+    if opts.min_consecutive_bases > 0 {
+        if !r1.discarded && max_consecutive_bases(&r1.seq) < opts.min_consecutive_bases {
+            r1.discarded = true;
+        }
+        if let Some(r2) = r2.as_deref_mut() {
+            if !r2.discarded && max_consecutive_bases(&r2.seq) < opts.min_consecutive_bases {
+                r2.discarded = true;
+            }
+        }
+    }
+
     if opts.toss_broken_reads {
         if r1.discarded {
             if let Some(r2) = r2 {

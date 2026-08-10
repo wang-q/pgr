@@ -358,3 +358,208 @@ fn command_fq_trim_adapter_no_ref_quality_trim_only() {
         )
     );
 }
+
+#[test]
+fn command_fq_trim_adapter_qtrim_rl_trims_both_ends() {
+    // Low-quality flanks, high-quality core: qtrim=rl trims both ends
+    // (bbduk testOptimal keeps the highest-quality run).
+    let input = "\
+@r1
+ACGTACGTACGTACGT
++
+!!!!IIIIIIII!!!!
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            file.path().to_str().unwrap(),
+            "--qtrim",
+            "rl",
+            "--trimq",
+            "15",
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "--minlen",
+            "0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "@r1\nACGTACGT\n+\nIIIIIIII\n"
+    );
+}
+
+#[test]
+fn command_fq_trim_adapter_qtrim_window_trims_low_quality_tail() {
+    // qtrim=w uses a sliding window: a low-quality tail triggers trimming
+    // once a full window falls below the threshold.
+    let input = "\
+@r1
+ACGTACGTACGTACGT
++
+IIIIIIII!!!!!!!!
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            file.path().to_str().unwrap(),
+            "--qtrim",
+            "w",
+            "--qtrim-window",
+            "4",
+            "--trimq",
+            "15",
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "--minlen",
+            "0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "@r1\nACGTACG\n+\nIIIIIII\n"
+    );
+}
+
+#[test]
+fn command_fq_trim_adapter_polymer_trim_and_gc_filter() {
+    // poly-A tail trimmed (trimpolya=4), then a read outside the GC band
+    // discarded (mingc/maxgc).
+    let input = "\
+@r1
+ACGTACGTACGTACGTAAAA
++
+IIIIIIIIIIIIIIIIIIII
+@r2
+AAAAAAAAAAAAAAAAAAAA
++
+IIIIIIIIIIIIIIIIIIII
+@r3
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIIIIIII
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            file.path().to_str().unwrap(),
+            "--qtrim",
+            "f",
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "--minlen",
+            "0",
+            "--trim-poly-a",
+            "4",
+            "--mingc",
+            "0.4",
+            "--maxgc",
+            "0.6",
+            "--no-toss-broken-reads",
+            "--no-pair-gc",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.contains("@r1\nACGTACGTACGTACGT\n"), "{text}");
+    assert!(!text.contains("@r2"), "{text}");
+    assert!(text.contains("@r3"), "{text}");
+}
+
+#[test]
+fn command_fq_trim_adapter_maq_mbq_and_mcb_filters() {
+    // maq=20 keeps r1 (avg Q30), mbq=5 discards r2 (has a Q0 base), mcb=10
+    // discards r3 (N run breaks consecutive ACGT).
+    let input = "\
+@r1
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIIIIIII
+@r2
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIIIIIII
+@r3
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIII!!!!
+@r4
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIIIIIII
+@r5
+ACGTACGTNNNNNNNNNNNN
++
+IIIIIIIIIIIIIIIIIIII
+@r6
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIIIIIII
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "trim-adapter",
+            file.path().to_str().unwrap(),
+            "--qtrim",
+            "f",
+            "--no-ktrim",
+            "--no-tbo",
+            "--no-tpe",
+            "--maxns=-1",
+            "--ftm",
+            "0",
+            "--minlen",
+            "0",
+            "--maq",
+            "20",
+            "--mbq",
+            "5",
+            "--mcb",
+            "10",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.starts_with("@r1\n"), "r1 must survive: {text}");
+    assert!(text.contains("@r2\n"), "pair1 must survive: {text}");
+    assert!(!text.contains("@r3"), "pair2 must fail mbq: {text}");
+    assert!(!text.contains("@r5"), "pair3 must fail mcb: {text}");
+}

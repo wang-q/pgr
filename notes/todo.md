@@ -19,6 +19,15 @@ clean，代码已提交）**：
   profile 全跑通；修复 gsize peak 估计：全局众数 → CallPeaks 主峰，
   peak=56 与 BBTools 一致、genome_size 47786 bp）。细节见
   `design/kmer.md` §10.8。
+- `fq split` 多参数核对完成：stdout 输出 R1 与 repair golden 逐字节一致、
+  尾记录（无 --outfile-single）warning + 丢弃均有测试；确认 `pgr::writer`
+  不做 `.gz` 自动压缩（设计如此，压缩由 shell 管道负责）、`fq interleave`
+  默认重命名 reads（roundtrip 逐字节不适用）。
+- bbduk 第一梯队功能补齐（2026-08-10）：`fq trim-adapter` 新增 qtrim
+  r/l/rl/w、polymer（poly-A/G/C + filter）、maq/mbq/maxnrate/mcb/mlf/
+  maxlength、GC 过滤、forcetrim、kmask（N/lc/fully-covered）——14 组
+  Lambda 真实数据黑盒对照 39.38/40.01 全部逐字节一致。细节见
+  `design/anchr-trim-replace.md` §4.12。
 
 **挂账/待决**：
 
@@ -31,8 +40,8 @@ clean，代码已提交）**：
 3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
    直方图，pgr 无 SAM 命令，用户决定放着。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。
-5. 剩余命令可再核对：`fq split`；`fq clump` 多参数 golden 验证**不做**
-   （体积控制，见 `design/anchr-trim-replace.md` §4.4 M1 注）。
+5. `fq split` 多参数核对已完成（见上）；`fq clump` 多参数 golden 验证
+   **不做**（体积控制，见 `design/anchr-trim-replace.md` §4.4 M1 注）。
    `kmer` 系列已用 Lambda 真实数据验证完成（见上）。
 
 ---
