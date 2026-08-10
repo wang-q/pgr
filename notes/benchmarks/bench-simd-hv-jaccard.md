@@ -279,6 +279,14 @@ ChaCha20 13.24 ns）；pgr 基准报告的是**完整 HV 编码**（n=10k × D=4
 1.11 ms 慢（随机内存访问 vs 连续 SIMD），且无精度收益。详见 hv.md
 §2.7 决策。
 
+### hv_benchmark 拆分（2026-08-09）
+
+现役核心（`hash_hv_bit`/`i8`/`sparse`，16 组）留在
+`benches/hv_benchmark.rs`（全跑 ~2.5 min）；历史对照（AVX-512 ref、
+RNG 候选、i16/pshufb、encode 变体、哈希吞吐）移入
+`benches/hv_benchmark_ref.rs`（按需 filter 跑）。原 54 组全跑
+10–20 min 的根因是组数多，非单组数据量。
+
 ## 3. 集合 Jaccard（`benches/jaccard_benchmark.rs`）
 
 每个集合 5005 个 u64（0..u16::MAX），105 个集合，随机取两集合比较。

@@ -4,118 +4,43 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-09：`pgr kmer` 七子命令全量交付）
+## 0. 会话交接（2026-08-10：BBTools 替换逐命令核对与修复）
 
-**已完成（本会话，测试 1544 全绿，clippy clean）**：
+**已完成（trim.era.sh 8 步 M0-M8 全部移植，测试 1594 全绿，fmt/clippy
+clean，代码已提交）**：
 
-- **`pgr kmer` 命令组（新顶级命令）**：`table`（FASTA/FASTQ → `.pkt`，
-  多输入合并，`-t1` 语义）/ `profile`（self 或缺省 `-t` relative → `.pkp`）/
-  `hist`（序列直算或 `-t` 表 → `.hist`）；k 解析 = 有表用表 k（
-  `count::k_of`），命令行给 k 则校验。`rept s-kmer`/`e-kmer` 保留不动。
-- **`pgr kmer gc`（KatGC 等价，已实现）**：`libs/kmer/gc.rs`（GC 字节查
-  表 + `gc_matrix` + 峰值/XMAX + `.kgc` 矩阵写）+ `cmd_pgr/kmer/gc.rs`
-  （`-X`/`-x` 对齐 KatGC）；**实测与本地编译的 MerquryFK KatGC 两个数据集
-  逐行 diff 为空**（峰值/XMAX/4 邻域平均/clamp 全一致）；`--tex` 渲染
-  KatGC heat 图等价（复用 `plot hh` 的 heatmap.tex 渲染器 + 自适应轴）。
-- **`pgr kmer qhist`（QUORUM 直方图等价，已实现）**：`libs/kmer/quality.rs`
-  （quorum `hash_with_quality` 语义：高质量出现主导、低质量不污染、N 拆分、
-  顺序无关聚合）+ `cmd_pgr/kmer/qhist.rs`（FASTQ 输入、阈值 = 自动检测
-  Phred 偏移 + 5 或 `-q` 显式）；输出 = quorum `histo_mer_database` 格式
-  （`count n_lowq n_highq`，cap 1000 + `-b` bits 封顶默认 127）。本机无
-  Jellyfish 2.0 未做端到端对照；验证 = 源码逐行核对 + 单测 + **独立逐事件
-  仿真对照**（随机 reads k=4/8/17 × 20 组：保序 quorum `add()` 仿真 vs
-  顺序无关聚合，结果一致）。
-- **`pgr kmer qcheck`（QUORUM read 判定器，已实现）**：
-  `libs/kmer/qcheck.rs`（anchor + 双向 extend 判定信号：高质量 anchor
-  查找、无延续 truncation、substitution、Poisson 碰撞检验；只判定不
-  修正）+ `cmd_pgr/kmer/qcheck.rs`（-o 保留 reads、`--discard-file` 丢弃
-  reads、参数对齐 quorum `--skip/--good/--anchor-count/--min-count/
-  --cutoff/--apriori-error-rate/--poisson-threshold`）。语义 = quorum
-  `find_starting_mer`/`extend`（`get_val` 仅高质量 k-mer 可作 anchor、
-  `get_best_alternatives` 最高质量等级候选）。anchr 场景 = 检测错误 read
-  直接丢弃（quorum.md §6.1）。
-- **`pgr kmer gsize`（峰值/基因组大小估计，已实现）**：
-  `hist.rs estimate`（peak_cov = 频次众数、total_kmers/peak 简单单倍体
-  估计）+ `cmd_pgr/kmer/gsize.rs`；合成 30× 1 kb reads 实测 peak≈26、
-  估计 969 bp（误差 ~3%）。`--model` 已实现 **genescopefk.R（GenomeScope
-  2.0）原生迁移**（`libs/kmer/genomescope.rs`）：负二项混合（p=1/2）+
-  **minpack lmdif 完整移植**（fdjac2/qrfac/qrsolv/lmpar/主循环，投影
-  边界，无新依赖）+ **R nmath dnbinom 逐位移植**（`libs/kmer/nbinom.rs`：
-  bd0/stirlerr/dbinom_raw/ebd0/dpois_raw，见
-  [[design/genescopefk.md]]）+ 四轮 trimming + 打分选择 + 真实 SE
-  （hessian）；输出 `summary.txt`/`model.txt`（对齐 anchr `2_fastk` 的
-  `grep ^kmercov` 解析）。**R 端到端对照（2026-08-10，本机 R + minpack.lm）：
-  修复 lmdif 移植 4 处列主序索引反转后单起点与 R 同盆地**（pgr
-  d=0/kmercov=55.76/bias=0/length=1017 vs R 55.73/988；summary 除
-  Model Fit/Error Rate 外逐字节一致；剩余为 Rust vs f2c C 语言级浮点
-  差异，详见 [[design/genescopefk.md]]）；p>2 多拓扑/错误分量明确不做。
-- **`pgr plot heat` / `pgr plot spectra`（绘图拆分，已实现）**：计算与
-  绘图分开（CLI 统一：单文件 `-o <file>`、多文件套件 `-o <dir>` 固定名）。
-  `heat` 读 `.kgc` 画 GC×覆盖度热图（KatGC 等价）；`spectra` 读 `.hist` +
-  `model.txt` 画单张标准谱图（linear，observed/model/errors/峰值/图例/
-  摘要，内容对齐 genescopefk.R、渲染 pgfplots 原生）；模板 =
-  `src/assets/spectra.tex`（独立可编译示例，
-  样式验证用，惯例同 venn/heatmap）；`gc --tex` / `gsize --model --plot`
-  为共享渲染的快捷
-  入口（`gsize --model --plot -o dir` → dir 内 summary/model/spectra.tex）。
-- **三种 kmer 格式定稿**：`.pkt`（表，原 `.pgrk` 改名，magic `PKTT`）、
-  `.pkp`（profile，magic `PKPP`，header + raw u16）、`.hist`（直方图，
-  **FASTK 字节兼容**：固定 low=1/high=32767，28B 头 + 32767×8B；实测
-  Histex 读 pgr 输出与 FastK 自产 **diff 为空**）。
-- **兼容性决策**：`.hist` 兼容（单文件 ~50 行，做）；`.prof` **不做**
-  （stub + `.pidx.N`/`.prof.N` 分片 + RLE，用户拍板：不喜欢分片）；
-  `.ktab` 维持不做。设计 = `design/kmer.md` §10（命令归属 + 输入形态 +
-  格式布局）。
-- 测试：kmer lib 单测（hist/pkp roundtrip、FASTK 布局字节核对）+
-  `tests/cli_kmer.rs`（5 例：help/table+hist 一致性/profile self+relative/
-  FASTQ+stdin/参数校验）。
-
-**上一会话（fq 系列）已完成**：
-
-- **`fq trim-qual`（sickle 替代，已实现）**：`libs/fq/trim.rs` +
-  `cmd_pgr/fq/trim_q.rs`；滑窗/Mott、质量编码 auto（BBDuk 算法）、双端 +
-  singles + interleaved、`--polyg-right`；设计 =
-  `design/fq-trim-qual.md`（已实现）。
-- **`fq range`（一期，FASTA `.loc` 模式）**：`libs/loc.rs`
-  （`create_fq_loc`/`open_fq_indexed`/`query_fq_locs`/
-  `normalize_pair_name`）+ `cmd_pgr/fq/range.rs`；name 归一化（strip
-  `/1` `/2`）、交错同名 `#n` 消歧、`name:start-end` 子段、BGZF 复用
-  `.gzi`、普通 gzip 明确不支持；设计 = `design/fq-index.md`
-  （一期实现；二期双端 S2 已落地：`--mate` + `--outfile-2`，同一组
-  ranges 对两端各建 `.loc` 索引、各输出一个文件，测试见
-  `tests/cli_fq_range.rs`）。
-- **BGZF 写侧基准**：`benches/bgzf_write_benchmark.rs`（单线程
-  `BgzfWriter` + `ParallelBgzfWriter` 1/2/3/4/6/8，50 MB 伪随机 ~7.3×），
-  Cargo.toml 注册 `harness=false`。
-- **AGENTS.md 基准测试条款细化**：性能优化先写基准；功能性新功能只需
-  正确性测试 + 吞吐 sanity。
-- **笔记**：`seq-reader.md`（writer 演进 + libdeflater 内存对比 + 写侧
-  基准）、`design/anchr-trim-replace.md`（BBTools 8 步替换路线）、
-  `references/quorum.md`（源码分析；§6.1 = 错误 read 直接丢弃，不做
-  修正）、`design/kmer.md` §9（FASTK 功能对照：**最大缺口 = 直方图 +
-  峰值/GenomeScope**，§9.1 = anchr 2_fastk 实际用法）、
-  `references/merqury-fk.md`（MerquryFK；README 2021 编写 ≠ 停更）。
-  （这些已提交：`2081dca`/`c536898`/`1bed636`/`e6f5b33`。）
-
-**未提交（本会话改动，勿覆盖；`.git` 只读，用户回来后提交）**：
-`libs/kmer/`（gc.rs/quality.rs/qcheck.rs 新增、count.rs 改名、hist.rs 增
-estimate、profile.rs pkp）、`cmd_pgr/kmer/`（gc/gsize/qhist/qcheck 新增）、
-`tests/cli_kmer.rs`、`docs/kmer.md`/`docs/formats/kmer.md`/
-`docs/usage_examples.md`、`README.md`/`CHANGELOG.md`/`AGENTS.md`、
-`notes/design/kmer.md`/`notes/todo.md`/`notes/project-understanding.md`/
-`notes/benchmarks/kmer-throughput.md`、`docs/rept.md` 等共 20 文件。
-提交前跑 fmt/clippy/test（已跑，全绿）。
+- `fq sample`/`trim-adapter`/`norm` 与 BBTools 39.38 逐字节一致复核完成：
+  修复 changequality、qtrim 空 read 边界、`--ref` 可选、norm minq=6；
+  reformat/bbduk 参数全景盘查（唯一缺口 = ihist，用户决定放着）；
+  fairy/khmer 源码分析不改变 norm 精确/近似决策；bbnorm 深度分箱暂不做。
+  细节见 `design/anchr-trim-replace.md` §4.0/§4.8–4.11、
+  `references/fairy.md`、`references/khmer.md`。
 
 **挂账/待决**：
 
-1. **kmer GenomeScope 完整模型**：`genescopefk.R` 原生迁移已实现（
-   `pgr kmer gsize --model`，p=1/2 负二项 + LM，summary/model.txt 对齐
-   anchr）；**p>2 多拓扑、错误分量、端部修正仍是后续**（明确不做/待议）。
-2. **anchr BBTools 替换**三决策点：一期 `fq split`/`fq sample` 是否先做；
-   接头修剪完全复刻 bbduk（tbo/tpe）vs 简化；流水线管道串联是否可接受。
-3. ~~**`fq range` 二期**：双端 S2~~（已完成：`--mate` + `--outfile-2`，
-   见上）。
-4. 参考项目笔记待续（用户会继续给新项目）。
+1. **norm 精确 vs 近似定稿**（§4.8 未定）：pgr 走精确表 + 外部桶（1TB
+   答案）；bbnorm bits=16 近似表结果依赖 -Xmx。差异 = 定义差异不是 bug。
+2. **anchr 模板替换**（用户自己处理，命令已齐）：把 trim.era.sh 的
+   bbtools 调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）；
+   merge.era.sh 的 bbduk 纯 qtrim → `pgr fq trim-adapter ... --no-ktrim
+   --no-tbo --no-tpe --maxns=-1 --ftm 0 --trimq <qual> --minlen <len>`。
+3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
+   直方图，pgr 无 SAM 命令，用户决定放着。
+4. **bbnorm 深度分箱**：暂不做（§4.9）。
+5. 剩余命令可再核对（有 golden 未多参数交叉验证）：`fq clump`（dedupe
+   单次 threads=1 验证）、`kmer hist`、`fq split`。
+
+---
+
+**历史会话（已完成，一行结论，细节见各设计笔记）**：
+
+- **2026-08-09 `pgr kmer` 七子命令全量交付**（table/profile/hist/gc/
+  qhist/qcheck/gsize，含 GenomeScope 2.0 原生迁移 `--model`、plot
+  heat/spectra 拆分、`.pkt`/`.pkp`/`.hist` 三格式定稿），测试 1544 全绿
+  → `design/kmer.md` §10。
+- **fq 系列（2026-08）**：`trim-qual`（sickle 替代）、`range`（FASTQ
+  `.loc` 索引一期 + 双端二期）、BGZF 写侧基准、FAFQ reader 笔记 →
+  `design/fq-trim-qual.md`、`design/fq-index.md`、`design/seq-reader.md`。
 
 ## 1. 等数据/场景到位再启动
 
@@ -177,58 +102,38 @@ estimate、profile.rs pkp）、`cmd_pgr/kmer/`（gc/gsize/qhist/qcheck 新增）
 
 ## 5. 待实现 / 待决策（2026-08-09 文档扫描补充）
 
-- [x] ~~**`spanr cover` 名字截断问题**~~ → **已完成（代码核对，2026-08-09）**：
-      pgr 内建 runlist 区间操作替代外部 spanr；`rept/trf.rs` 已实现"带点
-      contig 名映射 → span 处理后恢复"的名字映射规避（原待决策选项③）。
+**已完成（一行结论，细节见链接）**：
+
+- **spanr cover 名字截断**（2026-08-09 代码核对）：pgr 内建 runlist 区间
+  操作替代外部 spanr；`rept/trf.rs` 带点 contig 名映射规避 →
+  `design/repeat-masking.md`、`audit/audit-runlist-rg.md`。
+- **wide 128-bit 化 / SIMD 梯队**（2026-08-09）：linalg（双累加器）/poa/hv
+  改 128-bit；`paf::cigar` 分类掩码一次扫描（40 M 列 0.347 s，~37%）；
+  `twobit::from_dna` 三级分类（pbit create 83→58 ms）；hv_benchmark 拆分
+  现役/历史对照 → `design/simd-optimization.md` §6、
+  `benchmarks/bench-simd-hv-jaccard.md`。
+- **pbit 文件非确定性排查**（2026-08-09）：虚惊——collection 元数据嵌入
+  完整命令行（含 `-o` 文件名），换输出名导致字节差；输出确定性已确认 →
+  `design/pbit.md`。
+- **用户文档改动清单 #22**（2026-08-09）：dist/pbit/align-pgi/pgi 文档
+  已落地 → `design/genome-nn-query.md` §8.6。
+- **FastK/Profex 原生迁移**（2026-08-09）：`rept s-kmer`/`e-kmer` 原生化，
+  `--keep-index` 缓存升级单文件 `.pkt` → `design/kmer.md`。
+
+待实现：
+
 - [ ] **repeat masking：pgi 参数标定 + 真核验证**：CLI 透传已实现
       （`align pgi` 的 `-f/--min-shared/-k/--smer/--window`），但默认值
       未按 §2.5 调整（`--freq` 10 → 100、`--min-shared` 12 → 16 待验证）；
       真核（拟南芥/玉米等转座子丰富）与 RepeatMasker masked 输出对比
       recall（E. coli 无转座子无参考价值）；polyA/卫星低复杂度缺口由
       `rept trf` 兜底（来源：`design/repeat-masking.md` §2.4/§2.5）。
-- [x] ~~**wide 128-bit 化：linalg / poa / hv**~~ → **已完成（2026-08-09）**：
-      全部改 128-bit（`f32x4`/`i32x4`/`u32x4`，SSE2/NEON 原生，编译 avx2
-      无关）。**linalg 需双累加器**（8 元素块拆两个 128-bit，否则单累加器
-      依赖链慢 2×：norm 0.72→1.45µs，双累加恢复 747ns）；**poa** 的 avx2
-      模块遮蔽 `LANES=8`、`build_root/profile` 泛型化、avx2 自算 n_vec
-      （基准 12.1×/8.1× 不变）；**hv** 处 2 重写为双 `i32x4`（RNG 调用数
-      不变，AVX2 主路径不变）。三种编译配置（默认/+avx2/aarch64）全验证。
-- [x] ~~**SIMD 第二梯队 `paf::cigar`（来源 `design/simd-optimization.md` §6）**~~ →
-      **已实现（2026-08-09）**：`classify_alignment` SIMD 分类掩码一次扫描 +
-      `scan_cigar_ops`/`scan_cs` 共享 + 位运算 run 跳扫；`maf to-paf` 40 M
-      列 0.55 s → 0.347 s（~37%），输出逐字节一致。`rev_comp`/`complement`
-      已评估暂缓（`fa rc` 实测仅 ~14%，memset/IO 主导）。
-      `count_bases`（第一梯队）已实现（wide 7.5× / AVX2 47×）。
-- [x] ~~**hv_benchmark 拆分**~~ → **已完成（2026-08-09）**：现役核心
-      （`hash_hv_bit`/`i8`/`sparse`，16 组）留在 `benches/hv_benchmark.rs`
-      （全跑 ~2.5 min）；历史对照（AVX-512 ref、RNG 候选、i16/pshufb、
-      encode 变体、哈希吞吐）移入 `benches/hv_benchmark_ref.rs`（按需
-      filter 跑）。原 54 组全跑 10–20 min 的根因是组数多，非单组数据量。
-- [x] ~~**第三梯队 `twobit::from_dna`（profiling 翻案后实施）**~~ →
-      **已完成（2026-08-09）**：`classify_dna` 三级（AVX2/wide128/标量）+
-      位图块合并 + 标量打包；`pbit create` 83→58 ms（~30%）。见
-      `design/simd-optimization.md` §6 第 4 条。
-- [x] ~~**pbit 文件非确定性排查**~~ → **虚惊（2026-08-09）**：`pbit` 输出
-      是确定性的（同参数同 `-o` 两次运行 md5 一致）。此前"两次不同"源于
-      collection 元数据嵌入**完整命令行（含 `-o` 文件名）**（`collection.rs`
-      `cmd_line` 字段，审计设计特性），测试时每次换输出文件名导致字节差。
-      序列化用有序 Vec、gzip mtime=0，无 HashMap 顺序依赖。
 - [ ] **paf 查询层扩展（待实现）**：`--min-tree-coverage`（Caf Tree
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
       一并处理）（来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
-- [x] ~~**用户文档改动清单落地（#22）**~~ → **已完成（2026-08-09）**：
-      dist.md（frac 无偏/ANI 推荐、hv 粗分层、mini 排序用）此前已落地；
-      pbit.md（强制 PAF、空 PAF 禁用 CIGAR、to-paf 命令、MAF 管道、边际
-      delta、无 cg:Z 存行）、align-pgi.md（链粒度 ~1 kb vs pbit 4 kb 段，
-      建议 chainnet 链路）、pgi.md（近缘距离弱 ρ≈−0.71）本轮补齐
-      （来源：`genome-nn-query.md` §8.6）。
 - [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree
       用于 PAF 链式化 / POA 排序仍待评估（PAF 当前未明确需要链式化）
       （来源：`chain-algorithms.md` §12.3）。
-- [x] **FastK/Profex 原生迁移（已实现 2026-08-09）**：`rept s-kmer`/`e-kmer`
-      已原生化（`libs/kmer/` 计数 + profile + run 提取，`--keep-index` 缓存
-      升级为单文件 `.pkt`；不做 super-mer/磁盘分桶/外部格式兼容），
-      设计 = `design/kmer.md`。
