@@ -28,6 +28,10 @@ clean，代码已提交）**：
   maxlength、GC 过滤、forcetrim、kmask（N/lc/fully-covered）——14 组
   Lambda 真实数据黑盒对照 39.38/40.01 全部逐字节一致。细节见
   `design/anchr-trim-replace.md` §4.12。
+- bbduk 两次调用拆分（2026-08-11）：`fq trim-adapter` 拆为
+  `fq clean`（kmer 修剪 + 质量/组成过滤，对应 bbduk 第一次调用）+
+  `fq filter`（kmer 污染过滤，对应第二次调用）；参数名统一 pgr 长名
+  风格并在帮助标注 `(bbduk: 原名)`；`fq trim-qual`（sickle 语义）保留。
 
 **挂账/待决**：
 
@@ -36,7 +40,9 @@ clean，代码已提交）**：
 2. **anchr 模板替换**（用户自己处理，命令已齐）：把 trim.era.sh 的
    bbtools 调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）；
    merge.era.sh 的 bbduk 纯 qtrim → `pgr fq trim-adapter ... --no-ktrim
-   --no-tbo --no-tpe --maxns=-1 --ftm 0 --trimq <qual> --minlen <len>`。
+   --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual> --minlen <len>`。
+   trim.era.sh 的 bbduk 两次调用 → `pgr fq clean`（trim）+ `pgr fq filter`
+   （filter）。
 3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
    直方图，pgr 无 SAM 命令，用户决定放着。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。

@@ -45,7 +45,7 @@ decompress both sides, since gzip bytes (mtime) are not stable.
 
 The bbduk `stats=` text files (`R.trim.stats.txt` / `R.filter.stats.txt`) are
 not committed; regenerate them with the commands above if a stats comparison
-is ever needed. `pgr fq trim-adapter --stats` reproduces the 3-column format
+is ever needed. `pgr fq clean --stats` reproduces the 3-column format
 byte for byte (values checked in `cli_fq_trim_adapter.rs`); the `#File` line
 carries the input path, so it is path-dependent by design.
 

@@ -30,7 +30,7 @@ fn command_fq_trim_adapter_matches_bbtools_trim_golden() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             "tests/bbtools/Lambda/golden/clumpify.fq.gz",
             "--ref",
             "tests/bbtools/Lambda/illumina_adapters.fa",
@@ -47,46 +47,6 @@ fn command_fq_trim_adapter_matches_bbtools_trim_golden() {
 }
 
 #[test]
-fn command_fq_trim_adapter_filter_matches_bbtools_filter_golden() {
-    // Byte-level comparison against BBTools 39.38
-    // `bbduk.sh ... k=27 cardinality tossbrokenreads=t ordered=t` (filter
-    // mode) on the Lambda golden data.
-    let out_dir = tempfile::tempdir().unwrap();
-    let out = out_dir.path().join("filter.fq");
-
-    PgrCmd::new()
-        .args(&[
-            "fq",
-            "trim-adapter",
-            "tests/bbtools/Lambda/golden/trim.fq.gz",
-            "--ref",
-            "tests/bbtools/Lambda/illumina_adapters.fa",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--no-qtrim",
-            "--k",
-            "27",
-            "--mink",
-            "0",
-            "--minlen",
-            "0",
-            "--maxns=-1",
-            "--ftm",
-            "0",
-            "-o",
-            out.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    assert_eq!(
-        std::fs::read(&out).unwrap(),
-        read_gz("tests/bbtools/Lambda/golden/filter.fq.gz")
-    );
-}
-
-#[test]
 fn command_fq_trim_adapter_stats_match_bbtools() {
     // --stats writes the bbduk `stats=` 3-column format; values verified
     // byte-for-byte against BBTools 39.38 on the same input (the #File line
@@ -97,7 +57,7 @@ fn command_fq_trim_adapter_stats_match_bbtools() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             "tests/bbtools/Lambda/golden/clumpify.fq.gz",
             "--ref",
             "tests/bbtools/Lambda/illumina_adapters.fa",
@@ -131,49 +91,6 @@ fn command_fq_trim_adapter_stats_match_bbtools() {
 }
 
 #[test]
-fn command_fq_trim_adapter_filter_stats_match_bbtools() {
-    // Filter mode stats: no adapter kmers survive at k=27, so only headers.
-    let out_dir = tempfile::tempdir().unwrap();
-    let stats = out_dir.path().join("filter.stats.txt");
-
-    PgrCmd::new()
-        .args(&[
-            "fq",
-            "trim-adapter",
-            "tests/bbtools/Lambda/golden/trim.fq.gz",
-            "--ref",
-            "tests/bbtools/Lambda/illumina_adapters.fa",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--no-qtrim",
-            "--k",
-            "27",
-            "--mink",
-            "0",
-            "--minlen",
-            "0",
-            "--maxns=-1",
-            "--ftm",
-            "0",
-            "--stats",
-            stats.to_str().unwrap(),
-            "-o",
-            out_dir.path().join("out.fq").to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let expected = concat!(
-        "#File\ttests/bbtools/Lambda/golden/trim.fq.gz\n",
-        "#Total\t36384\n",
-        "#Matched\t0\t0.00000%\n",
-        "#Name\tReads\tReadsPct\n",
-    );
-    assert_eq!(std::fs::read_to_string(&stats).unwrap(), expected);
-}
-
-#[test]
 fn command_fq_trim_adapter_removes_adapter_and_keeps_clean_read() {
     // A read whose 3' end is a known adapter is trimmed; a clean read is
     // untouched except the ftm multiple-of-5 normalization.
@@ -189,13 +106,13 @@ fn command_fq_trim_adapter_removes_adapter_and_keeps_clean_read() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
             "--ref",
             "tests/bbtools/Lambda/illumina_adapters.fa",
-            "--no-tbo",
-            "--no-tpe",
-            "--maxns=-1",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
             "-o",
             out.to_str().unwrap(),
         ])
@@ -226,7 +143,7 @@ fn command_fq_trim_adapter_parallel_output_matches_single_thread() {
         PgrCmd::new()
             .args(&[
                 "fq",
-                "trim-adapter",
+                "clean",
                 "tests/bbtools/Lambda/golden/clumpify.fq.gz",
                 "--ref",
                 "tests/bbtools/Lambda/illumina_adapters.fa",
@@ -268,17 +185,16 @@ fn command_fq_trim_adapter_changequality_and_qtrim_empty_edge() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
             "--ref",
             "tests/bbtools/Lambda/illumina_adapters.fa",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
             "--minlen",
             "0",
-            "--maxns=-1",
-            "--ftm",
+            "--max-ns=-1",
+            "--force-trim-mod",
             "0",
             "-o",
             out.to_str().unwrap(),
@@ -325,15 +241,14 @@ fn command_fq_trim_adapter_no_ref_quality_trim_only() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--maxns=-1",
-            "--ftm",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
             "0",
-            "--trimq",
+            "--trim-quality",
             "15",
             "--minlen",
             "10",
@@ -375,17 +290,16 @@ ACGTACGTACGTACGT
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
             "--qtrim",
             "rl",
-            "--trimq",
+            "--trim-quality",
             "15",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--maxns=-1",
-            "--ftm",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
             "0",
             "--minlen",
             "0",
@@ -416,19 +330,18 @@ IIIIIIII!!!!!!!!
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
             "--qtrim",
             "w",
             "--qtrim-window",
             "4",
-            "--trimq",
+            "--trim-quality",
             "15",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--maxns=-1",
-            "--ftm",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
             "0",
             "--minlen",
             "0",
@@ -467,23 +380,22 @@ IIIIIIIIIIIIIIIIIIII
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
             "--qtrim",
             "f",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--maxns=-1",
-            "--ftm",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
             "0",
             "--minlen",
             "0",
             "--trim-poly-a",
             "4",
-            "--mingc",
+            "--min-gc",
             "0.4",
-            "--maxgc",
+            "--max-gc",
             "0.6",
             "--no-toss-broken-reads",
             "--no-pair-gc",
@@ -534,23 +446,22 @@ IIIIIIIIIIIIIIIIIIII
     PgrCmd::new()
         .args(&[
             "fq",
-            "trim-adapter",
+            "clean",
             file.path().to_str().unwrap(),
             "--qtrim",
             "f",
-            "--no-ktrim",
-            "--no-tbo",
-            "--no-tpe",
-            "--maxns=-1",
-            "--ftm",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
             "0",
             "--minlen",
             "0",
-            "--maq",
+            "--min-avg-quality",
             "20",
-            "--mbq",
+            "--min-base-quality",
             "5",
-            "--mcb",
+            "--min-consecutive-bases",
             "10",
             "-o",
             out.to_str().unwrap(),

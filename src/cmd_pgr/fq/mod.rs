@@ -1,11 +1,12 @@
+pub mod clean;
 pub mod clump;
+pub mod filter;
 pub mod interleave;
 pub mod norm;
 pub mod range;
 pub mod sample;
 pub mod split;
 pub mod to_fa;
-pub mod trim_adapter;
 pub mod trim_qual;
 
 use clap::{ArgMatches, Command};
@@ -22,7 +23,8 @@ pub fn make_subcommand() -> Command {
         .subcommand(range::make_subcommand())
         .subcommand(sample::make_subcommand())
         .subcommand(split::make_subcommand())
-        .subcommand(trim_adapter::make_subcommand())
+        .subcommand(clean::make_subcommand())
+        .subcommand(filter::make_subcommand())
         .subcommand(trim_qual::make_subcommand())
 }
 /// Execute the fq command.
@@ -37,7 +39,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("sample", sub_matches)) => sample::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
-        Some(("trim-adapter", sub_matches)) => trim_adapter::execute(sub_matches),
+        Some(("clean", sub_matches)) => clean::execute(sub_matches),
+        Some(("filter", sub_matches)) => filter::execute(sub_matches),
         Some(("trim-qual", sub_matches)) => trim_qual::execute(sub_matches),
         _ => Ok(()),
     }

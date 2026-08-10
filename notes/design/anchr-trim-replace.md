@@ -150,12 +150,12 @@ BBTools-40.01 源码已置于仓库根 `BBTools-40.01/`——该目录自带 `.g
 - `pgr fq sample`：按目标碱基数/比例降采样（对齐 `reformat.sh
   samplebasestarget`）。
 - `pgr fq trim-adapter`（核心）：
-  - 修剪模式（默认）：`--ref <fa> --k <trimk> --mink <11> --hdist <1>`
-    + `--trimq <15> --minlen <60> --maxns <0> --ftm <5>`；`--no-tbo`/
+  - 修剪模式（默认）：`--ref <fa> --k <trimk> --min-k <11> --hamming-distance <1>`
+    + `--trim-quality <15> --minlen <60> --max-ns <0> --force-trim-mod <5>`；`--no-tbo`/
     `--no-tpe`/`--no-qtrim` 关闭对应步骤；配对丢弃由 `--no-toss-broken-reads`
     关闭；
   - 过滤模式：`--no-ktrim --no-tbo --no-tpe --no-qtrim --k <matchk>
-    --mink 0 --minlen 0 --maxns -1 --ftm 0`（对齐 bbduk filter 的
+    --min-k 0 --minlen 0 --max-ns -1 --force-trim-mod 0`（对齐 bbduk filter 的
     `k=<matchk> cardinality`）；
   - 双端输入为 interleaved，R1/R2 同步处理（tbo/tpe 需要同读对）；
   - 质量修剪复用 `libs/fq/trim.rs`（trim-qual 的 sliding/mott、polyG）。
@@ -459,7 +459,7 @@ BBMerge 在 overlap merge 时从 read 对重叠/缺口反推 `bestInsert`
 语义已与 39.38 逐字节核对）。实测 5 组无 ref 参数（含 merge 的 q25l60、
 minlen=0、ftm=5 组合）与 `bbduk.sh qtrim=r trimq=... minlen=...` 逐字节
 一致；新增回归测试 `no_ref_quality_trim_only`。merge.era.sh 替换时用
-`--no-ktrim --no-tbo --no-tpe --maxns=-1 --ftm 0 --trimq <qual> --minlen <len>`。
+`--no-ktrim --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual> --minlen <len>`。
 注意：trim-adapter 输入语义为交错双端（1 文件）或 R1/R2（2 文件），
 不支持单端多条（单端文件会按交错解析，第二条被当作 mate）。
 
@@ -528,16 +528,16 @@ bbduk 功能（默认关闭，不影响既有 golden）。**14 组 Lambda 真实
   `--max-non-poly` 个间断）、`--filter-poly-g/c`（检测左端前缀后整条
   丢弃）。对照：trimpolya+trimpolygright、trimpolycright+trimpolya、
   filterpolyg 各一致。
-* **质量/组成过滤**：`--maq/--maqb`（按错误概率平均，
-  `expectedErrors/len → probErrorToPhred`）、`--mbq`（最低碱基质量）、
-  `--maxnrate`（40.01 新增，N 比例）、`--mcb`（连续 ACGT）、
+* **质量/组成过滤**：`--min-avg-quality/--min-avg-qualityb`（按错误概率平均，
+  `expectedErrors/len → probErrorToPhred`）、`--min-base-quality`（最低碱基质量）、
+  `--max-n-rate`（40.01 新增，N 比例）、`--min-consecutive-bases`（连续 ACGT）、
   `--minlen-fraction`（mlf，动态 minlen）、`--maxlength`。
   对照：maq+mbq、mcb+mlf+maxlength（39.38）、maxnrate（40.01）各一致。
-* **GC 过滤**：`--mingc/--maxgc` + `--no-pair-gc`（gcpairs=f；默认按对
+* **GC 过滤**：`--min-gc/--max-gc` + `--no-pair-gc`（gcpairs=f；默认按对
   平均 GC），在 forceTrim 前用初始长度判定。对照一致。
-* **forcetrim**：`--forcetrim-left/right/right2`（与既有 `--ftm` 组合，
+* **forcetrim**：`--force-trim-left/right/right2`（与既有 `--force-trim-mod` 组合，
   `b=min(b0,b1,b2)` 后 `trimByAmount(a, len-b-1, 1)`）。对照一致。
-* **kmask**：`--kmask <symbol|lc|t>` + `--mask-fully-covered` +
+* **kmask**：`--mask-kmers <symbol|lc|t>` + `--mask-fully-covered` +
   `--trim-pad`（ktrimN 模式，替代 trim）：全 k 命中标记
   `[i-(k-1-trimPad), i+trimPad+1)`，短 kmer（mink）标记两端；lc 转小写、
   t/N 掩码并清零质量。对照：kmask=N、kmask=lc、maskfullycovered 各一致。
@@ -546,6 +546,24 @@ bbduk 功能（默认关闭，不影响既有 golden）。**14 组 Lambda 真实
   `copyWithin(left..len-right)`（两次 drain 在 left>keep 时越界）；
   处理顺序对齐 bbduk：GC → forceTrim → kmer → tbo → polymer → qtrim →
   minlen/maxlength → maq/mbq/maxns/maxnrate/mcb。
+
+### 4.13 命令拆分（2026-08-11）
+
+`fq trim-adapter` 拆为两个命令，对应 bbduk 的两次调用（模式互斥，bbduk
+一次 pass 只能做一个 kmer 操作）：
+
+* `pgr fq clean`：bbduk 第一次调用（kmer 修剪 + 质量/长度/GC/polymer/
+  kmask），删掉 filter 模式的 `--no-ktrim` 开关；
+* `pgr fq filter`：bbduk 第二次调用（kmer 匹配判定丢弃），默认
+  k=27（anchr matchk）/mink=0/hdist=0/minlen=10，只暴露 kmer 匹配 +
+  minlen/max-ns/toss/stats。
+
+参数名同时统一为 pgr 长名风格并在 help 标注 `(bbduk: 原名)`（如
+`--min-avg-quality (bbduk: maq)`、`--no-trim-by-overlap (bbduk: tbo=f)`）。
+`fq trim-qual`（sickle 语义）保留。libs 层共享（`libs/fq/trim_adapter.rs`
+的 ktrim/kmask/filter 三条路径），只拆命令层。拆分顺带暴露一个既有 bug：
+ktrim/kmask 短 kmer 扫描的 `lim` 应为 `max(-1, stop-k)`（数据短于 k 时
+`i` 走到 -1 越界，之前被 filter 模式的 `--no-ktrim` 掩盖）。
 
 ---
 

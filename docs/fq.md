@@ -186,94 +186,140 @@ pgr fq sample [OPTIONS] <infile>
 
 ---
 
-## trim-adapter
+## clean
 
-Removes adapter/contaminant sequences by matching read k-mers against a
-reference, then quality-trims and length-filters the reads. It reproduces
-BBTools 39.38 `bbduk.sh` output byte for byte for the anchr trim pipeline
-parameters (deterministic `ordered=t` mode).
+Cleans reads in one pass: adapter/contaminant k-mer trimming, quality
+trimming, polymer and GC filtering, and masking. Reproduces the first
+BBTools 39.38 `bbduk.sh` call of the anchr trim pipeline (the `ktrim` pass)
+byte for byte (`ordered=t`, deterministic). For the second bbduk call
+(k-mer contaminant filtering) use `pgr fq filter`; for sickle-style pure
+quality trimming use `pgr fq trim-qual`.
 
 ```bash
-pgr fq trim-adapter [OPTIONS] <infiles>...
+pgr fq clean [OPTIONS] <infiles>...
 ```
 
 ### Options
 
+Options identical to their bbduk counterparts are not annotated; renamed
+options show the bbduk name in parentheses.
+
 *   `--ref <file>`: Reference FASTA of adapters/contaminants. Omit it to
-    skip all k-mer operations and only quality-trim and filter (bbduk
-    `qtrim=r minlen=...` without a reference).
-*   `-k, --k <int>`: K-mer size (default: 23).
-*   `--mink <int>`: Minimum short k-mer size at read ends (default: 11).
-*   `--hdist <int>`: Reference hamming distance (default: 1).
-*   `--no-ktrim`: Disable k-mer trimming (filtering mode).
-*   `--no-tbo`: Disable overlap trimming.
-*   `--no-tpe`: Disable even pair trimming.
+    skip all k-mer operations and only quality-trim/filter.
+*   `-k, --k <int>`: K-mer size (default 23).
+*   `--min-k <int>`: Minimum short k-mer size at read ends;
+    default 11).
+*   `--hamming-distance <int>`: Reference hamming distance (bbduk: `hdist`;
+    default 1).
+*   `--no-trim-by-overlap`: Disable overlap trimming (bbduk: `tbo=f`).
+*   `--no-trim-pair-evenly`: Disable even pair trimming (bbduk: `tpe=f`).
 *   `--no-qtrim`: Disable quality trimming.
-*   `--qtrim <r|l|rl|w|f>`: Quality trim mode (default: `r`; `w` uses a
-    sliding window of `--qtrim-window`, `f` disables).
-*   `--qtrim-window <int>`: Window size for `--qtrim w` (default: 4).
-*   `--trimq <int>`: Quality threshold for qtrim (default: 15).
-*   `--minlen <int>`: Minimum kept read length (default: 60).
+*   `--qtrim <r|l|rl|w|f>`: Quality trim mode (default `r`;
+    `w` uses a sliding window of `--qtrim-window`).
+*   `--qtrim-window <int>`: Window size for `--qtrim w` (bbduk: `qtrim=w,N`;
+    default 4).
+*   `--trim-quality <int>`: Quality threshold for qtrim (bbduk: `trimq`;
+    default 15).
+*   `--minlen <int>`: Minimum kept read length (default 60).
 *   `--minlen-fraction <float>`: Minimum read length as a fraction of the
-    original (`mlf`; default: 0).
-*   `--maxns <int>`: Maximum allowed N bases; negative disables (default: 0).
-*   `--maxnrate <float>`: Discard reads with more than this fraction of Ns
-    (default: 1, disabled).
-*   `--ftm <int>`: Right-trim lengths to a multiple (default: 5).
-*   `--forcetrim-left <int>`: Trim bases left of this position.
-*   `--forcetrim-right <int>`: Trim bases right of this position.
-*   `--forcetrim-right2 <int>`: Trim this many bases on the right end.
-*   `--trim-poly-a <int>`: Trim poly-A/T tails of at least this length.
-*   `--trim-poly-g-left/--trim-poly-g-right <int>`: Trim poly-G prefixes/tails
-    of at least this length.
-*   `--filter-poly-g <int>`: Discard reads with a poly-G prefix of at least
-    this length (poly-C equivalents: `--trim-poly-c-left/right`,
-    `--filter-poly-c`).
-*   `--max-non-poly <int>`: Allowed non-polymer bases inside a polymer run
-    (default: 1).
-*   `--maq <float>`: Discard reads with average quality below this.
-*   `--maqb <int>`: Use only this many leading bases for `--maq`.
-*   `--mbq <int>`: Discard reads with any base below this quality.
-*   `--mcb <int>`: Discard reads without this many consecutive ACGT bases.
-*   `--maxlength <int>`: Discard reads longer than this (default: 0 = off).
-*   `--mingc <float>` / `--maxgc <float>`: Discard reads with GC content
+    original (bbduk: `mlf`; default 0).
+*   `--max-ns <int>`: Maximum allowed N bases; negative disables
+    (default 0).
+*   `--max-n-rate <float>`: Discard reads with more than this fraction of Ns
+    (default 1, disabled).
+*   `--force-trim-mod <int>`: Right-trim lengths to a multiple (bbduk: `ftm`;
+    default 5).
+*   `--force-trim-left <int>`: Trim bases left of this position.
+*   `--force-trim-right <int>`: Trim bases right of this position.
+*   `--force-trim-right2 <int>`: Trim this many bases on the right end.
+*   `--trim-poly-a <int>`: Trim poly-A/T tails.
+*   `--trim-poly-g-left/--trim-poly-g-right <int>`: Trim poly-G
+    prefixes/tails.
+*   `--filter-poly-g <int>`: Discard reads with a poly-G prefix; poly-C
+    equivalents: `--trim-poly-c-left/right`, `--filter-poly-c`.
+*   `--max-non-poly <int>`: Allowed non-polymer bases in a polymer run
+    (default 1).
+*   `--min-avg-quality <float>`: Discard reads with average quality below
+    this (bbduk: `maq`).
+*   `--min-avg-quality-bases <int>`: Use only this many leading bases for
+    `--min-avg-quality` (bbduk: `maqb`).
+*   `--min-base-quality <int>`: Discard reads with any base below this
+    quality (bbduk: `mbq`).
+*   `--min-consecutive-bases <int>`: Discard reads without this many
+    consecutive ACGT bases (bbduk: `mcb`).
+*   `--maxlength <int>`: Discard reads longer than this (default 0 = off).
+*   `--min-gc <float>` / `--max-gc <float>`: Discard reads with GC content
     below/above these bounds.
-*   `--no-pair-gc`: Check GC per read instead of the pair average.
-*   `--kmask <symbol|lc|t>`: Mask matching k-mers with a symbol (`t` = `N`)
-    or lowercase them (`lc`) instead of trimming; requires `--ref`.
+*   `--no-pair-gc`: Check GC per read instead of the pair average (bbduk:
+    `gcpairs=f`).
+*   `--mask-kmers <symbol|lc|t>`: Mask matching k-mers with a symbol
+    (`t` = `N`) or lowercase them (`lc`) instead of trimming (bbduk:
+    `kmask`); requires `--ref`.
 *   `--mask-fully-covered`: Only mask bases fully covered by matching k-mers.
 *   `--trim-pad <int>`: Extra bases to mask around matching k-mers.
-*   `--no-toss-broken-reads`: Keep surviving mates of discarded reads.
-*   `-p, --parallel <int|auto>`: Worker threads (default: logical CPU count);
-    output order is preserved for any thread count.
+*   `--no-toss-broken-reads`: Keep surviving mates of discarded reads (bbduk:
+    `removeifeitherbad=f`).
+*   `-p, --parallel <int|auto>`: Worker threads (bbduk: `threads`; default
+    logical CPU count); output order is preserved for any thread count.
 *   `--stats <file>`: Write per-reference match statistics in the bbduk
     `stats=` format (tab-separated, `#Matched`/`#Name` header lines).
 
 ### Examples
 
-1.  **Adapter trim with the anchr pipeline defaults**:
+1.  **Clean with the anchr pipeline defaults**:
     ```bash
-    pgr fq trim-adapter R1.fq.gz R2.fq.gz --ref illumina_adapters.fa -o out.fq
+    pgr fq clean R1.fq.gz R2.fq.gz --ref illumina_adapters.fa -o out.fq
     ```
 
-2.  **K-mer filtering mode (bbduk filter step)**:
+2.  **Clean without a reference (bbduk `qtrim=r minlen=...` style)**:
     ```bash
-    pgr fq trim-adapter in.fq --ref illumina_adapters.fa --no-ktrim \
-        --no-tbo --no-tpe --no-qtrim --k 27 --mink 0 --minlen 0 \
-        --maxns=-1 --ftm 0 -o out.fq
+    pgr fq clean unmerged.raw.fq.gz -o unmerged.trim.fq.gz \
+        --no-trim-by-overlap --no-trim-pair-evenly \
+        --max-ns=-1 --force-trim-mod 0 --trim-quality 25 --minlen 60
     ```
 
-3.  **Run with a specific number of threads**:
+3.  **Mask matching k-mers instead of trimming**:
     ```bash
-    pgr fq trim-adapter R1.fq.gz R2.fq.gz --ref illumina_adapters.fa \
-        -o out.fq --parallel 8
+    pgr fq clean in.fq --ref illumina_adapters.fa --mask-kmers N -o out.fq
     ```
 
-4.  **Quality-trim only (no reference, bbduk `qtrim=r` style)**:
+---
+
+## filter
+
+Discards reads containing k-mers matching a reference (adapters,
+contaminants, spike-ins). Reproduces the second BBTools 39.38 `bbduk.sh`
+call of the anchr trim pipeline (`k=<matchk> cardinality`) byte for byte
+(`ordered=t`, deterministic). A read is discarded when more than zero
+k-mers match (bbduk `minkmerhits=1`); surviving mates follow
+`--toss-broken-reads`.
+
+```bash
+pgr fq filter [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `--ref <file>`: Reference FASTA of contaminants/adapters (required).
+*   `-k, --k <int>`: K-mer size (default 27, the anchr `matchk`).
+*   `--min-k <int>`: Minimum short k-mer size at read ends;
+    default 0).
+*   `--hamming-distance <int>`: Reference hamming distance (bbduk: `hdist`;
+    default 0).
+*   `--minlen <int>`: Minimum kept read length (default 10).
+*   `--max-ns <int>`: Maximum allowed N bases; negative disables
+    (default -1).
+*   `--no-toss-broken-reads`: Keep surviving mates of discarded reads (bbduk:
+    `removeifeitherbad=f`).
+*   `-p, --parallel <int|auto>`: Worker threads (bbduk: `threads`).
+*   `--stats <file>`: Write per-reference match statistics in the bbduk
+    `stats=` format.
+
+### Examples
+
+1.  **Filter adapter/artifact matches (anchr filter step)**:
     ```bash
-    pgr fq trim-adapter unmerged.raw.fq.gz -o unmerged.trim.fq.gz \
-        --no-ktrim --no-tbo --no-tpe \
-        --maxns=-1 --ftm 0 --trimq 25 --minlen 60
+    pgr fq filter trim.fq.gz --ref illumina_adapters.fa -k 27 -o filter.fq
     ```
 
 ---

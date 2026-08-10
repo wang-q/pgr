@@ -3,27 +3,34 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::fq::trim_adapter::{trim_adapter, AdapterTrimOptions};
 use std::io::Write;
 
-/// Build the clap subcommand for trim-adapter.
+/// Build the clap subcommand for clean.
 pub fn make_subcommand() -> Command {
-    Command::new("trim-adapter")
-        .about("Trims adapters by k-mer matching (bbduk-compatible)")
+    Command::new("clean")
+        .about("Cleans reads: adapter k-mer trimming, quality and composition filtering")
         .after_help(
             r###"
-This command removes adapter/contaminant sequences by matching read k-mers
-against a reference, then quality-trims and length-filters the reads. It
-reproduces BBTools 39.38 `bbduk.sh` output byte for byte for the anchr trim
-pipeline parameters (`ordered=t`, deterministic).
+This command cleans reads in one pass: adapter/contaminant k-mer trimming,
+quality trimming, polymer and GC filtering, and masking. It reproduces the
+first BBTools 39.38 `bbduk.sh` call of the anchr trim pipeline (the `ktrim`
+pass) byte for byte (`ordered=t`, deterministic).
 
 Notes:
 * Without --ref, no k-mer operations run and the command only quality-trims
   and filters (bbduk `qtrim=r minlen=...` without a reference)
-* `ktrim=r` right-trims at the first matching reference k-mer (`--ktrim`)
-* `--mink` enables short k-mer matching at read ends (adapters shorter than k)
-* `--hdist` stores single-substitution reference variants
-* `--tbo` trims implied adapters from mate overlap; `--tpe` equalizes mates
-* `--qtrim r` right-trims below `--trimq`; `--minlen` drops short reads
-* `--maxns` drops reads with too many N bases; `--ftm` right-trims lengths to
-  a multiple; `--toss-broken-reads` drops pairs where one mate fails
+* k-mer right-trimming is on by default (bbduk `ktrim=r`); `--min-k` enables
+  short k-mer matching at read ends (adapters shorter than k)
+* `--hamming-distance` stores single-substitution reference variants
+* `--trim-by-overlap` trims implied adapters from mate overlap;
+  `--trim-pair-evenly` equalizes mates
+* `--qtrim r` right-trims below `--trim-quality`; `--minlen` drops short reads
+* `--max-ns` drops reads with too many N bases; `--force-trim-mod`
+  right-trims lengths to a multiple; `--toss-broken-reads` drops pairs where
+  one mate fails
+* For k-mer contaminant filtering (bbduk `kfilter`, the second bbduk call of
+  the pipeline) use `pgr fq filter` instead; for sickle-style pure quality
+  trimming use `pgr fq trim-qual`.
+* Options renamed from their bbduk counterparts show the bbduk name in
+  parentheses (e.g. `--min-k` = `mink`); identical options are not annotated
 * Input is one interleaved FASTQ or two files (R1, R2)
 * --parallel controls the worker pool (default: logical CPU count); output
   order is preserved regardless of thread count
@@ -33,12 +40,11 @@ Notes:
 
 Examples:
 1. Adapter trim with the anchr pipeline defaults:
-   pgr fq trim-adapter R1.fq.gz R2.fq.gz --ref illumina_adapters.fa \
+   pgr fq clean R1.fq.gz R2.fq.gz --ref illumina_adapters.fa \
        -o out.fq
 
 2. K-mer filtering mode (match and discard, bbduk filter step):
-   pgr fq trim-adapter in.fq --ref illumina_adapters.fa --k 27 \
-       --no-ktrim -o out.fq
+   pgr fq clean in.fq --ref illumina_adapters.fa -o out.fq
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
@@ -50,7 +56,7 @@ Examples:
             Arg::new("ref")
                 .long("ref")
                 .num_args(1)
-                .help("Reference FASTA of adapters/contaminants (omit for quality-trim-only)"),
+                .help("Reference FASTA of adapters/contaminants"),
         )
         .arg(
             Arg::new("k")
@@ -62,38 +68,32 @@ Examples:
                 .help("K-mer size"),
         )
         .arg(
-            Arg::new("mink")
-                .long("mink")
+            Arg::new("min_k")
+                .long("min-k")
                 .num_args(1)
                 .default_value("11")
                 .value_parser(value_parser!(usize))
                 .help("Minimum short k-mer size at read ends"),
         )
         .arg(
-            Arg::new("hdist")
-                .long("hdist")
+            Arg::new("hamming_distance")
+                .long("hamming-distance")
                 .num_args(1)
                 .default_value("1")
                 .value_parser(value_parser!(usize))
-                .help("Reference hamming distance"),
+                .help("Reference hamming distance (bbduk: hdist)"),
         )
         .arg(
-            Arg::new("no_ktrim")
-                .long("no-ktrim")
+            Arg::new("no_trim_by_overlap")
+                .long("no-trim-by-overlap")
                 .action(clap::ArgAction::SetTrue)
-                .help("Disable k-mer trimming (filtering mode)"),
+                .help("Disable overlap trimming (bbduk: tbo=f)"),
         )
         .arg(
-            Arg::new("no_tbo")
-                .long("no-tbo")
+            Arg::new("no_trim_pair_evenly")
+                .long("no-trim-pair-evenly")
                 .action(clap::ArgAction::SetTrue)
-                .help("Disable overlap trimming"),
-        )
-        .arg(
-            Arg::new("no_tpe")
-                .long("no-tpe")
-                .action(clap::ArgAction::SetTrue)
-                .help("Disable even pair trimming"),
+                .help("Disable even pair trimming (bbduk: tpe=f)"),
         )
         .arg(
             Arg::new("no_qtrim")
@@ -107,7 +107,7 @@ Examples:
                 .num_args(1)
                 .default_value("r")
                 .value_parser(["r", "l", "rl", "w", "f"])
-                .help("Quality trim mode: r, l, rl, w (sliding window), or f"),
+                .help("Quality trim mode: r, l, rl, w, or f"),
         )
         .arg(
             Arg::new("qtrim_window")
@@ -115,15 +115,15 @@ Examples:
                 .num_args(1)
                 .default_value("4")
                 .value_parser(value_parser!(usize))
-                .help("Window size for qtrim=w"),
+                .help("Window size for qtrim=w (bbduk: qtrim=w,N)"),
         )
         .arg(
-            Arg::new("trimq")
-                .long("trimq")
+            Arg::new("trim_quality")
+                .long("trim-quality")
                 .num_args(1)
                 .default_value("15")
                 .value_parser(value_parser!(u8))
-                .help("Quality threshold for qtrim"),
+                .help("Quality threshold for qtrim (bbduk: trimq)"),
         )
         .arg(
             Arg::new("minlen")
@@ -134,44 +134,44 @@ Examples:
                 .help("Minimum kept read length"),
         )
         .arg(
-            Arg::new("maxns")
-                .long("maxns")
+            Arg::new("max_ns")
+                .long("max-ns")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(i64))
-                .help("Maximum allowed N bases"),
+                .help("Maximum allowed N bases; negative disables"),
         )
         .arg(
-            Arg::new("ftm")
-                .long("ftm")
+            Arg::new("force_trim_mod")
+                .long("force-trim-mod")
                 .num_args(1)
                 .default_value("5")
                 .value_parser(value_parser!(usize))
-                .help("Right-trim lengths to a multiple (0 disables)"),
+                .help("Right-trim lengths to a multiple (bbduk: ftm)"),
         )
         .arg(
-            Arg::new("forcetrim_left")
-                .long("forcetrim-left")
+            Arg::new("force_trim_left")
+                .long("force-trim-left")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Trim bases left of this position (0 disables)"),
+                .help("Trim bases left of this position"),
         )
         .arg(
-            Arg::new("forcetrim_right")
-                .long("forcetrim-right")
+            Arg::new("force_trim_right")
+                .long("force-trim-right")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Trim bases right of this position (0 disables)"),
+                .help("Trim bases right of this position"),
         )
         .arg(
-            Arg::new("forcetrim_right2")
-                .long("forcetrim-right2")
+            Arg::new("force_trim_right2")
+                .long("force-trim-right2")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Trim this many bases on the right end (0 disables)"),
+                .help("Trim this many bases on the right end"),
         )
         .arg(
             Arg::new("trim_poly_a")
@@ -203,7 +203,7 @@ Examples:
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Discard reads with a poly-G prefix of at least this length"),
+                .help("Discard reads with a poly-G prefix"),
         )
         .arg(
             Arg::new("trim_poly_c_left")
@@ -227,7 +227,7 @@ Examples:
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Discard reads with a poly-C prefix of at least this length"),
+                .help("Discard reads with a poly-C prefix"),
         )
         .arg(
             Arg::new("max_non_poly")
@@ -235,35 +235,35 @@ Examples:
                 .num_args(1)
                 .default_value("1")
                 .value_parser(value_parser!(usize))
-                .help("Allowed non-polymer bases inside a polymer run"),
+                .help("Allowed non-polymer bases in a polymer run"),
         )
         .arg(
-            Arg::new("maq")
-                .long("maq")
+            Arg::new("min_avg_quality")
+                .long("min-avg-quality")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(f64))
-                .help("Discard reads with average quality below this"),
+                .help("Discard reads with average quality below this (bbduk: maq)"),
         )
         .arg(
-            Arg::new("maqb")
-                .long("maqb")
+            Arg::new("min_avg_quality_bases")
+                .long("min-avg-quality-bases")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Use only this many leading bases for maq"),
+                .help("Use only this many leading bases for min-avg-quality (bbduk: maqb)"),
         )
         .arg(
-            Arg::new("mbq")
-                .long("mbq")
+            Arg::new("min_base_quality")
+                .long("min-base-quality")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(u8))
-                .help("Discard reads with any base below this quality"),
+                .help("Discard reads with any base below this quality (bbduk: mbq)"),
         )
         .arg(
-            Arg::new("maxnrate")
-                .long("maxnrate")
+            Arg::new("max_n_rate")
+                .long("max-n-rate")
                 .num_args(1)
                 .default_value("1")
                 .value_parser(value_parser!(f64))
@@ -275,7 +275,7 @@ Examples:
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(f64))
-                .help("Minimum read length as a fraction of the original (mlf)"),
+                .help("Minimum read length as a fraction of the original (bbduk: mlf)"),
         )
         .arg(
             Arg::new("maxlength")
@@ -283,27 +283,27 @@ Examples:
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Discard reads longer than this (0 disables)"),
+                .help("Discard reads longer than this"),
         )
         .arg(
-            Arg::new("mcb")
-                .long("mcb")
+            Arg::new("min_consecutive_bases")
+                .long("min-consecutive-bases")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
-                .help("Discard reads without this many consecutive ACGT bases"),
+                .help("Discard reads without this many consecutive ACGT bases (bbduk: mcb)"),
         )
         .arg(
-            Arg::new("mingc")
-                .long("mingc")
+            Arg::new("min_gc")
+                .long("min-gc")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(f64))
                 .help("Discard reads with GC content below this"),
         )
         .arg(
-            Arg::new("maxgc")
-                .long("maxgc")
+            Arg::new("max_gc")
+                .long("max-gc")
                 .num_args(1)
                 .default_value("1")
                 .value_parser(value_parser!(f64))
@@ -313,19 +313,19 @@ Examples:
             Arg::new("no_pair_gc")
                 .long("no-pair-gc")
                 .action(clap::ArgAction::SetTrue)
-                .help("Check GC per read instead of the pair average"),
+                .help("Check GC per read instead of the pair average (bbduk: gcpairs=f)"),
         )
         .arg(
-            Arg::new("kmask")
-                .long("kmask")
+            Arg::new("mask_kmers")
+                .long("mask-kmers")
                 .num_args(1)
-                .help("Mask matching k-mers: a symbol, 'lc' for lowercase, or 't' for N"),
+                .help("Mask matching k-mers: a symbol, 'lc', or 't' (bbduk: kmask)"),
         )
         .arg(
             Arg::new("mask_fully_covered")
                 .long("mask-fully-covered")
                 .action(clap::ArgAction::SetTrue)
-                .help("Only mask bases fully covered by matching k-mers"),
+                .help("Only mask bases fully covered by k-mers"),
         )
         .arg(
             Arg::new("trim_pad")
@@ -339,7 +339,7 @@ Examples:
             Arg::new("no_toss")
                 .long("no-toss-broken-reads")
                 .action(clap::ArgAction::SetTrue)
-                .help("Keep surviving mates of discarded reads"),
+                .help("Keep surviving mates of discarded reads (bbduk: removeifeitherbad=f)"),
         )
         .arg(
             Arg::new("parallel")
@@ -347,17 +347,17 @@ Examples:
                 .short('p')
                 .num_args(1)
                 .default_value("auto")
-                .help("Worker threads (default: logical CPU count)"),
+                .help("Worker threads (bbduk: threads)"),
         )
         .arg(
             Arg::new("stats")
                 .long("stats")
                 .num_args(1)
-                .help("Write per-reference match statistics (bbduk stats=)"),
+                .help("Write per-reference match statistics"),
         )
 }
 
-/// Execute the trim-adapter command.
+/// Execute the clean command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
@@ -384,32 +384,32 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             _ => (false, true, 0),
         }
     };
-    let kmask = args.get_one::<String>("kmask").map(String::as_str);
+    let kmask = args.get_one::<String>("mask_kmers").map(String::as_str);
     let (kmask_symbol, kmask_lowercase) = match kmask {
         Some("lc") => (None, true),
         Some("t") | Some("true") => (Some(b'N'), false),
         Some(c) if c.len() == 1 => (Some(c.as_bytes()[0]), false),
-        Some(other) => anyhow::bail!("invalid --kmask value: {other}"),
+        Some(other) => anyhow::bail!("invalid --mask-kmers value: {other}"),
         None => (None, false),
     };
     let maxlength = *args.get_one::<usize>("maxlength").unwrap();
     let opts = AdapterTrimOptions {
         k: *args.get_one::<usize>("k").unwrap(),
-        mink: *args.get_one::<usize>("mink").unwrap(),
-        hdist: *args.get_one::<usize>("hdist").unwrap(),
-        ktrim_right: !args.get_flag("no_ktrim"),
-        tbo: !args.get_flag("no_tbo"),
-        tpe: !args.get_flag("no_tpe"),
+        mink: *args.get_one::<usize>("min_k").unwrap(),
+        hdist: *args.get_one::<usize>("hamming_distance").unwrap(),
+        ktrim_right: true,
+        tbo: !args.get_flag("no_trim_by_overlap"),
+        tpe: !args.get_flag("no_trim_pair_evenly"),
         qtrim_right,
         qtrim_left,
         qtrim_window,
-        trimq: *args.get_one::<u8>("trimq").unwrap(),
+        trimq: *args.get_one::<u8>("trim_quality").unwrap(),
         minlen: *args.get_one::<usize>("minlen").unwrap(),
-        maxns: *args.get_one::<i64>("maxns").unwrap(),
-        ftm: *args.get_one::<usize>("ftm").unwrap(),
-        force_trim_left: *args.get_one::<usize>("forcetrim_left").unwrap(),
-        force_trim_right: *args.get_one::<usize>("forcetrim_right").unwrap(),
-        force_trim_right2: *args.get_one::<usize>("forcetrim_right2").unwrap(),
+        maxns: *args.get_one::<i64>("max_ns").unwrap(),
+        ftm: *args.get_one::<usize>("force_trim_mod").unwrap(),
+        force_trim_left: *args.get_one::<usize>("force_trim_left").unwrap(),
+        force_trim_right: *args.get_one::<usize>("force_trim_right").unwrap(),
+        force_trim_right2: *args.get_one::<usize>("force_trim_right2").unwrap(),
         toss_broken_reads: !args.get_flag("no_toss"),
         ref_file: ref_file.clone(),
         quality_base: 33,
@@ -422,19 +422,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         trim_poly_c_right: *args.get_one::<usize>("trim_poly_c_right").unwrap(),
         filter_poly_c: *args.get_one::<usize>("filter_poly_c").unwrap(),
         max_non_poly: *args.get_one::<usize>("max_non_poly").unwrap(),
-        min_avg_quality: *args.get_one::<f64>("maq").unwrap(),
-        min_avg_quality_bases: *args.get_one::<usize>("maqb").unwrap(),
-        min_base_quality: *args.get_one::<u8>("mbq").unwrap(),
-        max_n_rate: *args.get_one::<f64>("maxnrate").unwrap(),
+        min_avg_quality: *args.get_one::<f64>("min_avg_quality").unwrap(),
+        min_avg_quality_bases: *args.get_one::<usize>("min_avg_quality_bases").unwrap(),
+        min_base_quality: *args.get_one::<u8>("min_base_quality").unwrap(),
+        max_n_rate: *args.get_one::<f64>("max_n_rate").unwrap(),
         min_len_fraction: *args.get_one::<f64>("minlen_fraction").unwrap(),
         max_length: if maxlength == 0 {
             usize::MAX
         } else {
             maxlength
         },
-        min_consecutive_bases: *args.get_one::<usize>("mcb").unwrap(),
-        min_gc: *args.get_one::<f64>("mingc").unwrap(),
-        max_gc: *args.get_one::<f64>("maxgc").unwrap(),
+        min_consecutive_bases: *args.get_one::<usize>("min_consecutive_bases").unwrap(),
+        min_gc: *args.get_one::<f64>("min_gc").unwrap(),
+        max_gc: *args.get_one::<f64>("max_gc").unwrap(),
         use_pair_gc: !args.get_flag("no_pair_gc"),
         kmask_symbol,
         kmask_lowercase,

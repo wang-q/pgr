@@ -562,7 +562,7 @@ fn ktrim(
         rkmer = 0;
         len = 0;
         let stop = bases.len();
-        let lim = stop as i64 - opts.k as i64;
+        let lim = (stop as i64 - opts.k as i64).max(-1);
         let mut i = stop as i64 - 1;
         while i > lim {
             let b = bases[i as usize];
@@ -680,7 +680,7 @@ fn kmask(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashMap<i64, u32
         kmer = 0;
         rkmer = 0;
         len = 0;
-        let lim = n as i64 - opts.k as i64;
+        let lim = (n as i64 - opts.k as i64).max(-1);
         let mut i = n as i64 - 1;
         while i > lim {
             let b = bases[i as usize];
