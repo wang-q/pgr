@@ -200,7 +200,7 @@ fn clump_buckets<W: Write>(
 }
 
 /// Creates a unique temporary directory for bucket files.
-fn temp_dir_for() -> PathBuf {
+pub(crate) fn temp_dir_for() -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())

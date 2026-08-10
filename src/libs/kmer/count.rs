@@ -46,12 +46,20 @@ pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
     for v in &mut per_seq {
         keys.append(v);
     }
+    Ok(count_keys(keys, k))
+}
+
+/// Sorts a raw canonical key list (with duplicates) into a count table.
+///
+/// The deduplication tail shared by [`build_table`] and the memory-bounded
+/// bucket path of `fq norm`. `k` must already be validated (`1..=64`).
+pub(crate) fn count_keys(mut keys: Vec<u128>, k: usize) -> KmerTable {
     if keys.is_empty() {
-        return Ok(KmerTable {
+        return KmerTable {
             k,
             keys,
             counts: Vec::new(),
-        });
+        };
     }
     let n_keys = keys.len();
     crate::libs::ds::radix_sort::radix_sort_u128_par(
@@ -75,7 +83,7 @@ pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
         i = j;
     }
     keys.truncate(w);
-    Ok(KmerTable { k, keys, counts })
+    KmerTable { k, keys, counts }
 }
 
 /// Write `table` to `path` (`.pkt`) atomically: header (bincode) plus one

@@ -17,11 +17,16 @@ table) instead of the approximate `bits=16` hash table used by bbnorm.
 Notes:
 * Paired reads are kept only when both mates pass the depth threshold
 * Input is one interleaved FASTQ or two files (R1, R2)
+* --mem sets the in-memory count budget (KMG, default 2g); data estimated to
+  exceed it is counted via external hash buckets with bounded memory
 * Supports both plain text and gzipped (.gz) files
 
 Examples:
 1. Keep reads with at least one k-mer at depth 3:
    pgr fq norm reads.fq.gz -k 31 --min 3 -o out.fq
+
+2. Bound memory to 1 GiB (external bucket path for larger data):
+   pgr fq norm R1.fq.gz R2.fq.gz -k 31 --min 3 --mem 1g -o out.fq
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
@@ -46,6 +51,21 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .help("Minimum k-mer depth cutoff"),
         )
+        .arg(
+            Arg::new("parallel")
+                .long("parallel")
+                .short('p')
+                .num_args(1)
+                .default_value("auto")
+                .help("Worker threads (default: logical CPU count)"),
+        )
+        .arg(
+            Arg::new("mem")
+                .long("mem")
+                .num_args(1)
+                .default_value("2g")
+                .help("In-memory count budget (KMG; default 2g)"),
+        )
 }
 
 /// Execute the norm command.
@@ -59,6 +79,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = NormOptions {
         k: *args.get_one::<usize>("kmer").unwrap(),
         min_depth: *args.get_one::<usize>("min").unwrap(),
+        mem: Some(pgr::libs::sys::parse_mem_size(
+            args.get_one::<String>("mem").unwrap(),
+        )?),
+    };
+    let parallel = match args.get_one::<String>("parallel").unwrap().as_str() {
+        "auto" => pgr::libs::sys::logical_cpus(),
+        s => s
+            .parse::<usize>()
+            .map_err(|_| anyhow::anyhow!("invalid --parallel: {}", s))?,
     };
     if !(2..=31).contains(&opts.k) {
         anyhow::bail!("--kmer must be in 2..=31, got {}", opts.k);
@@ -66,7 +95,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
     let mut out =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    norm(&infiles, &mut out, &opts)?;
+    norm(&infiles, &mut out, &opts, parallel)?;
     out.flush()?;
     Ok(())
 }

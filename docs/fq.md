@@ -252,6 +252,9 @@ pgr fq norm [OPTIONS] <infiles>...
 
 *   `-k, --kmer <int>`: K-mer size (default: 31).
 *   `--min <int>`: Minimum k-mer depth cutoff (default: 3).
+*   `-p, --parallel <int>`: Worker threads (default: logical CPU count).
+*   `--mem <size>`: In-memory count budget, KMG units (default: 2g). Data
+    estimated to exceed it is counted via external hash buckets.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
