@@ -34,7 +34,6 @@ fn command_kmer_help() -> anyhow::Result<()> {
     assert!(stdout.contains("hist"));
     assert!(stdout.contains("gc"));
     assert!(stdout.contains("qhist"));
-    assert!(stdout.contains("qcheck"));
     assert!(stdout.contains("gsize"));
     Ok(())
 }
@@ -538,82 +537,6 @@ fn command_kmer_qhist_rejects_fasta() -> anyhow::Result<()> {
         ])
         .run_fail();
     assert!(stderr.contains("requires FASTQ"), "stderr: {stderr}");
-    Ok(())
-}
-
-#[test]
-fn command_kmer_qcheck_real_lambda() -> anyhow::Result<()> {
-    // Real Lambda reads carry sequencing errors; quorum-style checking must
-    // flag a few percent but keep the overwhelming majority.
-    let temp = tempfile::TempDir::new()?;
-    let kept = temp.path().join("kept.fq");
-    let discarded = temp.path().join("discarded.fq");
-    common::PgrCmd::new()
-        .args(&[
-            "kmer",
-            "qcheck",
-            "tests/bbtools/Lambda/golden/filter.fq.gz",
-            "-k",
-            "31",
-            "-o",
-            kept.to_str().unwrap(),
-            "--discard-file",
-            discarded.to_str().unwrap(),
-        ])
-        .run();
-    let n_kept = std::fs::read_to_string(&kept)?.lines().count() / 4;
-    let n_disc = std::fs::read_to_string(&discarded)?.lines().count() / 4;
-    assert_eq!(n_kept + n_disc, 36384, "all reads must be classified");
-    let frac = n_disc as f64 / (n_kept + n_disc) as f64;
-    assert!(
-        (0.02..=0.05).contains(&frac),
-        "flagged fraction {frac:.3} ({n_disc}/{}) must be a few percent",
-        n_kept + n_disc
-    );
-    Ok(())
-}
-
-#[test]
-fn command_kmer_qcheck_end_to_end() -> anyhow::Result<()> {
-    let temp = tempfile::TempDir::new()?;
-    let fq = temp.path().join("in.fq");
-    let seq = "ACGTACGTACGTACGTACGTACGTACGT";
-    let qual = "I".repeat(28);
-    let mut fastq = String::new();
-    for i in 1..=3 {
-        fastq.push_str(&format!("@r{i}\n{seq}\n+\n{qual}\n"));
-    }
-    // One read with a single-base substitution at position 10.
-    let mut bad = seq.to_string();
-    bad.replace_range(10..11, "C");
-    fastq.push_str(&format!("@bad\n{bad}\n+\n{qual}\n"));
-    std::fs::write(&fq, fastq)?;
-
-    let kept = temp.path().join("kept.fq");
-    let discarded = temp.path().join("discarded.fq");
-    let (_, stderr) = common::PgrCmd::new()
-        .args(&[
-            "kmer",
-            "qcheck",
-            fq.to_str().unwrap(),
-            "-k",
-            "8",
-            "-o",
-            kept.to_str().unwrap(),
-            "--discard-file",
-            discarded.to_str().unwrap(),
-        ])
-        .run();
-    assert!(
-        stderr.contains("Kept 3 reads, flagged 1"),
-        "stderr: {stderr}"
-    );
-    let kept_text = std::fs::read_to_string(&kept)?;
-    let discarded_text = std::fs::read_to_string(&discarded)?;
-    assert_eq!(kept_text.matches("@r").count(), 3);
-    assert!(!kept_text.contains("@bad"));
-    assert!(discarded_text.contains("@bad"));
-    assert_eq!(discarded_text.matches('@').count(), 1);
     Ok(())
 }
 

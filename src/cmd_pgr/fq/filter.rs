@@ -128,7 +128,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         qtrim_right: false,
         qtrim_left: false,
         qtrim_window: 0,
-        trimq: 0,
+        trimq: 0.0,
         minlen: *args.get_one::<usize>("minlen").unwrap(),
         maxns: *args.get_one::<i64>("max_ns").unwrap(),
         ftm: 0,

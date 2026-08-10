@@ -44,7 +44,7 @@ Examples:
 }
 
 /// Optional `-q/--qual-thresh` argument for quality-weighted commands.
-pub(super) fn qual_thresh_arg() -> Arg {
+pub fn qual_thresh_arg() -> Arg {
     Arg::new("qual_thresh")
         .long("qual-thresh")
         .short('q')
@@ -54,7 +54,7 @@ pub(super) fn qual_thresh_arg() -> Arg {
 }
 
 /// Optional `-b/--bits` argument for quality-weighted commands.
-pub(super) fn bits_arg() -> Arg {
+pub fn bits_arg() -> Arg {
     Arg::new("bits")
         .long("bits")
         .short('b')

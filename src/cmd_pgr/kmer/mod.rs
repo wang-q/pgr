@@ -4,7 +4,6 @@ pub mod gc;
 pub mod gsize;
 pub mod hist;
 pub mod profile;
-pub mod qcheck;
 pub mod qhist;
 pub mod table;
 
@@ -21,7 +20,6 @@ pub fn make_subcommand() -> Command {
         .subcommand(hist::make_subcommand())
         .subcommand(gsize::make_subcommand())
         .subcommand(gc::make_subcommand())
-        .subcommand(qcheck::make_subcommand())
         .subcommand(qhist::make_subcommand())
 }
 
@@ -33,7 +31,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("hist", sub)) => hist::execute(sub),
         Some(("gsize", sub)) => gsize::execute(sub),
         Some(("gc", sub)) => gc::execute(sub),
-        Some(("qcheck", sub)) => qcheck::execute(sub),
         Some(("qhist", sub)) => qhist::execute(sub),
         _ => unreachable!("kmer subcommand match"),
     }

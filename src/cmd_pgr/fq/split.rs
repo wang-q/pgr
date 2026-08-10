@@ -10,11 +10,15 @@ pub fn make_subcommand() -> Command {
             r###"
 This command splits an interleaved FASTQ file into paired-end R1/R2 outputs
 and a singles file for unpaired reads. It is the inverse of `pgr fq interleave`
-and matches BBTools `repair.sh` in `rp` mode.
+and matches BBTools `repair.sh` in `rp` mode. By default reads are paired by
+position (every two records); `--repair` instead matches mates by read name
+prefix, recovering disordered pairs and routing orphaned reads to singles.
 
 Notes:
 * Reads are processed in input order; headers and quality are preserved
 * A trailing read without its mate is written to --outfile-single
+* --repair buffers unpaired reads in memory (like repair.sh); the default
+  positional mode is streaming
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
 
@@ -43,6 +47,12 @@ Examples:
                 .long("outfile-single")
                 .num_args(1)
                 .help("Output file for unpaired reads"),
+        )
+        .arg(
+            Arg::new("repair")
+                .long("repair")
+                .action(clap::ArgAction::SetTrue)
+                .help("Pair mates by read-name prefix instead of position"),
         )
 }
 
@@ -77,7 +87,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut single = outfile_single
         .map(|p| pgr::writer(p).with_context(|| format!("Failed to open writer for {}", p)))
         .transpose()?;
-    pgr::libs::fq::split::split(infile, &mut out1, &mut out2, single.as_mut())?;
+    if args.get_flag("repair") {
+        pgr::libs::fq::split::split_repair(infile, &mut out1, &mut out2, single.as_mut())?;
+    } else {
+        pgr::libs::fq::split::split(infile, &mut out1, &mut out2, single.as_mut())?;
+    }
     out1.flush()?;
     out2.flush()?;
     if let Some(w) = single.as_mut() {

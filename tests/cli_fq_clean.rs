@@ -504,6 +504,132 @@ IIIIIIIIIIIIIIIIIIII
 }
 
 #[test]
+fn command_fq_clean_mask_fully_covered_keeps_hit_regions() {
+    // bbduk maskfullycovered: hit k-mer windows stay set, only windows with
+    // no match are cleared. A read with a long contiguous adapter run must
+    // keep the adapter region masked.
+    let input = "\
+@r1
+GGGGGGGGGGGGGGGGGGGGAATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCT
++
+IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--ref",
+            "tests/bbtools/Lambda/illumina_adapters.fa",
+            "-k",
+            "23",
+            "--min-k",
+            "0",
+            "--hamming-distance",
+            "0",
+            "--mask-kmers",
+            "N",
+            "--mask-fully-covered",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--no-qtrim",
+            "--max-ns=-1",
+            "--force-trim-mod",
+            "0",
+            "--minlen",
+            "0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let text = std::fs::read_to_string(&out).unwrap();
+    let seq = text.lines().nth(1).unwrap();
+    assert!(
+        seq.ends_with("NNNNNNNNNNNNNNNNNNNNNNNNNNNN"),
+        "adapter run must stay masked: {seq}"
+    );
+}
+
+#[test]
+fn command_fq_clean_qtrim_low_trimq_trims_trailing_ns() {
+    // bbduk phredToProbError(0)=0.75 makes trailing-N windows (nprob=0.825)
+    // negative, trimming them; a missing 0/1 special case kept them.
+    let input = "\
+@r1
+ACGTACGTNNNNNNNN
++
+IIIIIIIIIIIIIIII
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--qtrim",
+            "r",
+            "--trim-quality",
+            "0",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
+            "0",
+            "--minlen",
+            "0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "@r1\nACGTACGT\n+\nIIIIIIII\n"
+    );
+}
+
+#[test]
+fn command_fq_clean_force_trim_mod_short_read_no_panic() {
+    // ftm=5 on a 4 bp read: bbduk's b0=len-1-len%ftm is negative and the
+    // trim clamps to 1 bp; a usize underflow must not panic.
+    let input = "\
+@r1
+ACGT
++
+IIII
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "clean",
+            file.path().to_str().unwrap(),
+            "--qtrim",
+            "f",
+            "--no-trim-by-overlap",
+            "--no-trim-pair-evenly",
+            "--max-ns=-1",
+            "--force-trim-mod",
+            "5",
+            "--minlen",
+            "0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "@r1\nA\n+\nI\n");
+}
+
+#[test]
 fn command_fq_clean_kmask_masks_instead_of_trims() {
     // Regression: --mask-kmers must switch the main k-mer operation from
     // right-trimming to masking (bbduk kmask). Adapter k-mers become N and the

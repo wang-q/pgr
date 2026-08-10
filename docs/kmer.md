@@ -197,37 +197,6 @@ pgr kmer qhist reads.fq.gz -k 21 -q 43 -o reads.qhist   # Phred+33 Q10
 The output format matches quorum's `histo_mer_database`, so it can be
 compared against quorum/Jellyfish pipelines directly.
 
-### qcheck
-
-Flags reads that quorum would correct or truncate and keeps the rest
-untouched. A quality-weighted k-mer table is built from the input reads
-first, then each read is checked for quorum's error signals: no high-quality
-anchor, a k-mer with no continuation (truncation), or a base that quorum
-would substitute (including the Poisson collision test). No corrected
-sequence is produced — the read is kept as-is or discarded.
-
-| Argument | Description |
-|----------|-------------|
-| `infile` | Input FASTQ file to process (FASTA is rejected) |
-| `-k`, `--kmer` | K-mer size (default: 17) |
-| `-q`, `--qual-thresh` | Table quality threshold (default: detected Phred offset + 5) |
-| `-b`, `--bits` | Table count bits (default: 7, max count 127) |
-| `--skip` / `--good` / `--anchor-count` | Anchor search parameters (defaults 0 / 1 / 1) |
-| `--min-count` / `--cutoff` | Trusted-count parameters (defaults 1 / 4) |
-| `--apriori-error-rate` / `--poisson-threshold` | Poisson collision test (defaults 0.01 / 1e-6) |
-| `-o`, `--outfile` | Output FASTQ of kept reads |
-| `--discard-file` | Optional FASTQ of flagged reads |
-
-```bash
-pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq.gz
-pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
-```
-
-The error signals mirror quorum's `find_starting_mer` / `extend` semantics
-(high-quality anchors only, substitution/truncation events), so `qcheck`
-reproduces which reads quorum would touch without producing corrected
-sequences.
-
 ### gsize
 
 Estimates the k-mer coverage peak and genome size from a count table.

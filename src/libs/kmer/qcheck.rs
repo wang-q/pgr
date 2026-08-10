@@ -59,15 +59,17 @@ pub fn check_read(table: &QualityTable, seq: &[u8], p: &CheckParams) -> Result<(
     let Some((start, kx, kxr)) = find_anchor(table, seq, p) else {
         return Err(ReadError::NoAnchor);
     };
-    extend(table, seq, start + p.k, kx, kxr, p)?;
-
-    // Mirror the read to extend leftwards with the same forward logic.
-    let rev: Vec<u8> = seq.iter().rev().copied().collect();
-    let rev_start = seq.len() - start - p.k;
-    let Some((rkx, rkxr)) = roll_window(&rev, rev_start, p.k) else {
-        return Err(ReadError::Truncation);
-    };
-    extend(table, &rev, rev_start + p.k, rkx, rkxr, p)
+    // Extend rightwards (new base into the low bits) and leftwards (new
+    // base into the high bits) from the anchor window, mirroring quorum's
+    // forward/backward_mer on the same kmer_t (canonical key unchanged).
+    extend(table, seq, start + p.k, kx, kxr, p, false)?;
+    if start == 0 {
+        return Ok(());
+    }
+    // Extend leftwards over positions [0, start); the iterator inside
+    // `extend` is `(0..start).rev()`, so pass `start` (not `start - 1`) or
+    // the first position is skipped and the window drifts.
+    extend(table, seq, start, kx, kxr, p, true)
 }
 
 /// First position whose window completes `good` consecutive high-quality
@@ -109,23 +111,6 @@ fn find_anchor(table: &QualityTable, seq: &[u8], p: &CheckParams) -> Option<(usi
     None
 }
 
-/// Rolling 2-bit keys of `seq[start..start+k]`; `None` if it contains N.
-fn roll_window(seq: &[u8], start: usize, k: usize) -> Option<(u128, u128)> {
-    let (kmask, rc_top) = masks(k);
-    let codes = super::base_codes();
-    let mut kx: u128 = 0;
-    let mut kxr: u128 = 0;
-    for &b in &seq[start..start + k] {
-        let code = codes[b as usize];
-        if code == 4 {
-            return None;
-        }
-        kx = ((kx << 2) | code as u128) & kmask;
-        kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
-    }
-    Some((kx, kxr))
-}
-
 fn masks(k: usize) -> (u128, u32) {
     let kmask = if 2 * k >= 128 {
         u128::MAX
@@ -144,28 +129,43 @@ fn extend(
     mut kx: u128,
     mut kxr: u128,
     p: &CheckParams,
+    backward: bool,
 ) -> Result<(), ReadError> {
     let (kmask, rc_top) = masks(p.k);
     let codes = super::base_codes();
-    for &b in &seq[start..] {
+    let iter: Box<dyn Iterator<Item = usize>> = if backward {
+        Box::new((0..start).rev())
+    } else {
+        Box::new(start..seq.len())
+    };
+    for i in iter {
+        let b = seq[i];
         let code = codes[b as usize];
         if code == 4 {
             // quorum would substitute or truncate an N; flag the read.
             return Err(ReadError::Substitution);
         }
-        kx = ((kx << 2) | code as u128) & kmask;
-        kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
-        let (counts, ucode, level, count) = best_alternatives(table, kx, kxr, rc_top);
+        let (cur, comp) = if backward {
+            kx = ((kx >> 2) | ((code as u128) << rc_top)) & kmask;
+            kxr = ((kxr << 2) | ((3 - code) as u128)) & kmask;
+            ((kx >> rc_top) & 3, (3 - code) as u128)
+        } else {
+            kx = ((kx << 2) | code as u128) & kmask;
+            kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
+            (kx & 3, (3 - code) as u128)
+        };
+        let _ = comp;
+        let (counts, ucode, level, count) = best_alternatives(table, kx, kxr, rc_top, backward);
         if count == 0 {
             return Err(ReadError::Truncation);
         }
         if count == 1 {
-            if ucode != code as usize {
+            if ucode != cur as usize {
                 return Err(ReadError::Substitution);
             }
             continue;
         }
-        let ori = counts[code as usize];
+        let ori = counts[cur as usize];
         if ori > p.min_count {
             if ori >= p.cutoff {
                 continue;
@@ -192,14 +192,24 @@ fn best_alternatives(
     kx: u128,
     kxr: u128,
     rc_top: u32,
+    backward: bool,
 ) -> ([u64; 4], usize, u8, usize) {
     let mut counts = [0u64; 4];
     let mut level = 0u8;
     let mut ucode = 0usize;
     let mut count = 0usize;
     for i in 0..4u128 {
-        let kx2 = (kx & !3) | i;
-        let kxr2 = (kxr & !(3u128 << rc_top)) | ((3 - i) << rc_top);
+        let (kx2, kxr2) = if backward {
+            (
+                (kx & !(3u128 << rc_top)) | (i << rc_top),
+                (kxr & !3) | (3 - i),
+            )
+        } else {
+            (
+                (kx & !3) | i,
+                (kxr & !(3u128 << rc_top)) | ((3 - i) << rc_top),
+            )
+        };
         if let Some((c, q)) = table.get(kx2.min(kxr2)) {
             if q >= level {
                 if q > level && count > 0 {

@@ -153,7 +153,9 @@ pgr fq to-fa [OPTIONS] <infiles>...
 
 Splits an interleaved FASTQ file into paired-end R1/R2 outputs and a singles
 file. It is the inverse of `pgr fq interleave` and matches BBTools
-`repair.sh` in `rp` mode.
+`repair.sh` in `rp` mode. By default reads are paired by position (every two
+records); `--repair` instead matches mates by read-name prefix, recovering
+disordered pairs and routing orphaned reads to singles.
 
 ```bash
 pgr fq split [OPTIONS] <infile>
@@ -164,6 +166,9 @@ pgr fq split [OPTIONS] <infile>
 *   `-o, --outfile <file>`: R1 output filename (default: stdout).
 *   `--outfile-2 <file>`: R2 output filename (required).
 *   `--outfile-single <file>`: Output file for unpaired reads (optional).
+*   `--repair`: Pair mates by read-name prefix (`/1` `/2` or `1:` `2:`
+    suffixes, with the repair.sh fallback) instead of position; buffers
+    unpaired reads in memory like `repair.sh`.
 
 ### Examples
 
@@ -175,6 +180,12 @@ pgr fq split [OPTIONS] <infile>
 2.  **Split a gzipped file into R1/R2 only**:
     ```bash
     pgr fq split interleaved.fq.gz -o r1.fq --outfile-2 r2.fq
+    ```
+
+3.  **Repair disordered pairs and orphaned reads**:
+    ```bash
+    pgr fq split disordered.fq.gz --repair -o r1.fq --outfile-2 r2.fq \
+        --outfile-single s.fq
     ```
 
 ---
@@ -345,6 +356,56 @@ pgr fq filter [OPTIONS] <infiles>...
     ```bash
     pgr fq filter trim.fq.gz --ref illumina_adapters.fa -k 27 -o filter.fq
     ```
+
+---
+
+## s-filter
+
+Discards reads whose own k-mer counts look erroneous, using the input reads
+themselves as the reference (quorum's error-correction signals, no external
+contaminant database needed). The `s-` prefix marks this as a self/internal
+check, in contrast to `pgr fq filter`, which matches reads against an
+external reference. A quality-weighted k-mer table is built from the input
+first, then each read is checked for quorum's signals: no high-quality
+anchor, a k-mer with no continuation (truncation), or a base that quorum
+would substitute (including the Poisson collision test). No corrected
+sequence is produced — the read is kept as-is or discarded.
+
+```bash
+pgr fq s-filter [OPTIONS] <infile>
+```
+
+### Options
+
+| Argument | Description |
+|----------|-------------|
+| `infile` | Input FASTQ file to process (FASTA is rejected) |
+| `-k`, `--kmer` | K-mer size (default: 17) |
+| `-q`, `--qual-thresh` | Table quality threshold (default: detected Phred offset + 5) |
+| `-b`, `--bits` | Table count bits (default: 7, max count 127) |
+| `--skip` / `--good` / `--anchor-count` | Anchor search parameters (defaults 0 / 1 / 1) |
+| `--min-count` / `--cutoff` | Trusted-count parameters (defaults 1 / 4) |
+| `--apriori-error-rate` / `--poisson-threshold` | Poisson collision test (defaults 0.01 / 1e-6) |
+| `-o`, `--outfile` | Output FASTQ of kept reads |
+| `--discard-file` | Optional FASTQ of flagged reads |
+
+### Examples
+
+1.  **Self-check and discard error-prone reads**:
+    ```bash
+    pgr fq s-filter reads.fq.gz -k 21 -o kept.fq.gz
+    ```
+
+2.  **Also write the discarded reads**:
+    ```bash
+    pgr fq s-filter reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
+    ```
+
+The error signals mirror quorum's `find_starting_mer` / `extend` semantics
+(high-quality anchors only, substitution/truncation events), so `s-filter`
+reproduces which reads quorum would touch without producing corrected
+sequences. End-to-end agreement with `quorum_error_correct_reads` is verified
+on the Lambda golden data.
 
 ---
 

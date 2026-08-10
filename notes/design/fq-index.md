@@ -4,7 +4,7 @@
 > 对齐，含 name 归一化与交错 `#n` 消歧）；双端 S2 待二期。
 >
 > 配套：[seq-reader.md](seq-reader.md)（FAFQ 读取与 BGZF 基础设施）、
-> [fq-trim-qual.md](fq-trim-qual.md)（fq 命令组现状）。
+> [anchr-trim-replace.md](anchr-trim-replace.md)（fq 命令组现状，含 trim-qual）。
 
 ## 0. 动机
 

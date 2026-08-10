@@ -4,6 +4,7 @@ pub mod filter;
 pub mod interleave;
 pub mod norm;
 pub mod range;
+pub mod s_filter;
 pub mod sample;
 pub mod split;
 pub mod to_fa;
@@ -25,6 +26,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(split::make_subcommand())
         .subcommand(clean::make_subcommand())
         .subcommand(filter::make_subcommand())
+        .subcommand(s_filter::make_subcommand())
         .subcommand(trim_qual::make_subcommand())
 }
 /// Execute the fq command.
@@ -41,6 +43,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("clean", sub_matches)) => clean::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
+        Some(("s-filter", sub_matches)) => s_filter::execute(sub_matches),
         Some(("trim-qual", sub_matches)) => trim_qual::execute(sub_matches),
         _ => Ok(()),
     }

@@ -235,7 +235,7 @@ pgr plot heat reads.kgc -o heat.tex
 
 # Quality-weighted histogram and error-read filtering (quorum semantics)
 pgr kmer qhist reads.fq.gz -k 21 -o reads.qhist
-pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
+pgr fq s-filter reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
 
 # Coverage peak and genome-size estimate
 pgr kmer gsize reads.fq.gz -k 21 --model --plot -o gs_out

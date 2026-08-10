@@ -3,18 +3,22 @@ use clap::{Arg, ArgMatches, Command};
 use rayon::prelude::*;
 use std::io::Write;
 
-/// Build the clap subcommand for qcheck.
+/// Build the clap subcommand for s-filter.
 pub fn make_subcommand() -> Command {
-    Command::new("qcheck")
-        .about("Flags error-prone reads from quality-weighted k-mers")
+    Command::new("s-filter")
+        .about("Self-checks reads against their own quality-weighted k-mers")
         .after_help(
             r###"
-Flags reads that quorum would correct or truncate and keeps the rest
-untouched. A quality-weighted k-mer table is built from the input reads
-first, then each read is checked for quorum's error signals: no high-quality
-anchor, a k-mer with no continuation (truncation), or a base that quorum
-would substitute (including the Poisson collision test). No corrected
-sequence is produced — the read is kept as-is or discarded.
+Discards reads whose own k-mer counts look erroneous, using the input reads
+themselves as the reference (quorum's error-correction signals, no external
+contaminant database needed). A quality-weighted k-mer table is built from
+the input first, then each read is checked for quorum's signals: no
+high-quality anchor, a k-mer with no continuation (truncation), or a base
+that quorum would substitute (including the Poisson collision test). No
+corrected sequence is produced — the read is kept as-is or discarded.
+
+The `s-` prefix marks this as a self/internal check, in contrast to
+`pgr fq filter`, which matches reads against an external reference.
 
 The output is the kept reads as FASTQ; --discard-file additionally writes
 the flagged reads so they can be inspected.
@@ -24,18 +28,18 @@ the flagged reads so they can be inspected.
 * FASTA input is rejected (quality scores are required)
 
 Examples:
-1. Filter error-prone reads:
-   pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq.gz
+1. Self-check and discard error-prone reads:
+   pgr fq s-filter reads.fq.gz -k 21 -o kept.fq.gz
 2. Also write the discarded reads:
-   pgr kmer qcheck reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
+   pgr fq s-filter reads.fq.gz -k 21 -o kept.fq --discard-file bad.fq
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTQ file to process",
         ))
         .arg(crate::cmd_pgr::args::kmer_arg_with_default("17"))
-        .arg(super::qhist::qual_thresh_arg())
-        .arg(super::qhist::bits_arg())
+        .arg(crate::cmd_pgr::kmer::qhist::qual_thresh_arg())
+        .arg(crate::cmd_pgr::kmer::qhist::bits_arg())
         .arg(
             Arg::new("skip")
                 .long("skip")
@@ -101,7 +105,7 @@ Examples:
         )
 }
 
-/// Execute the qcheck command.
+/// Execute the s-filter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = args.get_one::<String>("outfile").unwrap();

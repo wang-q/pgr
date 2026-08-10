@@ -38,8 +38,8 @@ pub struct AdapterTrimOptions {
     pub qtrim_left: bool,
     /// Quality trim sliding window (`qtrim=w`; 0 disables window mode).
     pub qtrim_window: usize,
-    /// Quality threshold for `qtrim=r` (`trimq`).
-    pub trimq: u8,
+    /// Quality threshold for qtrim (`trimq`; float, like BBDuk).
+    pub trimq: f64,
     /// Discard reads shorter than this (`minlen`).
     pub minlen: usize,
     /// Discard reads with more than this many N bases (`maxns`).
@@ -635,9 +635,7 @@ fn kmask(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashMap<i64, u32
                     id0 = id;
                 }
                 found += 1;
-                if fully {
-                    marked[lo..hi].fill(false);
-                } else {
+                if !fully {
                     marked[lo..hi].fill(true);
                 }
             } else if fully {
@@ -666,9 +664,7 @@ fn kmask(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashMap<i64, u32
                         id0 = id;
                     }
                     found += 1;
-                    if fully {
-                        marked[0..hi].fill(false);
-                    } else {
+                    if !fully {
                         marked[0..hi].fill(true);
                     }
                 } else if fully {
@@ -696,9 +692,7 @@ fn kmask(read: &mut ReadBuf, opts: &AdapterTrimOptions, table: &HashMap<i64, u32
                         id0 = id;
                     }
                     found += 1;
-                    if fully {
-                        marked[lo..n].fill(false);
-                    } else {
+                    if !fully {
                         marked[lo..n].fill(true);
                     }
                 } else if fully {
@@ -929,7 +923,7 @@ fn prob_error() -> [f32; 128] {
 ///
 /// Kadane maximum-subarray over `avgErrorRate - probError`: the max-sum
 /// contiguous run is kept, everything left of it and right of it is trimmed.
-fn test_optimal(read: &ReadBuf, trimq: u8, prob: &[f32; 128]) -> (usize, usize) {
+fn test_optimal(read: &ReadBuf, trimq: f64, prob: &[f32; 128]) -> (usize, usize) {
     if read.len() == 0 {
         return (0, 0);
     }
@@ -938,8 +932,15 @@ fn test_optimal(read: &ReadBuf, trimq: u8, prob: &[f32; 128]) -> (usize, usize) 
     if qual.is_empty() {
         return (0, 0);
     }
-    // avgErrorRate = phredToProbError(trimq), like Parser.trimE().
-    let avg_error_rate = 10f64.powf(-0.1 * trimq as f64) as f32;
+    // avgErrorRate = phredToProbError(trimq), like Parser.trimE():
+    // q<=0 -> 0.75, q<=1 -> 0.75-0.05q, else min(0.7, 10^(-0.1q)).
+    let avg_error_rate = if trimq <= 0.0 {
+        0.75f32
+    } else if trimq <= 1.0 {
+        (0.75 - 0.05 * trimq) as f32
+    } else {
+        (10f64.powf(-0.1 * trimq) as f32).min(0.7)
+    };
     let nprob = (avg_error_rate * 1.1).clamp(0.75, 1.0);
     let mut max_score = 0f32;
     let mut score = 0f32;
@@ -982,7 +983,13 @@ fn test_optimal(read: &ReadBuf, trimq: u8, prob: &[f32; 128]) -> (usize, usize) 
 fn test_right_window(read: &ReadBuf, trimq: u8, window: usize) -> usize {
     let qual = &read.qual;
     if qual.len() < window {
-        return 0;
+        // BBDuk: with trimq=0 a read shorter than the window trims Ns
+        // (testRightN); otherwise nothing.
+        return if trimq > 0 {
+            0
+        } else {
+            test_right_n(&read.seq)
+        };
     }
     let thresh = (window as u32 * trimq as u32).max(1);
     let mut sum = 0u32;
@@ -1001,13 +1008,40 @@ fn test_right_window(read: &ReadBuf, trimq: u8, window: usize) -> usize {
     0
 }
 
+/// Right-end N trim (`TrimRead.testRightN`): trims a trailing run of Ns,
+/// stopping after `minGoodInterval` (2) consecutive non-N bases.
+fn test_right_n(seq: &[u8]) -> usize {
+    const MIN_GOOD_INTERVAL: usize = 2;
+    if seq.is_empty() {
+        return 0;
+    }
+    let mut good = 0usize;
+    let mut last_bad = seq.len();
+    for i in (0..seq.len()).rev() {
+        if good >= MIN_GOOD_INTERVAL {
+            break;
+        }
+        if seq[i] != b'N' {
+            good += 1;
+        } else {
+            good = 0;
+            last_bad = i;
+        }
+    }
+    seq.len() - last_bad
+}
+
 /// Apply quality trimming to both ends (TrimRead.trimFast).
 fn qtrim(read: &mut ReadBuf, opts: &AdapterTrimOptions, prob: &[f32; 128]) -> usize {
     if read.len() == 0 {
         return 0;
     }
     let (left, right) = if opts.qtrim_window > 0 {
-        (0, test_right_window(read, opts.trimq, opts.qtrim_window))
+        // BBDuk casts trimq to byte for the window path.
+        (
+            0,
+            test_right_window(read, opts.trimq as u8, opts.qtrim_window),
+        )
     } else {
         let (l, r) = test_optimal(read, opts.trimq, prob);
         (
@@ -1269,23 +1303,24 @@ fn process_pair(
                     0
                 };
                 let b0 = if opts.ftm > 0 {
-                    len.saturating_sub(1) - len % opts.ftm
+                    len as i64 - 1 - (len % opts.ftm) as i64
                 } else {
-                    len
+                    len as i64
                 };
                 let b1 = if opts.force_trim_right > 0 {
-                    opts.force_trim_right
+                    opts.force_trim_right as i64
                 } else {
-                    len
+                    len as i64
                 };
                 let b2 = if opts.force_trim_right2 > 0 {
-                    len.saturating_sub(1) - opts.force_trim_right2
+                    len as i64 - 1 - opts.force_trim_right2 as i64
                 } else {
-                    len
+                    len as i64
                 };
                 let b = b0.min(b1).min(b2);
-                if a > 0 || b < len {
-                    r.trim_by_amount(a, len.saturating_sub(b + 1), 1);
+                let right = (len as i64 - b - 1).max(0) as usize;
+                if a > 0 || right > 0 {
+                    r.trim_by_amount(a, right, 1);
                 }
             }
         }

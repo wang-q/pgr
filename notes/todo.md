@@ -6,6 +6,15 @@
 
 ## 0. 会话交接（2026-08-10：BBTools 替换逐命令核对与修复）
 
+**新流程（2026-08-11 立项）：anchr merge.tera.sh 替换**，设计见
+`design/anchr-merge-replace.md`。涉及新工具：bbmerge（merge/ecco/ihist）、
+tadpole（ecc/extend）、clumpify ecc 模式。分阶段：
+阶段 A bbmerge 核心（复用 trim_adapter 的 mate_by_overlap_ratio）；
+阶段 B tadpole ecc（toss 语义与 s-filter 一致）；**clumpify ecc（phase 2）
+不做**（与 tadpole ecc 冗余，anchr `template.rs` 帮助明示 "Phase 2 can be
+skipped"，用户反馈以前常卡住）；
+阶段 C tadpole extend + prefilter。
+
 **已完成（trim.era.sh 8 步 M0-M8 全部移植，测试 1594 全绿，fmt/clippy
 clean，代码已提交）**：
 
@@ -23,6 +32,11 @@ clean，代码已提交）**：
   尾记录（无 --outfile-single）warning + 丢弃均有测试；确认 `pgr::writer`
   不做 `.gz` 自动压缩（设计如此，压缩由 shell 管道负责）、`fq interleave`
   默认重命名 reads（roundtrip 逐字节不适用）。
+- `fq split --repair`（2026-08-11）：按 read 名前缀配对（repair.sh `rp`
+  模式源码逐行复刻——prefix 提取含单 token `/` 拆、suffix `/1` `/2`/`1:`
+  `2:` 判定、含 `/1`/`/2` 时重设 prefix、LinkedHashMap 缓存配对方向），
+  处理顺序错乱/孤儿；默认仍为流式位置拆分。合成 4 场景 + Lambda golden
+  与 repair.sh 逐字节一致。
 - bbduk 第一梯队功能补齐（2026-08-10）：`fq trim-adapter` 新增 qtrim
   r/l/rl/w、polymer（poly-A/G/C + filter）、maq/mbq/maxnrate/mcb/mlf/
   maxlength、GC 过滤、forcetrim、kmask（N/lc/fully-covered）——14 组
@@ -32,6 +46,17 @@ clean，代码已提交）**：
   `fq clean`（kmer 修剪 + 质量/组成过滤，对应 bbduk 第一次调用）+
   `fq filter`（kmer 污染过滤，对应第二次调用）；参数名统一 pgr 长名
   风格并在帮助标注 `(bbduk: 原名)`；`fq trim-qual`（sickle 语义）保留。
+- quorum 端到端对照（2026-08-11）：本机 jellyfish 2.3.1 可用后，`pgr kmer
+  qcheck`（已更名 `pgr fq s-filter`）与 quorum error_correct_reads 在
+  Lambda filter golden（k=24）对照：
+  skip=1/good=2/ac=3 时 1703 = 1703 完全一致；默认参数 1267 vs 1264（3 条
+  边界差异）。**修复 backward 扩展 off-by-one**（extend 起点传 start-1 导致
+  漏检位置 start-1、窗口漂移，非默认参数下误判 ~27k read）。
+  新增真实数据回归测试（flagged 1240-1300 锚点）。
+- `qcheck` 更名 `fq s-filter`（2026-08-11）：内部自查（quorum 语义、无外部
+  参考）与 `fq filter`（外部参考 kmer 过滤）对照，沿用 rept `s-`/`e-` 的
+  self 前缀约定；命令从 `kmer` 移入 `fq`（与 norm 同类：基于 kmer 计数判定
+  并过滤 read）。qhist 留在 kmer。
 
 **挂账/待决**：
 
@@ -60,7 +85,7 @@ clean，代码已提交）**：
   → `design/kmer.md` §10。
 - **fq 系列（2026-08）**：`trim-qual`（sickle 替代）、`range`（FASTQ
   `.loc` 索引一期 + 双端二期）、BGZF 写侧基准、FAFQ reader 笔记 →
-  `design/fq-trim-qual.md`、`design/fq-index.md`、`design/seq-reader.md`。
+  `design/anchr-trim-replace.md`（含 trim-qual）、`design/fq-index.md`、`design/seq-reader.md`。
 
 ## 1. 等数据/场景到位再启动
 

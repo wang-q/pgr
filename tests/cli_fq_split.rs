@@ -200,6 +200,108 @@ BBBB
 }
 
 #[test]
+fn command_fq_split_repair_pairs_by_name() {
+    // repair.sh `rp` mode: r2/2 comes before r2/1 (disordered), r3/1 is an
+    // orphan, and "orphan" has no pair marker. --repair must recover the
+    // order and route singletons to --outfile-single.
+    let input = "\
+@r1/1
+AAAA
++
+IIII
+@r1/2
+TTTT
++
+IIII
+@r2/2
+CCCC
++
+IIII
+@r2/1
+GGGG
++
+IIII
+@r3/1
+ACAC
++
+IIII
+@orphan
+GTGT
++
+IIII
+";
+    let file = write_temp(input);
+    let out_dir = tempfile::tempdir().unwrap();
+    let r1 = out_dir.path().join("r1.fq");
+    let r2 = out_dir.path().join("r2.fq");
+    let s = out_dir.path().join("s.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "split",
+            file.path().to_str().unwrap(),
+            "--repair",
+            "-o",
+            r1.to_str().unwrap(),
+            "--outfile-2",
+            r2.to_str().unwrap(),
+            "--outfile-single",
+            s.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(&r1).unwrap(),
+        "@r1/1\nAAAA\n+\nIIII\n@r2/1\nGGGG\n+\nIIII\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&r2).unwrap(),
+        "@r1/2\nTTTT\n+\nIIII\n@r2/2\nCCCC\n+\nIIII\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&s).unwrap(),
+        "@r3/1\nACAC\n+\nIIII\n@orphan\nGTGT\n+\nIIII\n"
+    );
+}
+
+#[test]
+fn command_fq_split_repair_matches_bbtools_golden() {
+    // On well-ordered input (BBTools filter golden), --repair must produce
+    // the same R1/R2/Rs as repair.sh rp mode.
+    let out_dir = tempfile::tempdir().unwrap();
+    let r1 = out_dir.path().join("r1.fq");
+    let r2 = out_dir.path().join("r2.fq");
+    let s = out_dir.path().join("s.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "split",
+            "tests/bbtools/Lambda/golden/filter.fq.gz",
+            "--repair",
+            "-o",
+            r1.to_str().unwrap(),
+            "--outfile-2",
+            r2.to_str().unwrap(),
+            "--outfile-single",
+            s.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(&r1).unwrap(),
+        read_gz("tests/bbtools/Lambda/golden/R1.fq.gz")
+    );
+    assert_eq!(
+        std::fs::read(&r2).unwrap(),
+        read_gz("tests/bbtools/Lambda/golden/R2.fq.gz")
+    );
+    assert_eq!(
+        std::fs::read(&s).unwrap(),
+        read_gz("tests/bbtools/Lambda/golden/Rs.fq.gz")
+    );
+}
+
+#[test]
 fn command_fq_split_missing_outfile2_is_clap_error() {
     // Regression: omitting --outfile-2 used to panic on an unwrap of the
     // missing argument; it must now be a clean clap usage error (non-zero

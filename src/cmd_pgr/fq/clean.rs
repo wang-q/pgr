@@ -122,8 +122,8 @@ Examples:
                 .long("trim-quality")
                 .num_args(1)
                 .default_value("15")
-                .value_parser(value_parser!(u8))
-                .help("Quality threshold for qtrim (bbduk: trimq)"),
+                .value_parser(value_parser!(f64))
+                .help("Quality threshold for qtrim, float allowed (bbduk: trimq)"),
         )
         .arg(
             Arg::new("minlen")
@@ -409,7 +409,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         qtrim_right,
         qtrim_left,
         qtrim_window,
-        trimq: *args.get_one::<u8>("trim_quality").unwrap(),
+        trimq: *args.get_one::<f64>("trim_quality").unwrap(),
         minlen: *args.get_one::<usize>("minlen").unwrap(),
         maxns: *args.get_one::<i64>("max_ns").unwrap(),
         ftm: *args.get_one::<usize>("force_trim_mod").unwrap(),
