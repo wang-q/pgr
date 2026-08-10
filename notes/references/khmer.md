@@ -32,6 +32,11 @@
 - **默认 2-bit 编码**：A=0、T=1、C=2、G=3；非 ACGT 一律按 3（G）处理。
   前向 `f` 左移 2 位累积，反向互补 `r` 反向累积；
   canonical = `min(f, r)`（`uniqify_rc`）。u64 支持 k ≤ 32。
+  **source quirk**：`twobit_repr/twobit_comp` 是宏，快速分支注释
+  `"NOTE: Assumes data is already sanitized as it should be by parsers"`——
+  它**假定输入已清洗**（否则 N/小写会走默认分支映射为 3/G）。这正是
+  `clean_input_reads` 必须先把 `N→A` 的原因；若在 pgr 直接复用此编码，
+  必须自行保证清洗或处理非 ACGT。
 - **滚动迭代** `KmerIterator::next()`：
   `f = (f << 2 | twobit(ch)) & bitmask`，
   `r = (r >> 2) | (twobit_comp(ch) << (2k-2))`。与 pgr 现有滚动方式同构。

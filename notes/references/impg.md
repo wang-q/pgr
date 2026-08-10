@@ -504,6 +504,10 @@ pub struct QueryMetadata {
 
 `CigarOp` ([impg.rs#L74](../../../impg-0.4.1/src/impg.rs#L74))
 把 CIGAR 操作 + 长度压进单个 `u32`：高 3 位是 op (`=`/`X`/`I`/`D`/`M`)，低 29 位是长度。
+op 码的精确编码（`CigarOp::new`，impg.rs#L79-91）：`=`=0、`X`=1、`I`=2、`D`=3、`M`=4，
+以 `(op<<29)|len` 打包；`target_delta()`/`query_delta(strand)` 按 op 与链向换算坐标增量
+（`query_delta` 对负链返回负值）。pgr 若复刻 `invert_cigar_ops` 的 mirror 索引，可直接照抄
+这套 5-码 op 打包与坐标增量换算。
 这种设计使区间树节点极紧凑，能装下全基因组规模的 all-vs-all 比对。
 
 `Impg` 通过 `get_cigar_ops` 按需还原 CIGAR：

@@ -11,9 +11,10 @@ FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio 
 
 ### 1. K-mer 与 Canonical K-mer
 *   **K-mer**: 长度为 k 的 DNA 序列片段（FastK 支持 k >= 5，默认为 40）。
-    注：代码对 k 只做 `ARG_POSITIVE` 校验（k > 0），**没有 k >= 5 的下限**；"5" 实际是
-    split.c 的 seed minimizer 长度（`#define MIN_LEN 5 // Seed minimizer length`），
-    不是 k-mer 的最小值。
+    注：CLI 层对 k 只做 `ARG_POSITIVE` 校验（k > 0），**没有显式的 k >= 5 下限**；
+    "5" 是 split.c 的 seed minimizer 长度（`#define MIN_LEN 5`）。但 `Determine_Scheme`
+    末尾有硬校验 `if (KMER < PAD_LEN) Clean_Exit`（`PAD_LEN = MIN_LEN + PAD >= 5`），
+    因此实际运行时 k 必须 ≥ PAD_LEN（至少 5），太小会直接报错退出。
 *   **Canonical K-mer (规范 K-mer)**: 为了处理测序读取方向未知的问题，FastK 将一个 k-mer 及其反向互补序列（Watson-Crick complement）视为同一个 k-mer。在两者中，字典序较小的那个被称为“规范 k-mer”。FastK 的统计表（Table）只记录规范 k-mer。
 
 ### 2. Super-mer (超 k-mer)
@@ -39,6 +40,27 @@ FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio 
     *   保证同类归并: 如果两个 k-mer 的序列完全相同，它们必然拥有相同的 Minimizer。因此，它们一定会被分发到同一个桶中。这就像把所有姓“李”的书都扔进“L”号箱子，不管这书是从哪里来的，只要是同一本书，它一定在“L”箱子里。
     *   并行独立性: 因为所有相同的 k-mer 都在同一个桶里，我们在统计“L”箱子时，完全不需要去问“Z”箱子有没有漏掉的。这意味着不同的桶可以完全独立地由不同线程并行处理，互不干扰。
     *   内存控制: 无论数据集多大（比如 1TB），我们都可以通过增加桶的数量（比如分成 1000 个桶），让每个桶只有 1GB，从而可以轻松读入内存进行快速排序。
+
+**实现细节（比"固定 m-mer"更精巧）**：FastK 的 minimizer 不是简单的固定长度 m-mer，而是
+一个 **core prefix trie（核心前缀树）+ 自适应 padding** 的方案（`Determine_Scheme`）：
+
+*   以长度为 5 的 4-mer 全 4-叉树为种子（`MIN_LEN=5`，共 4^5=1024 个叶节点）。
+*   先在输入前 1 Gbp 上统计每个 5-mer 前缀的出现频次，按目标分块数 `npieces=2*NPARTS`
+    动态给每个叶节点加 `PAD` 位（每次不够再 +2，`PAD += 2`），把过热的 minimizer 继续
+    往下细分，直到每个 core prefix 的频次都 ≤ 阈值 `kthresh = ktot/npieces`（或提升
+    < 2% 时停止）。`MAX_SUPER = KMER - PAD_LEN`，即超 k-mer 最大长度由 padding 反推。
+*   `assign_pieces` 再把 core prefix 尽可能均匀地装箱到 `NPARTS` 个桶（先按频次降序，
+    贪心/加权随机分配）。`Min_Part[]` 数组即编码了这棵 trie：`>=0` 为桶号，`<0` 为
+    进入子树的状态偏移。
+*   因此同一个 minimizer 可能对应不同桶；分发时沿 trie 逐位下钻定位桶（`b<0` 时
+    `b = Min_Part[((mc >> y) & 0x3) - b]`）。
+*   **碱基编码是按频率排序的**（`Tran[]`）：对训练集统计 A/C/G/T 频次，把最频繁的映射
+    为 0、次之为 1……这样 minimizer 值小的区域天然承载更多数据，有助于前缀树平衡。
+    这不同于固定 A=0/C=1/G=2/T=3 的编码。
+
+**source quirk**：`refine_tree` 里 `PAD += 2`（仅 `FIND_MTHRESH` 未定义时 +1），且
+`last_max < 1.02*max_count` 时停止细化并可能改变 `NPARTS`——桶数在训练阶段可能被
+实际数据规模回退调整。
 
 > **注意：与 `pgr` (Sketching) 的区别**
 > FastK 中的 Minimizer 与 `pgr/src/libs/hash.rs` 中用于 MinHash Sketch 的 Minimizer 虽然原理相同，但用途截然不同：

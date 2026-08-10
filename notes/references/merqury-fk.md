@@ -41,11 +41,25 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
 # trio 模式：phased_block.bed/.stats/.blob、block.N、continuity.N 等
 ```
 
-- QV 表格列：`Assembly Only / Total / Error % / QV`——错误率由
-  "assembly 特有 k-mer" 占比而来，QV = −10·log10(error) 一类公式。
-- completeness = reads 中 solid（高计数）k-mer 被组装覆盖的比例。
+- QV 表格列：`Assembly Only / Total / Error % / QV`。精确公式
+  （`MerquryFK.c`，逐 scaffold）：`miss` = asm 中不被 reads 覆盖的 k-mer 数，
+  `tots` = asm 全部 k-mer 数；先按 k-mer 缺失比例推到**单碱基错误率**
+  `err = 1 - pow(1 - miss/tots, 1/KMER)`，再 `QV = -10·log10(err)`。
+  输出行 `miss \t tots \t err(%.4f) \t qv(%.1f)`——**QV 用的是单碱基错误率，
+  不是裸的 miss/tots 占比**（后者会被 k 次方放大为明显更高的"错误率"）。
+- completeness = reads 中 solid（高计数）k-mer 被组装覆盖的比例，由
+  `Logex` 计算。
+- **SOLID 阈值自动推断**（MerquryFK.c/HAPmaker.c 的 `reliable_cutoff` 同款）：
+  对 reads 的 `.hist` 从 `low+1` 起扫描 `for (k=low+1; hist[k] < hist[k-1]; k++)`，
+  停在直方图**不再严格下降**处 = 错误峰下滑结束/固体峰上升起点，取该 `k` 为
+  `SOLID_THRESH`；`SOLID_COUNT` 再累加 `[SOLID_THRESH, high]` 的计数，作为
+  completeness 的分母。这是一个可复用的"从 k-mer 谱自动分错误峰/固体峰"模式。
 - 内部组合 CNplot/ASMplot/HAPplot；`-k` 保留 `.cni/.asmi/.hpi` 中间数据
   供重复绘图。
+- **MerquryFK 本质是驱动脚本**：它自己不实现计数/集合并，而是通过 `system()`
+  串联 **FastK**（给 asm 建表 `-t1 -p`、产相对 profile `-p:<reads>`）、**Logex**
+  （`A&.B[%d-]`、`A|+B` 等集合表达式）、**Fastrm**（清理临时文件）。assembly
+  输入是 FASTA，由内部 FastK 现建表；`reads` 必须已是 `.ktab`+`.hist`。
 
 ## 4. 与 pgr 的关联
 
@@ -72,6 +86,9 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
   不代表项目停更**（参考 [kmer.md](../design/kmer.md) §2.3 的 FASTK 核对
   教训：README 2021-04 的快照 = FASTK-1.2，但上游 2022-12 / 2023-06 /
   2024-10 仍有提交）。本地快照无 ChangeLog/git 历史，上游活跃度无法判断。
+- **source quirk**：`HAPmaker.c` 的头部注释是 `"Command line utility to
+  produce CN-spectra plots"`——明显是从 `CNplot.c` 复制粘贴漏改（实际实现是
+  hap-mer 建表，Usage 为 `mat pat child [.ktab]`），读源码时别被注释误导。
 
 ---
 

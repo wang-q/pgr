@@ -1,10 +1,10 @@
 # ntSynt：多基因组宏观共线性检测（minimizer 图）
 
-> 整理于 2026-08-09，源自对 `ntSynt-main/` 目录源码的分析（ntSynt v1.0.8，Birol Lab / BC Cancer）。
+> 整理于 2026-08-09，源自对 `ntSynt-1.0.8/` 目录源码的分析（ntSynt v1.0.8，Birol Lab / BC Cancer）。
 > 目的：理解其"动态 minimizer 图 + 路径 → 多基因组共线性块"算法，评估用 pgr 的 `.pgi`
 > （syncmer 有序排列）实现同类的多基因组 macro-synteny 检测。本文聚焦算法与数据流；
-> ntJoin 依赖（`ntjoin_utils.py` / `ntjoin.py` 在 `subprojects/ntJoin` 子模块，未随仓库检出）
-> 仅作背景，必要时以其调用语义推断。
+> ntJoin 依赖（`ntjoin_utils.py` / `ntjoin.py` 在 `subprojects/ntJoin/bin/`）**本 checkout 已检出**，
+> 图构建/路径/去重等核心逻辑实际都在 ntJoin 侧实现，本文据此实际源码分析。
 >
 > **与 pgr 的关联**：`pgi build` 已产出**按 k-mer 排序的 syncmer 位置表**（`PgiQuery`），
 > 而 ntSynt 的第一步（indexlr）正是"按基因组产出一张有序 k-mer 位置表"。因此 pgr 具备了
@@ -54,6 +54,19 @@
 | 1%–10% | 1000 | 50000 | 100000 | 250 100 |
 | > 10% | 10000 | 100000 | 1000000 | 500 250 |
 
+> **双层 CLI 架构（易混淆点）**：ntSynt 实际是**两层命令**，上面这张表属于**顶层驱动
+> `bin/ntSynt`**（snakemake 驱动器：吃 FASTA + `-d/--divergence`，据此推导 indel/merge/block_size/
+> w_rounds，再拼 snakemake 命令），而真正跑图算法的是**底层 `bin/ntsynt_run.py`**（图阶段，
+> `-k`/`-w` 反而**必填**、`-z`=block_size 默认 500、`--bp`=indel 阈值默认 500、
+> `--collinear-merge` 默认 `1w`、`--w-rounds` 默认 `[100,10]`、`-m` 方向阈值默认 90、
+> `-n`=最小边权重默认 0→按基因组数）。顶层把参数**改名后**传给底层（snakemake config→
+> `ntsynt_run.py` 的 argparse）：`--indel→--bp`、`--merge→--collinear-merge`、`--block_size→-z`、
+> `--w_rounds→--w-rounds`、`--no-common→common=False`。pgr 移植时读 `ntsynt_run.py` 的参数即可，
+> 无需复刻顶层 snakemake 编排。
+>
+> **参数名冲突怪癖**：顶层 `-n` 是 `--dry-run`，底层 `-n` 是最小边权重——同名不同义，跨层引用时
+> 极易踩坑。
+
 ### 2.2 数据流（snakemake 管线，`ntsynt_run_pipeline.smk`）
 
 ```
@@ -94,11 +107,15 @@
 
 ### 2.4 输出格式（`<prefix>.synteny_blocks.tsv`）
 
-8 列 TSV，`block_id` 相同的行属于同一共线性块：
+8 列 TSV，`block_id` 相同的行属于同一共线性块（8 列 TSV，最终输出 `get_block_string(verbose=True)`）：
 
 ```
 block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 ```
+
+- **列数注意**：第 8 列 `broken_reason` 只在最终 `<prefix>.synteny_blocks.tsv`（
+  `refine_block_coordinates` 末轮 `verbose=True`）输出；中间产物
+  `<prefix>.pre-collinear-merge.synteny_blocks.tsv` 与初轮块是 7 列（无 broken_reason）。
 
 - `start/end`：该基因组上的块坐标（start 为 0-based 第一个 minimizer 位置，
   end = 最后一个 minimizer 位置 + k，见 §4.3 `get_block_start/end`）。
@@ -115,8 +132,13 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 ### 3.2 初始图构建与简化/过滤（`ntsynt_synteny.py`）
 
 1. **load_minimizers**：读各基因组 minimizer TSV，建 `list_mx_info[assembly][hash] = (contig, pos)`。
-2. **make_minimizer_graph**（ntJoin）：按 §2.3 建图。
-3. **run_graph_simplification**（`ntsynt_synteny.py:587`）：简化气泡。
+   `read_minimizers`（`ntjoin_utils.py:167`）有个**内在去重**：同一基因组内若某个 minimizer
+   在多个位置出现（重复/多拷贝），它会被加入 `dup_mxs` 并从 `mx_info` **整体剔除**（不只删
+   一个拷贝）——即"一遇重复即整删"，这是管线自带的重复序列过滤，无需 repeat BF 就生效。
+2. **make_minimizer_graph**（ntJoin）：先 `filter_minimizers`（`ntjoin_utils.py:152`）做
+   **跨基因组 set 交集**——只保留**每个基因组都出现**的 minimizer（共线前提），再按 §2.3 建图。
+   common BF 的 `s` 过滤在此步前只作用到 indexlr 产出，此处交集是最终把关。
+3. **run_graph_simplification**（`ntsynt_synteny.py:586`）：简化气泡。
    - `node_partially_anchored`：顶点只有**一条** max-weight（= 基因组数）的关联边。
    - 对两端都是"度 3 + 部分锚定"的边：若 source→target 恰好有**两条**简单路径
      （一条直边 + 一条 3 节点路径），删掉中间节点（`path[1]`），把直边权重提到 max。
@@ -125,8 +147,14 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 
 ### 3.3 路径发现与共线性块提取
 
-- **ntjoin_find_paths()**（ntJoin）：在图上找路径（连通分量内的一次遍历）。
-- **find_paths_synteny_blocks**（`ntsynt_synteny.py:564`）：把每条路径交给
+- **ntjoin_find_paths()**（ntJoin）：`find_paths`（`ntjoin.py:139`）对每个连通分量调
+  `find_paths_process`——**不是简单遍历，而是"迭代去分支化"**：只要分量非线性（存在度 ≥3
+  的节点），就 `filter_graph` 删掉**分支节点（度>2）上权重 < 递增阈值**的边（阈值从 `-n` 起
+  每轮 +1），直到分量线性；再对每个线性子分量找两个度=1 端点，用 `determine_source_vertex`
+  （以**最大权重基因组**上位置最小/最大者定 source/target）定向，`get_shortest_paths` 取
+  简单路径，且**仅当路径覆盖该子分量的全部节点与边**（`len(path)==len(vs)` 且
+  `num_edges==len(es)`）才接受。
+- **find_paths_synteny_blocks**（`ntsynt_synteny.py:563`）：把每条路径交给
   `find_synteny_blocks`。
 - **find_synteny_blocks**（`ntsynt_synteny.py:70`）：沿路径逐个 minimizer 走：
   - `continue_block(mx)`：若该 minimizer 在**每个**基因组都映射到**当前块的 contig**
@@ -138,6 +166,9 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
   `max_difference`（各基因组相邻 minimizer 位置差的 max − min）> `--bp`（indel 阈值）
   就在该处断块，并把对应的图边删掉（`remove_flagged_edges`）。
 - **filter_synteny_blocks**（`ntsynt_synteny.py:431`）：删除 minimizer 数 < 阈值（4）的块。
+  **魔法数怪癖**：初轮（`ntsynt_synteny.py:649`）与细化每轮（`:514`）都硬编码 `4`
+  （源码 `# TODO: magic number`），且过滤条件是 `all(len >= 4)`（每基因组的块内 minimizer
+  都要 ≥4，任一不足则整块丢弃）。pgr 移植应把这个阈值参数化。
 
 ### 3.4 坐标细化（`w_rounds` 递减窗口）
 
@@ -251,6 +282,12 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
    用 `HashMap<u128, node>` + 邻接表即可，无需 igraph。
 5. **验证**：用 ntSynt 的 C. elegans demo 数据（`tests/` 下）或 E. coli 多株，
    对比 block 数量/覆盖与 ntSynt/UCSC chainnet。
+6. **照搬两个"去噪"细节即可提升质量**（`read_minimizers` 一遇重复即整删 + `filter_minimizers`
+   跨基因组交集）：pgi 用排序表能**精确**实现这两者（无 BF 假阳性），这是相对 ntSynt 的
+   精度优势，移植时应保留并作为正确性测试基准（预期块数与 ntSynt 一致或更准）。
+7. **两层 CLI 是反面教训**：ntSynt 用 snakemake 把"参数推导 + 管线编排"与"算法阶段"硬拆成
+   两层、且参数改名 + `-n` 同名冲突，跨层调试困难。pgr 应保持单层 `pgr <cmd>` 接口，把
+   "按分歧推导默认值"做成 `libs/` 里的纯函数，供 CLI 直接调用。
 
 ---
 

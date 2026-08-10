@@ -151,6 +151,10 @@ ConditionalSetOrClearBitsWithoutBranching）代替直接的 `|` 运算。两者�
 （反链时反向步进）。pgr 若要统一反链位置编码，建议直接采用 seqwish 的 `make_pos_t` 版本
 （更简洁）。
 
+> **源码注释坑**：`make_pos_t` 开头的注释写 "top bit is reserved for is_rev flag"，但
+> 实际实现（`pos = offset<<1` 后把 is_rev 写进 bit 0）用的是**低位**——注释与代码矛盾。
+> 读源码时勿被注释误导，以 `is_rev() { return pos & 1; }` 为准。
+
 注意 chain.hpp 里有另一个 `seq_pos_t`，方向位在**最高位**（MSB），与 `pos_t` 不兼容——
 这是 chain 模块遗留的独立编码，主流程不用。
 
@@ -246,8 +250,13 @@ consensus paths 的 middle 段 + 连接它们的 link paths。这是 smoothxg �
 `smoothable_blocks` 是 smoothxg 的核心算法之一。逻辑：
 
 1. **遍历 path step** — 对每条 path，按 step 顺序遍历，累积当前 block 的 `block_handles`。
-2. **切分条件** — 当 `max_block_weight`（块内总碱基数）或 `max_block_path_length`（块内
-   最长 path 长度）超阈值时，finalize 当前 block 并开新 block。
+   注意实际是按**图的排序顺序遍历 handle**（`for_each_handle`），并用 `seen_steps`
+   位向量（每 path 一个 `sdsl::bit_vector`）标记已归属某 block 的 step——每个 step
+   只属于一个 block（贪心 first-fit，先到先得）。
+2. **切分条件** — 三个条件任一满足即 finalize 当前 block 并开新 block：`max_block_weight`
+   （块内总碱基数超限）、`max_block_path_length`（块内最长 path 长度超限）、`max_edge_jump`
+   （边的跳距超限）。其中 `max_path_length` 用 `path_coverage`（每 path 累计碱基数 + step 数）
+   估算，非精确遍历。
 3. **toposplit_block** — 用并查集（`odgi::DisjointSets`）按弱连通分量切分跨连通区的块。
    对 block 内每对相邻 step，`unite` 它们的节点 id，最后按 `find` 结果把 block 拆成子块。
 4. **finalize_block** — 收集 block 内所有 handle 的 traversals（step），按

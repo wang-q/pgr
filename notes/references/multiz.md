@@ -27,6 +27,12 @@ multiz [R=?] [M=?] [L=?] [S=?] file1 file2 v [out1 out2] [nohead] [all]
 *   `R=30`: DP 半径（香肠带扩展半径）。
 *   `M=1`: 最小输出宽度（MIN_OUTPUT_WID）。
 *   `L`/`S`: 大/小块断点宽度（LRG_BREAK_WID / SML_BREAK_WID）。
+    *   **源码怪癖**：`main` 确实解析这两个参数（`multiz.c:189-196`），`multi_util.c:13-14`
+        也定义了全局变量（`LRG_BREAK_WID=20`、`SML_BREAK_WID=2`），但**全仓库再无任何地方
+        引用它们**——`multiz()` 与 `pre_yama()` 均不使用。即 `L=`/`S=` 是 v11.2 里的**死参数**，
+        解析后即丢弃（`multi_util.c` 中 `OVERLAP_THRESHOLD`/`MIN_CHAIN`/`MIN_CLUSTER_CHAIN`/
+        `OVERLAP_LEN_THREH`/`MIN_DISTANCE`/`MIN_SPB` 同理，均为未使用的遗留全局）。pgr 直译时
+        不要为这两个参数留接口。
 *   `v`: 参考固定模式。
     *   `0`: 两个参考都可微调（需要第二次 yama 对齐参考行）。
     *   `1`: 第一个文件的参考固定，第二个文件的参考可相对滑动。

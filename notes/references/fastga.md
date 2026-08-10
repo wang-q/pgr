@@ -253,6 +253,11 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 | `-M` | off | 使用 GIX 中的 soft mask | flags |
 | `-v` / `-L` | — | 详细模式 / 日志文件 | flags |
 
+> **源码注释过时**：FastGA.c 中 `ALIGN_MIN` / `ALIGN_RATE` 的声明注释分别标 `// -a`、
+> `// 1.-e`，与实际参数 `-l`（min alignment length）、`-i`（min similarity，内部折成
+> `ALIGN_RATE = 1.−sim`）不符——是历史遗留注释，读源码勿据注释推断参数名，应以
+> `main()` 的 `switch`（case `'c'/'f'/'i'/'l'/'s'`）为准。
+
 ## 6. 输出格式
 
 - **PAF**（默认）：12 列标准 PAF；`-pafx` 追加 `cg:Z:`（`=`/`X`/`I`/`D`），

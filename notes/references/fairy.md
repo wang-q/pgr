@@ -36,11 +36,15 @@
 
 - **2-bit 编码**：A=0、C=1、G=2、T=3；反向互补 `nuc_r = 3 - nuc_f`
   （A↔T、C↔G）；canonical = `min(f, r)`。注意编码与 khmer
-  （A=0,T=1,C=2,G=3）不同。**非 ACGT 碱基查 `BYTE_TO_SEQ` 表一律得 0(A)**
-  ——含 N 的 read 会生成人为的 A-kmer。
+  （A=0,T=1,C=2,G=3）不同。`BYTE_TO_SEQ` 表里 **'U' 也映射为 3**（U 当 T 处理），
+  小写字母一并覆盖；**非 ACGT（含 N）一律得 0(A)**——含 N 的 read 会生成
+  人为的 A-kmer。
 - **哈希**：`mm_hash64` = murmur64 最终化变体（源码带
-  `//TODO this is bugged. Fix after release` 注释，scalar 与 AVX2 版实际
-  等价；bug 应指"对 canonical min(f,r) 直接哈希"这一层）。
+  `//TODO this is bugged. Fix after release` 注释）。标量版
+  `!key.wrapping_add(key << 21)` 因 `!` 优先级低于方法调用，实为
+  `!(key + (key<<21))`，与 AVX2 版 `key = key+(key<<21); key = key ^ cmpeq(key,key)`（即取反）
+  结果**一致**——"bug"注释只是作者对哈希质量的顾虑，不造成标量/AVX2 分歧；
+  若有问题应指"对 canonical min(f,r) 直接哈希"这一层。
 - **采样**：`threshold = u64::MAX / c`；`hash < threshold` 才保留
   → 采样率 ≈ 1/c。默认 `c=50`（约 1/50，sylph 为 1/200）。
 - **滚动**：f 左移 2 位累积、r 右移 + 顶部补补链，与 pgr 现有滚动同构；
@@ -54,15 +58,20 @@
   + 元数据（c、k、file_name、sample_name、paired、mean_read_length），
   bincode 写 `.bcsp`。每样本一张表，`threads`（默认 3）个样本并行。
 - **去重（关键）**：
-  - **pair marker**：固定 k=16（`Marker=u32`），把一对 read（或单端 read
-    前半/后半）的奇偶位交错拼成两个 16-mer（`pair_kmer`/`pair_kmer_single`）。
-    长度不足（双端 <33bp、单端 <66bp）或单端 >400bp → 无 marker、不去重。
+  - **pair marker**：固定 k=16（`Marker=u32`），`pair_kmer` 对双端 read 各自
+    取**偶数位**碱基拼成一个 16-mer、**奇数位**碱基拼成另一个 16-mer，形成
+    两个 `[Marker;2]`（`doublepairs.0=[read1偶数,read2偶数]`、
+    `doublepairs.1=[read1奇数,read2奇数]`）；`pair_kmer_single` 把单端 read
+    按**前半/后半**各取偶数位、奇数位拼成同样的两对。长度不足（双端 <33bp、
+    单端 <66bp）或单端 >400bp → 无 marker、不去重。
   - **规则**：对每个采样的 kmer，若 `(km, marker)` 已见过 → 该 kmer
     不计数（`num_dup_removed++`）；否则插入并 `c += 1`。
   - **效果**：`c` ≈ 该 kmer 出现过的**不同 read-pair 数**——完全相同的
     read pair 只贡献一次；部分重叠的 pair 只对未见过 marker 的 kmer 计数。
   - 精确模式用 `FxHashSet`；`--fpr>0`（默认 0.0001，隐藏参数）切
-    `ScalableCuckooFilter`。
+    `ScalableCuckooFilter`。注意 cmdline 默认 `fpr=0.0001`（非 0），故即便
+    dedup 开启，默认走的也是**近似 cuckoo filter** 而非精确 `FxHashSet`；
+    而 `--no-dedup` 默认 `true` 使 dedup 整体关闭，二者叠加=默认完全不去重。
 - **单端上限**：`MAX_DEDUP_COUNT=4`，`c < 4` 才查去重（高拷贝序列的
   计数不再被门控）。双端无上限。
 - 其余：`mean_read_length` 逐条 moving average；`MAX_DEDUP_LEN` 常量
@@ -70,10 +79,12 @@
 
 ## 5. coverage：contig × 样本
 
-- **contig sketch**（`sketch_genome_individual`，每 contig 独立）：
-  FracMinHash 采样 → 按 kmer 去重（重复出现的 kmer 直接丢弃，不保留）
-  → `min_spacing=30`（间距 <30nt 的相邻 kmer 丢弃）→ `genome_kmers:
+- **contig sketch**（`sketch_genome_individual`，每 contig 独立，contain.rs
+  恒走此路径）：FracMinHash 采样 → **重复 kmer 去重被 `|| true` 短路禁用**
+  （见 §8 quirk，contig 上重复出现的 kmer 并不会被丢弃）→ 仅
+  `min_spacing=30`（间距 <30nt 的相邻 kmer 丢弃）→ `genome_kmers:
   Vec<u64>`；`gn_size` = contig 长度。可预存 `.bcdb`。
+  （注意：同文件的 `sketch_genome` 合并版才真正去重，但 coverage 不用它。）
 - **查询**：对每个 contig 遍历 `genome_kmers` 在样本表中查 multiplicity
   → `covs` 向量；`contain_count` = 命中数。过滤：`gn_kmers.len() ≥
   min_number_kmers`（默认 8）且 `covs` 非空。
@@ -131,6 +142,10 @@
 - `--no-dedup` 默认 `true` 且无反开关（clap SetTrue 语义）→ **去重实际
   默认关闭**，与 README/论文描述的 illumina 去重不符，疑似 0.5.8 有意/无意
   改动。
+- `sketch_genome_individual` 里去重条件写成 `if !duplicate_set.contains(&km)
+  || true`——`|| true` 使该条件恒真，**contig 级重复 kmer 去重实际被禁用**；
+  同文件未使用的 `sketch_genome` 版本才是正确的 `if !duplicate_set.contains(...)`。
+  coverage 恒走前者，故 contig sketch 实际只做 min_spacing 过滤。
 - `mm_hash64` 带 "TODO this is bugged" 注释；AVX2 与 scalar 等价，
   问题在 canonical 编码层。
 - 非 ACGT 一律编码为 A，含 N 的序列会产生人为 kmer。

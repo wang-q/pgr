@@ -36,7 +36,7 @@
 
 ```
 1. 若 seq.l < length_threshold → 返回 five=three=-1（丢弃整条）
-2. window_size = max(1, 0.1 * seq.l)   // 窗口长度自适应
+2. window_size = (int)(0.1 * seq.l)；若为 0（读长 <10bp）则取 seq.l（全长）
 3. 初始化窗口 [0, window_size) 的质量和 window_total
 4. 对每个窗口起点 i（0..=qual.l - window_size）：
    a. window_avg = window_total / window_size

@@ -48,7 +48,10 @@ fast 模式再快 1.8–2.7×。
 | `src/hd.rs` | `encode_hash_hd`（标量 i16）、AVX2 版（4 seeds×64 bits）、无损量化 + bitpack |
 | `src/dist.rs` | L2 范数、点积、Jaccard→ANI；对称/非对称全对距离 |
 | `src/types.rs` | `FileSketch` / `SketchParams` / `SketchDist`，mm_hash64 等 |
-| `src/sketch_cuda.rs` | CUDA k-mer 哈希内核（feature 门控） |
+| `src/sketch_cuda.rs` | CUDA k-mer 哈希内核（feature 门控，仅加速采样） |
+| `src/params.rs` | `VERSION`（0.0.1，仅 CLI 用）与 `CMD_SKETCH`/`CMD_DIST`/`CMD_SEARCH` 常量 |
+| `src/fastx_reader.rs` | GPU 路径的序列合并读取（`read_merge_seq`） |
+| `src/bench.rs` / `src/lib.rs` | 基准与模块装配 |
 
 关键细节：
 
@@ -68,7 +71,15 @@ fast 模式再快 1.8–2.7×。
   （5 Mb / S=1500 ≈ 3.3k）无虞，人类规模或小 S 会爆（pgr 用 i32 规避）；
 * **sketch 文件无版本/magic**：跨版本不兼容且无自描述（pgr `.hv` 有
   `PGV1` magic + version）；
-* 搜索未实现：论文宣称的 GEMM 加速搜索只存在于实验代码。
+* 搜索未实现：论文宣称的 GEMM 加速搜索只存在于实验代码；
+* **SIMD 点积已实现但热路径未用**：`dist.rs` 里 `compute_pairwise_ani_avx2`
+  （`_mm256_madd_epi16` 点积）存在，但 `compute_hv_ani` 实际调用的是标量
+  `compute_pairwise_ani`；论文宣称的距离 SIMD/GEMM 加速在仓库里只留下
+  注释掉的 `compute_compressed_hv_ani`——"宣称 vs 仓库"的典型落差；
+* **GPU 只加速采样，不加速编码**：`sketch_cuda` 的 CUDA kernel
+  （`cuda_kmer_t1ha2` / `cuda_kmer_bit_pack_mmhash`）只产出 k-mer hash 集合，
+  HV 编码（`encode_hash_hd_avx2`）仍在 CPU 做；`-D gpu` 需 feature 门控，
+  未启用时仅 `error!` 提示不崩溃。
 
 ## 3. 对照表（HyperGen vs pgr）
 

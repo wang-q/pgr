@@ -87,7 +87,14 @@ typedef struct {
    }
    ```
    - `factor1` 是奇数（`| 0x01`），由 `srandom(seed)` 生成，`shift1 = 64 - 2*k`。
-   - **seed 是实验调优来的**：`seqhash.c:301-365` 的 `#ifdef H_EXPLORE` 工具暴力遍历 seed `1..1e6`，对一段高度重复序列（poly-a/c/g/t + 二周期重复共 512bp）用全 k-mer 迭代器采样，挑出让"最小哈希值最大化"（分布最均匀、无低值塌缩）的 seed。syng 默认 `seed=7`（README、`seqhashCreate` 调用均用 7），很可能即由此工具搜出。pgr 的 `hash_factor` 用 splitmix64 由 seed 生成 factor（[syncmer.rs:147](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L147)），雪崩性质良好、任意 seed 都均匀，故无需此调优步骤。
+   - **seed 是实验调优来的**：`seqhash.c:301-365` 的 `#ifdef H_EXPLORE` 工具暴力遍历 seed
+     `1..999999`（`for (h = 1; h < 1000000; ++h)`），对一段高度重复序列（poly-a/c/g/t +
+     12 种二周期重复，每段 32nt × 16 段共 512bp）用全 k-mer 迭代器采样（每 32 个取一个），
+     记录采样哈希的最小值并**最大化该最小值**（分布最均匀、无低值塌缩）的 seed。syng 默认
+     `seed=7`（`syncmerset.c:17 syncmerParamsDefault`、`seqhashCreate` 调用均用 7），很可能
+     即由此工具搜出。pgr 的 `hash_factor` 用 splitmix64 由 seed 生成 factor
+     （[syncmer.rs:147](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L147)），雪崩性质良好、
+     任意 seed 都均匀，故无需此调优步骤。
    - 这是一种 fast universal hashing，比 Murmur/Fx 更轻量，且对短 k-mer 足够均匀。最终实现的哈希选择见 §5.1.3（DNA 用此 2-bit 乘加移位，蛋白用 `RapidHash` 字节哈希）。
 3. **正反向同步滚动**（`seqhash.c:67` `advanceHashRC`）：
    ```c

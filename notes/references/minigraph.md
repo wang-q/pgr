@@ -133,6 +133,13 @@ for each input assembly:
 **关键点**：每加入一个 assembly 都要**重建索引**（因为图变了）。这是 minigraph 线性但
 非增量的代价——索引不能复用。pgr 的 PAF 索引是静态的（构建一次查询多次），无此问题。
 
+**两条 ggsimple 路径**：`mg_ggen_aug`（ggen.c#L89-L100）按是否启用 `-c`（CIGAR）
+分派——无 `-c` 走 `mg_ggsimple`（基于锚点间隔的启发式打分，ggsimple.c#L107），
+有 `-c` 走 `mg_ggsimple_cigar`（ggsimple.c#L392，用 CIGAR 的逐碱基比对质量过滤插入
+区段，插入判别更精细）。main.c#L225 明确警告 "it is recommended to add -c for graph
+generation"。两路径最终都调 `gfa_augment` 落图（ggsimple.c#L301/#L562）。pgr 的
+PAF 天然带 CIGAR，对应的是"精细路径"。
+
 **粗框架哲学（≥100bp SV 过滤）**：minigraph 在第 3 步 `mg_ggsimple` 只把长度差 ≥ `min_var_len`
 的变异插入图（[ggsimple.c#L213](../../../minigraph-master/ggsimple.c#L213)，
 源码默认 50，论文 L153/L384 称 100bp）。论文 L601-609 给了四条理由：

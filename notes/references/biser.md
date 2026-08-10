@@ -258,6 +258,11 @@ search 按（染色体, chunk）逐段处理：Python 侧按 `--max-chromosome-s
 并过滤掉完全自重叠（same species/name/strand 且坐标相同）的情况。最终生成 `Hit` 存入按
 `(species1, chr1, species2, chr2, complement)` 分组的 `result` 字典。
 
+**search 输出的 merge**: `__init__.codon` 对每组的 hits 调 `hit.Hit.merge(r, MERGE_DIST=500)`
+再写盘——按 `h.x.start` 排序后，x 端 `ph.x.end+dist < h.x.start` 才开启新组，同组内相邻 hit 若
+x/y 双轴都足够接近则取并集合并边界（`hit.codon` 的 `merge`）。这与 §3.3.4 decompose 阶段的
+`merge()` 是两处独立实现。
+
 #### 3.3.2 Chaining in `chain.codon`
 
 `PrioritySearchTree` 是 chaining 的核心数据结构。它基于 y 坐标建静态二叉搜索树，每个叶子对应一个

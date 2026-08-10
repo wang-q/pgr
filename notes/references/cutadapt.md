@@ -61,7 +61,7 @@ return (start, stop)
 ### 2.3 三个变体（`qualtrim.pyx`）
 
 1. **`nextseq_trim_index`**（`-q` 的 NextSeq 变体，`--nextseq-trim`）：NextSeq 双色编码中"暗循环"（无颜色）通常被读成高质量 G，出现在读段 3' 端。算法与 `quality_trim_index` 的 3' 端相同，但把 **G 碱基的质量强制设为 `cutoff - 1`**（`qualtrim.pyx:108`），使其不贡献正累积，从而把 polyG 尾巴当低质量去掉。
-2. **`poly_a_trim_index`**（`--poly-a`）：poly-A/poly-T 尾巴检测，'A'(或'T') 得 +1，其他碱基 −2，累计 score 最大处为切点；错误率上限 0.2（`errors * 5 <= len`），小于 3 的尾巴忽略。
+2. **`poly_a_trim_index`**（`--poly-a`）：poly-A/poly-T 尾巴检测，'A'(或'T') 得 +1，其他碱基 −2，累计 score 最大处为切点。错误率上限 0.2 的校验是**位置相关的**：5' 端（polyT head）为 `errors * 5 <= i+1`、3' 端（polyA tail）为 `errors * 5 <= n-i`（`qualtrim.pyx:147,161`），即错误按"当前已扫到的尾巴长度"而非整条读长计。长度 < 3 的尾巴忽略（`best_index < 3` → 0；`best_index > n-3` → n）。
 3. **`expected_errors`**（`--max-ee`）：用 Edgar et al. (2015) 公式从 Phred 质量计算期望错误数 `sum(10^(-Q/10))`，用于按总错误数过滤（非修剪）。C 实现 `expected_errors_from_phreds`。
 
 ## 3. 质量修剪的修饰器封装与 CLI
@@ -92,7 +92,17 @@ class QualityTrimmer(SingleEndModifier):
 
 ### 3.3 执行顺序（pipeline）
 
-cutadapt 的 read 修饰器按固定顺序执行，质量修剪在**接头修剪之后**。典型顺序：去接头 → 合并/质控 → 质量修剪 → poly-A 修剪 → 长度/错误过滤。pgr 移植时若只想做纯质量修剪，顺序不存在依赖问题。
+cutadapt 的 read 修饰器按**固定顺序**依次对 read 生效，`make_pipeline_from_args` 依序 append（`cli.py:937-975`）。实际顺序是：
+
+1. `--cut` 无条件切头尾（`UnconditionalCutter`）
+2. `--nextseq-trim`（NextSeq polyG 修剪）
+3. `-q/--quality-cutoff` 质量修剪（`QualityTrimmer`）
+4. 去接头（`-a/-g/-b`，`AdapterCutter`）
+5. `--poly-a` poly-A/poly-T 修剪
+6. `-l/--length` 缩短（`Shortener`）
+7. 重命名/后缀
+
+**注意：质量修剪在去接头之前**（`cli.py:947-967`，`make_quality_trimmers` 先于 `make_adapter_cutter`），与直觉相反——先按质量把低质量区剪掉，再做接头比对，这样接头搜索不受低质量 3' 尾干扰。pgr 移植纯质量修剪时无此依赖，但若日后加 `--method` 组合（如质量修剪 + 去接头）应保持"先质量后接头"的顺序。
 
 ## 4. 对 pgr 的启示：`fq trim-qual`
 

@@ -56,8 +56,12 @@ FM-index（rld rank + 采样 SA）
      外部库；`sais-ss.c` 的 `rb3_build_sais` 按 batch 长度选择：`len + sais_extra_len >=
      INT32_MAX` 时用 64 位 `libsais64_gsa`，否则用 32 位 `libsais_gsa` 省内存；
      "libsais16x64" 并不存在）→ 由 SA 生成部分 BWT；
+   - **SA→BWT 直接构造**（`rb3_build_sais32/64` 的亮点）：不必对 SA 再排序，而是对每个
+     后缀取其**前驱字符**填回原位——`SA[i] = T[SA[i]==0 ? len-1 : SA[i]-1]`（位置 0 的
+     后缀取最后一个字符做循环哨兵），一趟把广义 SA 就地转成 BWT，省一次重排；
    - 多批次时把部分 BWT **增量合并**到已有 rope（`rb3_fmi_merge_plain`）；
-   - `-p` 可让部分 SA 构建与 BWT 合并并行（3.9+）。
+   - `-p` 可让部分 SA 构建与 BWT 合并并行（3.9+，`worker_pipeline` 两步流水线，SA 用
+     `sais_threads`、合并用 `n_threads - sais_threads` 线程）。
 
 输出格式：`-b` FMR（rope dump）、`-d` FMD（rld 编码）、`-T` TREE、`-e` BRE
 （block-run encoding）、默认 PLAIN 文本 BWT。
@@ -105,10 +109,11 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
   `sw_cell_dedup` 删除 out-of-band cells（3.4 提速 20%）；
 - **回溯**：`sw_backtrack1` / `sw_backtrack` 从最优位置回溯路径，输出 CIGAR
   （`cs` tag，3.7+）；
-- 评分默认 BLASTN（3.5 起）；`-N` 设每个 DAWG 节点保留的候选 hit 数（`n_best`，
-  默认 25），`-k` 要求比对末端有 k-mer 精确匹配（`end_len`，默认 11），`-j` 设启动
-  比对所需的最小 MEM 长度（`min_mem_len`，默认 0）；`-e` end-to-end 模式输出相似
-  单倍型（`--all-e2e` 紧凑输出）。
+- **评分**：默认 BLASTN 风格参数（`rb3_swopt_init`：`match=1, mis=3, gap_open=5,
+  gap_ext=2, min_sc=30`，`-A/-B/-G/-E/-m` 可覆盖）；`-N` 设每个 DAWG 节点保留的候选
+  hit 数（`n_best`，默认 25），`-k` 要求比对末端有 k-mer 精确匹配（`end_len`，默认 11），
+  `-j` 设启动比对所需的最小 MEM 长度（`min_mem_len`，默认 0）；`-e` end-to-end 模式
+  输出相似单倍型（`--all-e2e` 紧凑输出）。
 - **性能提示**：局部比对比 SMEM 慢数十倍，不用于高通量 reads。
 
 ### 3.6 hapdiv（单倍型多样性）
@@ -132,6 +137,7 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
 | `ssa.c` | 采样后缀数组构建（`ssa` 命令）|
 | `bre.c` / `rle.c` | BRE（block-run encoding）与 RLE 工具 |
 | `io.c` / `kseq.h` / `kalloc.c` / `kthread.c` | 序列 I/O、khash/ksort/kthread 等 lh3 公共库 |
+| `sais-ss.c` | libsais 封装：SA→BWT 就地转换 + 32/64 位选择（`rb3_build_sais*`）|
 | `libsais.c` / `libsais64.c` | 外部广义后缀数组库（IlyaGrebnov）|
 | `main.c` | 命令分发 |
 | `rb3tools.js` | mappability 过滤 / 简单 SNP 调用辅助脚本 |
@@ -141,12 +147,25 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
 | 命令 | 功能 | 关键参数 |
 |------|------|----------|
 | `build` | 构建 BWT（FMR/FMD）| `-2/-s/-r` ropebwt2 算法、`-m` batch、`-p` SA 并行、`-d/-b` 格式、`-i` 续建 |
-| `mem` | SMEM 查找 | `-l` 最小长度、`-p` 输出位置、`--gap/--cov`、`--old-mem` 切回原始算法（默认 Gagie）|
-| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数、`-k` 末端 k-mer（`end_len`）、`-j` 启动 MEM 长度、`-e` 端到端、`-p` 多位置、`--all-e2e` |
-| `ssa` | 采样后缀数组 | `-s` 采样率、`-t` 线程 |
-| `get` | 按索引取序列 | — |
-| `hapdiv` | 101-mer 单倍型多样性 | 内部调用 sw -e |
-| `stat` | 报告 run 数（FMD）| — |
+| `mem` | SMEM 查找 | `-l` 最小长度、`-c` 最小出现、`-p` 输出位置、`--gap/--cov`、`--old-mem` 切回原始算法（默认 Gagie）|
+| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数、`-k` 末端 k-mer（`end_len`）、`-j` 启动 MEM 长度、`-m` min score、`-e` 端到端、`-p` 多位置、`--all-e2e` |
+| `suffix` | 找最长匹配后缀 | `-L` 输入单行一条序列 |
+| `hapdiv` | 101-mer 单倍型多样性 | 内部调用 sw -e（`hapdiv_k=101, hapdiv_w=50`）|
+| `ssa` | 采样后缀数组 | `-s` 采样率（每 2^INT 碱基一个 SA，默认 8）、`-t` 线程 |
+| `get` | 按索引取序列 | `get <idx.fmr> <int> [...]` |
+| `merge` | 合并多个 BWT（FMR）| `-t` 线程、`-o` 输出、`-S` 中途保存 |
+| `kount` | 统计高出现 k-mer | `-k` k-mer 长、`-m` 最小出现（`kount -k 51 -m 100` 类）|
+| `fa2line` | FASTX 转行（正反链）| `-R` 不含反向链 |
+| `fa2kmer` | FASTX 抽 k-mer | `-k` 长度、`-w` 步长 |
+| `plain2fmd` | 纯文本 BWT → FMD | `-o` 输出 |
+| `stat` | 报告序列数/符号数/run 数（FMD）| `-M` mmap |
+
+> **注意**：`mem`/`sw`/`hapdiv` 实际共享 `main_search` 入口，靠 `argv[0]` 子命令分发
+> （`main.c`），`search` 是其通用别名。`main.c` 共注册 14 个命令。
+
+> **kount 与 pgr 的关联**：`kount` 在 FM-index 上做深度优先遍历统计（出现次数 ≥ `min_occ`）
+> 的 k-mer，与 pgr 的 `kmer` 命令功能对应；若未来 pgr 引入 FM-index，kount 的"rank2a 定长
+> 区间 DFS + 阈值剪枝"是可直接移植的计数骨架（`main_kount`，约 80 行 C）。
 
 ## 6. 对 pgr 的启示
 

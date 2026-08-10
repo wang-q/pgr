@@ -17,19 +17,19 @@
 - 两个主流程文档：`doc/Scer.md`（S288c vs 5 株多基因组两两比对）与
   `doc/Scer-self.md`（S288c 自比对）。
 
-## 2. 命令清单（17 个）
+## 2. 命令清单（18 个）
 
 | 类别 | 命令 | 功能 |
 |---|---|---|
-| 序列准备 | `prepseq` | faops filter(-N, 简化名) → split-name/about → chr.sizes → faToTwoBit → 可选 RepeatMasker |
-| | `partition` | 按大小分块（`--chunk 500000 --overlap 10000`） |
-| | `maskfasta` | soft/hard masking |
+| 序列准备 | `prepseq` | faops filter(-N, 简化名, 可选 -a min) → split-name/about → chr.sizes → faToTwoBit → 可选 RepeatMasker → chr.fasta.fai（faops filter -U + samtools faidx）；`--gi` 用 perl 正则去 GI 号 |
+| | `partition` | 按大小分块（默认 `--chunk 10010000 --overlap 10000`，输出 `infile[start,end]` 1-based 坐标） |
+| | `maskfasta` | soft/hard masking（输入 fasta + runlist.yml，`--hard` 变 N） |
 | | `repeatmasker` | RepeatMasker 包装（--species Fungi 等） |
-| 比对 | `lastz` | lastz 包装：set01..set07 预设、`-C 0` 关闭内置链化、`--isself`、LAV 命名 `[t]vs[q].N.lav` |
+| 比对 | `lastz` | lastz 包装：`parameters.yml` 预设 set01..set10（共 10 套，均默认 `C=2` 即 lastz 内置链化；doc 流程显式 `-C 0` 覆盖以关闭内置链化改由 kent chain/net 处理）、`--isself`、`--paired`（按名字相似度挑最相近 chr 对）、`--tp/--qp`（分块后触发 normalize）、LAV 命名 `[t]vs[q].N.lav` |
 | | `blastn` / `blastmatch` / `blastlink` / `exactmatch` | blast 路线（另类同源发现） |
-| 格式转换 | `lav2axt` / `lav2psl` / `normalize` / `formats` | LAV → axt/psl、LAV 归一化、格式说明 |
-| 流程 | `lpcnam` | **lav-psl-chain-net-axt-maf**（UCSC 16 命令链，`--syn` 产 synNet.maf，`--lineargap/--minscore`） |
-| | `multiz` | 多序列比对（profile-profile） |
+| 格式转换 | `lav2axt` / `lav2psl` / `normalize` / `formats` | LAV → axt/psl、LAV 归一化（移植自 kentUtils blastz-normalizeLav）、格式说明 |
+| 流程 | `lpcnam` | **lav-psl-chain-net-axt-maf**（UCSC 14 个 kent 命令链，`--syn` 产 synNet.maf，`--lineargap/--minscore`，默认 loose/1000） |
+| | `multiz` | 多序列比对（以 target 为中心、按树 ladder 逐对 profile-profile 渐进合并，`M=10` 最小输出宽度） |
 | | `fas2vcf` | block FA → VCF |
 | 其他 | `template` | 多基因组模板（1_pair → 2_mash → 3_multi → 4_vcf → 9_pack_up） |
 | | `raxml` | 树构建包装 |

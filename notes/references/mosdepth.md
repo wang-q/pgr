@@ -80,6 +80,9 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   （`region_gen`，按染色体预读、边消费边删）；mean 直接求和除以长度，
   `-m` median 用 `CountStat` 直方图（65536 桶，超出 65535 的深度计入末桶，
   高深度时中位数是近似值）。
+* **thresholds**：`write_thresholds` 对每个 region 逐碱基统计"深度 ≥ 各阈值"的碱基数；
+  阈值经 `threshold_args` 排好序，内层 `if v < t: break` 提前跳出（`v < t` 后更大的阈值也
+  必然不满足，避免扫完全部阈值）；无数据的染色体（`tid==-2`）直接输出全 0 行。
 * **quantized**：`gen_quantized` 把相邻、同 bin 的碱基合并，bin 由
   `--quantize 1:10:20` 定义（`:inf` 表示开区间；环境变量 `MOSDEPTH_Q*` 可
   覆盖输出标签）。

@@ -137,9 +137,9 @@ gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate
 
 - `reference`: 2-bit 编码的参考序列。FASTA 转换表 `cnv_num`（`agc_basic.h`）：A=0,C=1,G=2,T=3,N=4，其他 IUPAC(R/Y/S/W/K/M/B/D/H/V/U)=5-14，无效字符=30。LZ-diff 内 `invalid_symbol=31` 仅用作参考序列尾部 padding 哨兵（`prepare_gen` 追加 key_len 个 31）
 - `ht16` / `ht32`: 开放寻址哈希表，存储参考中 k-mer 的位置
-    - `short_ht_ver`: 参考长度 < 65535×hashing_step 时用 16-bit
+    - 哈希函数为 **MurMur64Hash**（`lz_diff.cpp` 内 `MurMur64Hash mmh`，`ht_pos = mmh(x) & ht_mask`），线性探测最多 `max_no_tries=64` 槽；表大小取 2 的幂（`while (ht_size & (ht_size-1)) ht_size &= ht_size-1; ht_size <<= 1`），负载因子 0.7
+    - `short_ht_ver`: 参考长度 / hashing_step < 65535 时用 16-bit
     - `USE_SPARSE_HT`: 每 4 位取一个 key（hashing_step=4），减少表大小
-    - `max_load_factor=0.7`, `max_no_tries=64`（线性探测上限）
 - `key_len = min_match_len - hashing_step + 1`（默认 min_match_len=18 → key_len=15）
 - `key_mask`: 2×key_len 位的掩码
 
@@ -274,6 +274,15 @@ struct segment_desc_t {
 | V3   | 3000+        | V2      | collection_v3 | 改进 LZ-diff + zstd 压缩元数据 |
 
 当前版本: `AGC_FILE_MAJOR=3, AGC_FILE_MINOR=0` → 3000
+
+> **源码版本怪癖**：目录名为 `agc-3.2.3`，但 `defs.h` 内 `AGC_VER_MAJOR/MINOR/BUGFIX = 3/2/2`
+> （build `20260326.1`），即源码自报 v3.2.2；各 `.cpp/.h` 头注释版本号 `3.2`（2024-11-21）。
+> 记笔记/对照 pgr 移植时以 `defs.h` 为准。
+
+> **CLI 补充**：`create` 除表格所列外还有 `-a`(adaptive)、`-c`(concatenated genomes)、
+> `-d`(不存 cmd-line)、`-f`(fall-back minimizers 比例)、`-t`(线程)。其中 `-a` 自适应压缩
+> 与 `-f` 与参考选择相关，pgr 的 Reference Index 设计可参考其"minimizer 找参考 + 局部
+> fall-back"思路（细节在 application.cpp / agc_compressor.cpp）。
 
 ## 参考资料
 

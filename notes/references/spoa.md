@@ -14,6 +14,9 @@
 - **比对模式**（3 种）: 局部 Smith-Waterman（kSW）、全局 Needleman-Wunsch
   （kNW）、半全局 Overlap（kOV）。
 - **gap 罚分模式**（3 种）: linear、affine、convex（分段 affine，双罚分函数取 min）。
+- **CLI 默认罚分**（main.cpp）: `-m 5 -n -4 -g -8 -e -6 -q -10 -c -4`；`-l` 比对模式、
+  `-r` 结果模式（0=consensus、1=MSA、2=both、3=GFA、4=consensus+GFA）、`-d` DOT 输出、
+  `-s` strand-ambiguous、`--min-coverage`（仅 `-r 0` 生效）。
 - **SIMD 支持**: SSE4.1 与 AVX2（README 自评 "marginally faster due to high
   latency shifts"）；[SIMDe](https://github.com/simd-everywhere/simde) 提供
   非 x86 可移植；运行时分派按 AVX2 > SSE4.1 > SSE2。
@@ -104,7 +107,10 @@ FASTA/FASTQ（bioparser 流式读取）
 - `Create(type, m, n, g[, e[, q, c]])`：gap open/extend 必须非正，否则抛异常。
 - **subtype 判定**: `g >= e` → linear；`g <= q || e >= c` → affine；否则
   convex。linear 时折叠 `e = g`；affine 时折叠 `q = g, c = e`。
-- `WorstCaseAlignmentScore` 预检潜在溢出（`kNegativeInfinity = i32::MIN + 1024`）。
+- `WorstCaseAlignmentScore(i,j)` 预检潜在溢出（`kNegativeInfinity = T::min()+1024`，
+  T∈{i16,i32}）：最坏分数 = `min(−(m·min(i,j)+gap(|i−j|)), gap(i)+gap(j))`，
+  `gap(len)=min(g+(len−1)e, q+(len−1)c)`（len==0 记 0）。SIMD `Prealloc` 据此选 lane 类型
+  （§5.4）。
 - 工厂先尝试 `CreateSimdAlignmentEngine`，SIMD 不可用（无指令集编译）时回退
   `SisdAlignmentEngine`。
 

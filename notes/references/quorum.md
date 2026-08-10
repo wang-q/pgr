@@ -44,11 +44,26 @@ parameter"）。
            quality=0 → nval=2（count=1, 低质量）
 已有值：  新 quality=1 且旧为低质量 → 重置为 3（提升为高质量）
           新 quality=0 且旧为高质量 → 不计数（低质量证据不污染高质量计数）
-          同质量 → count += 2
+          同质量 → nval += 2（即 value 增 2，count 实际增 1，质量位不变）
 ```
+
+> 精确实现见 `mer_database.hpp` `hash_with_quality::add()`：`if ((nval&1) < quality) nval=3;`
+> `else if ((nval>>1)==max_val_ || (nval&1) > quality) return; else nval += 2;`
+> 注意 `nval += 2` 是对**编码值**加 2（低 1 位是质量位），等价于 count 增 1、质量位保留。
 
 即**至少一次高质量出现就把该 k-mer 记为高质量，且权重从 3 起步**；低质量
 reads 的错误 k-mer 不会膨胀计数。这是 quorum 与朴素计数最大的区别。
+
+**quality 位如何判定**（`create_database.cc` 的 `quality_mer_counter`）：
+逐碱基维护 `low_len`/`high_len`，凡碱基质量 ≥ `qual_thresh`（= `min-q-char +
+min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；当
+`low_len >= k`（凑满一个 k-mer）时，`quality = (high_len >= k)`——即**只有
+连续 k 个高质量碱基的 k-mer 才标记为高质量**。窗口内任一个低质量碱基都会
+清零 `high_len`，从而取消该位置 k-mer 的高质量标记。
+
+> `quorum.in` 建库时把 bits 硬编码为 `-b 7`（计数上限 2^7-1=127，足够覆盖
+> 一般覆盖度），并默认 `-s 200M`（Jellyfish 哈希槽位，估小会
+> "Failed: Increase the size parameter"）。
 
 哈希满时自动翻倍扩容（`handle_full_ary`，多线程屏障同步，旧表迁移到
 2× 新表）。
@@ -162,6 +177,10 @@ reads 的错误 k-mer 不会膨胀计数。这是 quorum 与朴素计数最大�
 - 输出是 FASTA（丢质量），且纠错后 read 可能变短/截断；
 - 单机内存模型（`-s` 手动指定哈希大小，估小会失败）；
 - 无更新（2012-2014 年项目）。
+- **source quirk**：`quorum.in` 在 `--paired-files` 模式会**强制置
+  `--no-discard=1`**（`$opts{"no-discard"} = 1 if $paired_files`），即双端模式
+  从不会丢 read、错误 read 一律输出单碱基 N——这是为了保持 `_1.fa`/`_2.fa`
+  的 mate 配对结构。若 pgr 要做"判定并丢弃"，单端模式才是默认丢弃语义。
 
 ---
 

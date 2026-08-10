@@ -72,7 +72,8 @@
   2. 跑 `lastz --format=PAF:wfmash --ambiguous=iupac tfile qfile --output=pfile`
      —— **target 在前**；除格式与 IUPAC 外全是 lastz 默认（无打分预设）；
   3. 读回 PAF 逐行**坐标回移**（paf_parse1）：ql/tl 换全长、qs/qe += qbeg、
-     ts/te += tbeg，第 9 列 CIGAR 原样拷贝；
+     ts/te += tbeg，**第 9 列起（n_match/blk/mapq/CIGAR 等）原样拷贝**（PAF 第 9 列
+     是 n_match 而非 CIGAR，CIGAR 在 `cg:` 标签里）；
   4. 删临时文件。
 - 结果收集：各线程的匿名临时文件最后按线程序 cat 到 stdout；README 建议与
   FastGA PAF 直接 cat，**无去重**。
