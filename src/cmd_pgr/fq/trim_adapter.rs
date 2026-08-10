@@ -23,6 +23,8 @@ Notes:
 * `--maxns` drops reads with too many N bases; `--ftm` right-trims lengths to
   a multiple; `--toss-broken-reads` drops pairs where one mate fails
 * Input is one interleaved FASTQ or two files (R1, R2)
+* --threads controls the worker pool (default: logical CPU count); output
+  order is preserved regardless of thread count
 * Supports both plain text and gzipped (.gz) files
 
 Examples:
@@ -133,6 +135,14 @@ Examples:
                 .action(clap::ArgAction::SetTrue)
                 .help("Keep surviving mates of discarded reads"),
         )
+        .arg(
+            Arg::new("threads")
+                .long("threads")
+                .short('p')
+                .num_args(1)
+                .default_value("auto")
+                .help("Worker threads (default: logical CPU count)"),
+        )
 }
 
 /// Execute the trim-adapter command.
@@ -144,6 +154,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let ref_file = args.get_one::<String>("ref").unwrap();
+    let threads = match args.get_one::<String>("threads").unwrap().as_str() {
+        "auto" => pgr::libs::sys::logical_cpus(),
+        s => s
+            .parse::<usize>()
+            .map_err(|_| anyhow::anyhow!("invalid --threads: {}", s))?,
+    };
     let opts = AdapterTrimOptions {
         k: *args.get_one::<usize>("k").unwrap(),
         mink: *args.get_one::<usize>("mink").unwrap(),
@@ -167,7 +183,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
     let mut out =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    trim_adapter(&infiles, &mut out, &opts)?;
+    trim_adapter(&infiles, &mut out, &opts, threads)?;
     out.flush()?;
     Ok(())
 }

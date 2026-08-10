@@ -205,6 +205,8 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
 *   `--maxns <int>`: Maximum allowed N bases; negative disables (default: 0).
 *   `--ftm <int>`: Right-trim lengths to a multiple (default: 5).
 *   `--no-toss-broken-reads`: Keep surviving mates of discarded reads.
+*   `-p, --threads <int|auto>`: Worker threads (default: logical CPU count);
+    output order is preserved for any thread count.
 
 ### Examples
 
@@ -218,6 +220,12 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
     pgr fq trim-adapter in.fq --ref illumina_adapters.fa --no-ktrim \
         --no-tbo --no-tpe --no-qtrim --k 27 --mink 0 --minlen 0 \
         --maxns=-1 --ftm 0 -o out.fq
+    ```
+
+3.  **Run with a specific number of threads**:
+    ```bash
+    pgr fq trim-adapter R1.fq.gz R2.fq.gz --ref illumina_adapters.fa \
+        -o out.fq --threads 8
     ```
 
 ---

@@ -68,20 +68,20 @@ impl SeqRecord {
 
 /// FAFQ sequential reader over any buffered input.
 pub struct SeqReader<'a> {
-    inner: Box<dyn BufRead + 'a>,
+    inner: Box<dyn BufRead + Send + 'a>,
     last: u8,
 }
 
 impl<'a> SeqReader<'a> {
     /// Opens a FAFQ reader from a path (supports stdin and gzip).
     pub fn new(infile: &str) -> anyhow::Result<SeqReader<'static>> {
-        let inner: Box<dyn BufRead> = crate::libs::io::reader(infile)
+        let inner: Box<dyn BufRead + Send> = crate::libs::io::reader(infile)
             .with_context(|| format!("Failed to open reader for {infile}"))?;
         Ok(SeqReader { inner, last: 0 })
     }
 
     /// Wraps an existing buffered reader.
-    pub fn from_reader(inner: Box<dyn BufRead + 'a>) -> Self {
+    pub fn from_reader(inner: Box<dyn BufRead + Send + 'a>) -> Self {
         Self { inner, last: 0 }
     }
 
@@ -285,7 +285,7 @@ mod tests {
     }
 
     fn read_all_fa(data: Vec<u8>) -> Vec<(Vec<u8>, Vec<u8>)> {
-        let mut r = SeqReader::from_reader(Box::new(Cursor::new(data)) as Box<dyn BufRead>);
+        let mut r = SeqReader::from_reader(Box::new(Cursor::new(data)) as Box<dyn BufRead + Send>);
         let mut rec = SeqRecord::new();
         let mut out = Vec::new();
         while r.read_record(&mut rec).unwrap() {
@@ -295,7 +295,7 @@ mod tests {
     }
 
     fn read_all_fq(data: Vec<u8>) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-        let mut r = SeqReader::from_reader(Box::new(Cursor::new(data)) as Box<dyn BufRead>);
+        let mut r = SeqReader::from_reader(Box::new(Cursor::new(data)) as Box<dyn BufRead + Send>);
         let mut rec = SeqRecord::new();
         let mut out = Vec::new();
         while r.read_record(&mut rec).unwrap() {

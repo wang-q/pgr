@@ -244,6 +244,22 @@ bucket 强制外部桶路径；指定 `--buckets` 等价于隐含 bucket 模式�
 合成数据实测：`--mem 32m` 桶路径 ~9.0s（user 12s > wall 9s，并行生效）、
 `--mem 4g` 内存路径 ~7.6s，两者确定性且集合一致。
 
+### 4.7 流水线命令并行化（2026-08-10）
+
+通用组件 `libs/par::ordered_map`：有界保序并行流水线（feeder 线程 +
+`workers` 个 worker + 按输入序收集的 collector），内存由通道容量界定，
+输出顺序与线程数无关。已接入：
+
+* `pgr fq trim-adapter --threads N`（默认逻辑 CPU 数）：流式读取
+  （`libs/fq/pairs::PairReader`，不再整体载入内存）+ 并行处理每对 reads，
+  按序写回。50 万对合成数据实测 threads=1 9.2s → threads=8 1.4s（6.6×），
+  峰值内存 ~15MB（流式、有界），threads=1/8 输出逐字节一致且与 golden
+  一致。
+* `fq clump` 已在 §4.6 并行（par_sort + 桶 wave）。
+
+踩坑记录：channel 原始 `out_tx` 若不 drop，collector 的 `recv()` 会永久
+阻塞（worker 全部退出后 out_rx 仍不关闭）——feeder join 必须在 drain 之后。
+
 ## 5. 验收标准（替换后的对比）
 
 - 同一输入（`anchr/tests/Lambda/` R1/R2），pgr 各步输出与本地 39.38 BBTools

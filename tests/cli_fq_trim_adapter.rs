@@ -126,3 +126,33 @@ fn command_fq_trim_adapter_removes_adapter_and_keeps_clean_read() {
     assert!(seq.len() >= 60, "prefix must survive: {seq}");
     assert_eq!(seq.len(), 69, "bbduk-compatible cut position");
 }
+
+#[test]
+fn command_fq_trim_adapter_parallel_output_matches_single_thread() {
+    // The worker pool preserves input order; any thread count must give the
+    // same byte output as the golden.
+    let out_dir = tempfile::tempdir().unwrap();
+    let t1 = out_dir.path().join("t1.fq");
+    let t8 = out_dir.path().join("t8.fq");
+
+    for (out, threads) in [(&t1, "1"), (&t8, "8")] {
+        PgrCmd::new()
+            .args(&[
+                "fq",
+                "trim-adapter",
+                "tests/bbtools/Lambda/golden/clumpify.fq.gz",
+                "--ref",
+                "tests/bbtools/Lambda/illumina_adapters.fa",
+                "--threads",
+                threads,
+                "-o",
+                out.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+    }
+
+    let golden = read_gz("tests/bbtools/Lambda/golden/trim.fq.gz");
+    assert_eq!(std::fs::read(&t1).unwrap(), golden);
+    assert_eq!(std::fs::read(&t8).unwrap(), golden);
+}

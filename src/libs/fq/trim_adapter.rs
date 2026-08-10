@@ -11,6 +11,7 @@ use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::io::Write;
+use std::sync::Arc;
 
 /// Bits per base (DNA).
 const BPB: u32 = 2;
@@ -834,16 +835,31 @@ pub fn trim_adapter<W: Write>(
     infiles: &[String],
     out: &mut W,
     opts: &AdapterTrimOptions,
+    threads: usize,
 ) -> Result<()> {
-    let pairs = crate::libs::fq::clump::read_pairs(infiles)?;
-    let trimmed = process_pairs(&pairs, opts)?;
-    for t in &trimmed {
-        write_record(out, &t.r1, &t.r1_seq, &t.r1_qual, opts.quality_base)?;
-        if let (Some(r2), Some(s2), Some(q2)) = (&t.r2, &t.r2_seq, &t.r2_qual) {
-            write_record(out, r2, s2, q2, opts.quality_base)?;
-        }
-    }
-    Ok(())
+    let table = Arc::new(build_table(&opts.ref_file, opts)?);
+    let prob = prob_error();
+    let opts = Arc::new(opts.clone());
+    let quality_base = opts.quality_base;
+    let pairs = crate::libs::fq::pairs::PairReader::new(infiles)?;
+    crate::libs::par::ordered_map(
+        pairs,
+        threads,
+        move |pair| {
+            let pair = pair?;
+            Ok(process_one(&pair, &opts, &table, &prob))
+        },
+        |t| {
+            let Some(t) = t else {
+                return Ok(());
+            };
+            write_record(out, &t.r1, &t.r1_seq, &t.r1_qual, quality_base)?;
+            if let (Some(r2), Some(s2), Some(q2)) = (&t.r2, &t.r2_seq, &t.r2_qual) {
+                write_record(out, r2, s2, q2, quality_base)?;
+            }
+            Ok(())
+        },
+    )
 }
 
 /// A surviving pair with trimmed sequence/quality buffers.
@@ -863,43 +879,40 @@ struct TrimmedPair {
     pub r2_qual: Option<Vec<u8>>,
 }
 
-/// Processes in-memory pairs through the trim/filter pipeline.
-fn process_pairs(
-    pairs: &[(SeqRecord, Option<SeqRecord>)],
+/// Processes one pair through the trim/filter pipeline.
+fn process_one(
+    pair: &(SeqRecord, Option<SeqRecord>),
     opts: &AdapterTrimOptions,
-) -> Result<Vec<TrimmedPair>> {
-    let table = build_table(&opts.ref_file, opts)?;
-    let prob = prob_error();
-    let mut out = Vec::new();
-    for (rec1, rec2) in pairs {
-        let mut r1 = make_read_buf(rec1, opts.quality_base);
-        let mut r2 = rec2.as_ref().map(|r| make_read_buf(r, opts.quality_base));
-        process_pair(&mut r1, r2.as_mut(), opts, &table, &prob);
-        if r1.discarded {
-            continue;
-        }
-        out.push(TrimmedPair {
-            r1: rec1.clone(),
-            r1_seq: r1.seq,
-            r1_qual: r1.qual,
-            r2: rec2.clone(),
-            r2_seq: r2.as_ref().and_then(|r| {
-                if r.discarded {
-                    None
-                } else {
-                    Some(r.seq.clone())
-                }
-            }),
-            r2_qual: r2.as_ref().and_then(|r| {
-                if r.discarded {
-                    None
-                } else {
-                    Some(r.qual.clone())
-                }
-            }),
-        });
+    table: &HashSet<i64>,
+    prob: &[f32; 128],
+) -> Option<TrimmedPair> {
+    let (rec1, rec2) = pair;
+    let mut r1 = make_read_buf(rec1, opts.quality_base);
+    let mut r2 = rec2.as_ref().map(|r| make_read_buf(r, opts.quality_base));
+    process_pair(&mut r1, r2.as_mut(), opts, table, prob);
+    if r1.discarded {
+        return None;
     }
-    Ok(out)
+    Some(TrimmedPair {
+        r1: rec1.clone(),
+        r1_seq: r1.seq,
+        r1_qual: r1.qual,
+        r2: rec2.clone(),
+        r2_seq: r2.as_ref().and_then(|r| {
+            if r.discarded {
+                None
+            } else {
+                Some(r.seq.clone())
+            }
+        }),
+        r2_qual: r2.as_ref().and_then(|r| {
+            if r.discarded {
+                None
+            } else {
+                Some(r.qual.clone())
+            }
+        }),
+    })
 }
 
 /// Writes a trimmed FASTQ record with the original header.

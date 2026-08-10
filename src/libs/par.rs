@@ -1,4 +1,4 @@
-//! Parallel pipeline primitives shared by `pgr dist` subcommands.
+//! Parallel pipeline primitives shared by `pgr` subcommands.
 //!
 //! Provides a writer thread + rayon pool pair, list/path resolution, two-set
 //! entry loading, and a generic parallel pairwise iteration helper. None of
@@ -6,8 +6,73 @@
 //! them in.
 
 use rayon::prelude::*;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::thread::JoinHandle;
+
+/// Runs `map` over `inputs` on `workers` threads and feeds the results, in
+/// input order, to `emit`. Memory is bounded by the channel capacities and
+/// the number of in-flight items; `inputs` is consumed on a feeder thread.
+pub fn ordered_map<I, O, F, E>(
+    inputs: impl IntoIterator<Item = I> + Send + 'static,
+    workers: usize,
+    map: F,
+    mut emit: E,
+) -> anyhow::Result<()>
+where
+    I: Send + 'static,
+    O: Send + 'static,
+    F: Fn(I) -> anyhow::Result<O> + Send + Sync + 'static,
+    E: FnMut(O) -> anyhow::Result<()>,
+{
+    let workers = workers.max(1);
+    let (in_tx, in_rx) = crossbeam::channel::bounded::<(usize, I)>(2 * workers);
+    let (out_tx, out_rx) = crossbeam::channel::bounded::<(usize, anyhow::Result<O>)>(2 * workers);
+
+    std::thread::scope(|s| {
+        let feeder = s.spawn(move || {
+            for (i, item) in inputs.into_iter().enumerate() {
+                if in_tx.send((i, item)).is_err() {
+                    break;
+                }
+            }
+        });
+        let map = &map;
+        for _ in 0..workers {
+            let in_rx = in_rx.clone();
+            let out_tx = out_tx.clone();
+            s.spawn(move || {
+                while let Ok((i, item)) = in_rx.recv() {
+                    let out = map(item);
+                    if out_tx.send((i, out)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        // Drop the original sender/receiver held by this scope; otherwise the
+        // collector would wait on out_rx forever after the workers exit.
+        drop(in_rx);
+        drop(out_tx);
+
+        // Drain results concurrently with feeding: joining the feeder before
+        // consuming out_rx would deadlock once both bounded channels fill.
+        let mut pending = BTreeMap::new();
+        let mut next = 0usize;
+        while let Ok((i, out)) = out_rx.recv() {
+            pending.insert(i, out);
+            while let Some(out) = pending.remove(&next) {
+                emit(out?)?;
+                next += 1;
+            }
+        }
+        for (_, out) in pending {
+            emit(out?)?;
+        }
+        let _ = feeder.join();
+        Ok(())
+    })
+}
 
 /// Spawn a writer thread draining a channel and configure the global rayon
 /// pool with `num_threads`. Returns the sender and the writer join handle.
@@ -113,4 +178,26 @@ pub fn par_run_pairs<E, F>(
             sender.send(lines).unwrap();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordered_map_preserves_order_and_bounds_memory() {
+        let mut got = Vec::new();
+        let r = ordered_map(
+            0..1000,
+            4,
+            |x| Ok::<u64, anyhow::Error>(x * 2),
+            |x| {
+                got.push(x);
+                Ok(())
+            },
+        );
+        assert!(r.is_ok());
+        let expected: Vec<u64> = (0..1000).map(|x| x * 2).collect();
+        assert_eq!(got, expected);
+    }
 }

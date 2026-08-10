@@ -2,6 +2,7 @@
 
 pub mod clump;
 pub mod norm;
+pub mod pairs;
 pub mod sample;
 pub mod split;
 pub mod trim;
