@@ -45,6 +45,8 @@ pub struct ClumpOptions {
     pub buckets: Option<usize>,
     /// Force the sorting path; `Auto` decides from the memory budget.
     pub mode: SortMode,
+    /// Worker threads for the parallel sort/buckets.
+    pub parallel: usize,
 }
 
 /// Sorting path selection.
@@ -63,21 +65,27 @@ pub enum SortMode {
 /// interleaved FASTQ or two files (R1, R2). With `dedupe`, whole-pair
 /// duplicates (R1 and R2 both matching within `dupesubs` substitutions) are
 /// removed, keeping the higher-quality copy.
-pub fn clump<W: Write>(infiles: &[String], out: &mut W, opts: &ClumpOptions) -> Result<()> {
-    let estimate = estimate_fastq_bytes(infiles);
-    let cap = crate::libs::sys::mem_cap(opts.mem);
-    match opts.mode {
-        SortMode::Auto => {
-            if estimate <= cap {
-                clump_in_memory(infiles, out, opts)?;
-            } else {
-                clump_buckets(infiles, out, opts, cap, estimate)?;
+pub fn clump<W: Write + Send>(infiles: &[String], out: &mut W, opts: &ClumpOptions) -> Result<()> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(opts.parallel.max(1))
+        .build()
+        .context("failed to build rayon pool")?;
+    pool.install(|| {
+        let estimate = estimate_fastq_bytes(infiles);
+        let cap = crate::libs::sys::mem_cap(opts.mem);
+        match opts.mode {
+            SortMode::Auto => {
+                if estimate <= cap {
+                    clump_in_memory(infiles, out, opts)?;
+                } else {
+                    clump_buckets(infiles, out, opts, cap, estimate)?;
+                }
             }
+            SortMode::Global => clump_in_memory(infiles, out, opts)?,
+            SortMode::Bucket => clump_buckets(infiles, out, opts, cap, estimate)?,
         }
-        SortMode::Global => clump_in_memory(infiles, out, opts)?,
-        SortMode::Bucket => clump_buckets(infiles, out, opts, cap, estimate)?,
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// In-memory path: load all pairs, sort, optional dedupe.
@@ -325,33 +333,7 @@ fn dedupe_pairs(keyed: Vec<KeyedPair>, dupesubs: usize) -> Vec<(SeqRecord, Optio
             j += 1;
         }
         let mut discarded = vec![false; j - i];
-        for a in 0..j - i {
-            if discarded[a] {
-                continue;
-            }
-            let mut unequals = 0usize;
-            for b in a + 1..j - i {
-                if discarded[b] {
-                    continue;
-                }
-                if !key_equal(&keyed[i + a].key, &keyed[i + b].key) {
-                    break;
-                }
-                if pair_equal(&keyed[i + a].pair, &keyed[i + b].pair, dupesubs) {
-                    if keyed[i + b].errors >= keyed[i + a].errors {
-                        discarded[b] = true;
-                    } else {
-                        discarded[a] = true;
-                        break;
-                    }
-                } else {
-                    unequals += 1;
-                    if unequals > SCAN_LIMIT {
-                        break;
-                    }
-                }
-            }
-        }
+        dedupe_clump(&keyed[i..j], &mut discarded, dupesubs);
         for (a, d) in discarded.iter().enumerate() {
             if !d {
                 out.push(keyed[i + a].pair.clone());
@@ -360,6 +342,65 @@ fn dedupe_pairs(keyed: Vec<KeyedPair>, dupesubs: usize) -> Vec<(SeqRecord, Optio
         i = j;
     }
     out
+}
+
+/// Removes duplicates within one clump (Clump.removeDuplicates with the
+/// BBTools scan parameters: scan=0 for exact dupesubs=0, otherwise scan=5
+/// with a wider retry when more than `maxDiscarded` reads are removed).
+fn dedupe_clump(clump: &[KeyedPair], discarded: &mut [bool], dupesubs: usize) {
+    let mut scan = if dupesubs < 1 { 0 } else { SCAN_LIMIT };
+    let mut max_discarded = scan + 10;
+    loop {
+        let removed = dedupe_pass(clump, discarded, dupesubs, scan, max_discarded);
+        if !(dupesubs > 0 && removed > max_discarded) {
+            break;
+        }
+        scan += 10;
+        max_discarded = max_discarded * 2 + 20;
+    }
+}
+
+/// One dedupe scan pass over a clump (Clump.removeDuplicates_inner).
+fn dedupe_pass(
+    clump: &[KeyedPair],
+    discarded: &mut [bool],
+    dupesubs: usize,
+    scan_limit: usize,
+    max_discarded: usize,
+) -> usize {
+    let mut removed = 0usize;
+    for a in 0..clump.len() {
+        if discarded[a] {
+            continue;
+        }
+        let mut unequals = 0usize;
+        let mut discarded_seen = 0usize;
+        let mut b = a + 1;
+        while b < clump.len() && unequals <= scan_limit && discarded_seen <= max_discarded {
+            if discarded[b] {
+                discarded_seen += 1;
+            } else {
+                if !key_equal(&clump[a].key, &clump[b].key) {
+                    break;
+                }
+                if pair_equal(&clump[a].pair, &clump[b].pair, dupesubs) {
+                    if clump[b].errors >= clump[a].errors {
+                        discarded[b] = true;
+                        removed += 1;
+                        unequals = 0;
+                    } else {
+                        discarded[a] = true;
+                        removed += 1;
+                        break;
+                    }
+                } else {
+                    unequals += 1;
+                }
+            }
+            b += 1;
+        }
+    }
+    removed
 }
 
 /// ReadKey equality: kmer, strand, and window position must all match.

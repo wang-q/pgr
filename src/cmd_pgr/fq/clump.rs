@@ -25,6 +25,7 @@ Notes:
 * --sort-mode forces the path: auto (default, by memory budget), global
   (always in-memory), or bucket (always external); specifying --buckets
   implies bucket mode
+* --parallel caps the parallel worker pool (default: logical CPU count)
 * Supports both plain text and gzipped (.gz) files
 
 Examples:
@@ -102,6 +103,14 @@ Examples:
                 .value_parser(["auto", "global", "bucket"])
                 .help("Sorting path: auto (default), global, or bucket"),
         )
+        .arg(
+            Arg::new("parallel")
+                .long("parallel")
+                .short('p')
+                .num_args(1)
+                .default_value("auto")
+                .help("Worker threads (default: logical CPU count)"),
+        )
 }
 
 /// Execute the clump command.
@@ -131,6 +140,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         mode
     };
+    let parallel = match args.get_one::<String>("parallel").unwrap().as_str() {
+        "auto" => pgr::libs::sys::logical_cpus(),
+        s => s
+            .parse::<usize>()
+            .map_err(|_| anyhow::anyhow!("invalid --threads: {}", s))?,
+    };
     if !(2..=31).contains(&k) {
         anyhow::bail!("--kmer must be in 2..=31, got {}", k);
     }
@@ -145,6 +160,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         mem,
         buckets,
         mode,
+        parallel,
     };
     clump(&infiles, &mut out, &opts)?;
     out.flush()?;

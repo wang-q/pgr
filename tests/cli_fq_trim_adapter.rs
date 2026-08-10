@@ -143,7 +143,7 @@ fn command_fq_trim_adapter_parallel_output_matches_single_thread() {
                 "tests/bbtools/Lambda/golden/clumpify.fq.gz",
                 "--ref",
                 "tests/bbtools/Lambda/illumina_adapters.fa",
-                "--threads",
+                "--parallel",
                 threads,
                 "-o",
                 out.to_str().unwrap(),

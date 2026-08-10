@@ -221,3 +221,75 @@ fn command_fq_clump_groups_identical_pairs_together() {
     });
     assert!(adjacent, "shared-kmer pairs must stay adjacent: {names:?}");
 }
+
+#[test]
+fn command_fq_clump_dupesubs_tolerance() {
+    // Pair A is an exact duplicate (removed at any dupesubs). Pair B shares
+    // R1 but its R2 differs by one base: kept with dupesubs=0, removed with
+    // dupesubs=1.
+    let a1 = "ACGT".repeat(10);
+    let a2 = "TGCA".repeat(10);
+    let b1 = "GATT".repeat(10);
+    let b2_hi = "CCCC".repeat(10);
+    let b2_lo = format!("{}G", "C".repeat(39));
+    let c1 = "GGGG".repeat(10);
+    let input = format!(
+        "@a1/1\n{a1}\n+\n{}\n@a1/2\n{a2}\n+\n{}\n\
+         @a2/1\n{a1}\n+\n{}\n@a2/2\n{a2}\n+\n{}\n\
+         @b1/1\n{b1}\n+\n{}\n@b1/2\n{b2_hi}\n+\n{}\n\
+         @b2/1\n{b1}\n+\n{}\n@b2/2\n{b2_lo}\n+\n{}\n\
+         @c1/1\n{c1}\n+\n{}\n@c1/2\n{c1}\n+\n{}\n",
+        "!".repeat(40),
+        "!".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+        "I".repeat(40),
+    );
+    let file = write_temp(&input);
+
+    let run = |dupesubs: &str| -> String {
+        let out_dir = tempfile::tempdir().unwrap();
+        let out = out_dir.path().join("out.fq");
+        PgrCmd::new()
+            .args(&[
+                "fq",
+                "clump",
+                file.path().to_str().unwrap(),
+                "--dedupe",
+                "--dupesubs",
+                dupesubs,
+                "-o",
+                out.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        std::fs::read_to_string(&out).unwrap()
+    };
+
+    let out0 = run("0");
+    assert!(out0.contains("@a2/1"), "exact duplicate keeps high quality");
+    assert!(!out0.contains("@a1/1"), "exact duplicate removed");
+    assert!(
+        out0.contains("@b1/1") && out0.contains("@b2/1"),
+        "1-sub pair kept at dupesubs=0"
+    );
+    assert!(out0.contains("@c1/1"), "unique pair kept");
+
+    let out1 = run("1");
+    assert!(out1.contains("@a2/1"));
+    assert!(!out1.contains("@a1/1"));
+    assert!(
+        out1.contains("@b1/1"),
+        "high-quality copy of near-duplicate kept"
+    );
+    assert!(
+        !out1.contains("@b2/1"),
+        "1-sub duplicate removed at dupesubs=1"
+    );
+    assert!(out1.contains("@c1/1"));
+}

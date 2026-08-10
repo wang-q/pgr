@@ -169,8 +169,14 @@ BBTools-40.01 源码已置于仓库根 `BBTools-40.01/`——该目录自带 `.g
    （R1 与 R2 都必须精确匹配，N 作通配符；R1 相同但 R2 不同不算重复）。
    理由：整对唯一性在 1000× 以上覆盖度下极强，相同整对基本就是
    PCR/光学重复，直接序列去重足够，无需官方 assemblyPipeline.sh 的
-   `dedupe optical`（需 flowcell 坐标解析 + 邻近判定，且 Lambda 数据无
-   坐标无法验证），optical 模式留待未来。
+   `dedupe optical`。**光学去重明确不做**（2026-08-10 确认）：需要 flowcell
+   坐标解析 + 邻近判定，且 BBTools-40.01 与 Lambda 数据都没有带真实坐标的
+   reads 可验证，流程也不需要它。
+   `--dupesubs` 支持 >0（2026-08-10 补全）：移植 BBTools 的扫描语义——
+   dupesubs=0 时 scan=0（只比相邻），>0 时 scan=5/maxDiscarded=15 且单轮
+   删除超限会扩大扫描重试（`scan+10`/`maxDiscarded*2+20`）；`dupesubs=2`
+   已与 BBTools threads=1 golden 逐字节验证（39978 reads），合成测试覆盖
+   0 vs 1 的容错差异。
 2. **M2 `fq split` + `fq sample`** → 与本地 39.38 `repair.sh`/`reformat.sh` 在
    Lambda 数据上的输出逐字节比对（含格式），单元 + 集成测试。
 3. **M3 `fq trim-adapter`（无 tbo/tpe）**：参考序列建 kmer 表
@@ -250,7 +256,7 @@ bucket 强制外部桶路径；指定 `--buckets` 等价于隐含 bucket 模式�
 `workers` 个 worker + 按输入序收集的 collector），内存由通道容量界定，
 输出顺序与线程数无关。已接入：
 
-* `pgr fq trim-adapter --threads N`（默认逻辑 CPU 数）：流式读取
+* `pgr fq trim-adapter --parallel N`（默认逻辑 CPU 数）：流式读取
   （`libs/fq/pairs::PairReader`，不再整体载入内存）+ 并行处理每对 reads，
   按序写回。50 万对合成数据实测 threads=1 9.2s → threads=8 1.4s（6.6×），
   峰值内存 ~15MB（流式、有界），threads=1/8 输出逐字节一致且与 golden

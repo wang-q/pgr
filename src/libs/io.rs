@@ -153,7 +153,7 @@ pub fn same_path(a: &str, b: &str) -> bool {
 /// propagate flush errors should call `flush()?` explicitly before the writer
 /// goes out of scope.
 pub struct PgrWriter {
-    inner: BufWriter<Box<dyn Write>>,
+    inner: BufWriter<Box<dyn Write + Send>>,
 }
 
 impl Write for PgrWriter {
@@ -184,7 +184,7 @@ impl Drop for PgrWriter {
 /// failure. To get a `Box<dyn Write>` (e.g. for storing in a heterogeneous
 /// collection), wrap the result with `Box::new(pgr::writer(...)?)`.
 pub fn writer(output: &str) -> anyhow::Result<PgrWriter> {
-    let boxed: Box<dyn Write> = if output == "stdout" {
+    let boxed: Box<dyn Write + Send> = if output == "stdout" {
         Box::new(std::io::stdout())
     } else {
         let file = File::create(output).with_context(|| format!("could not create {}", output))?;

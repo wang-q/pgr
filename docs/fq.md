@@ -76,6 +76,8 @@ pgr fq clump [OPTIONS] <infiles>...
     (default) picks by the memory budget; `global` always sorts in memory;
     `bucket` always uses the external hash-bucket path (implied when
     `--buckets` is given).
+*   `-p, --parallel <int|auto>`: Worker threads for the parallel sort and
+    bucket processing (default: logical CPU count).
 
 ### Examples
 
@@ -102,6 +104,11 @@ pgr fq clump [OPTIONS] <infiles>...
 5.  **Force the external bucket path**:
     ```bash
     pgr fq clump R1.fq.gz R2.fq.gz -o out.fq --sort-mode bucket
+    ```
+
+6.  **Limit parallelism**:
+    ```bash
+    pgr fq clump R1.fq.gz R2.fq.gz -o out.fq --parallel 4
     ```
 
 ---
@@ -205,7 +212,7 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
 *   `--maxns <int>`: Maximum allowed N bases; negative disables (default: 0).
 *   `--ftm <int>`: Right-trim lengths to a multiple (default: 5).
 *   `--no-toss-broken-reads`: Keep surviving mates of discarded reads.
-*   `-p, --threads <int|auto>`: Worker threads (default: logical CPU count);
+*   `-p, --parallel <int|auto>`: Worker threads (default: logical CPU count);
     output order is preserved for any thread count.
 
 ### Examples
@@ -225,7 +232,7 @@ pgr fq trim-adapter [OPTIONS] <infiles>...
 3.  **Run with a specific number of threads**:
     ```bash
     pgr fq trim-adapter R1.fq.gz R2.fq.gz --ref illumina_adapters.fa \
-        -o out.fq --threads 8
+        -o out.fq --parallel 8
     ```
 
 ---

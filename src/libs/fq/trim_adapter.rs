@@ -835,7 +835,7 @@ pub fn trim_adapter<W: Write>(
     infiles: &[String],
     out: &mut W,
     opts: &AdapterTrimOptions,
-    threads: usize,
+    parallel: usize,
 ) -> Result<()> {
     let table = Arc::new(build_table(&opts.ref_file, opts)?);
     let prob = prob_error();
@@ -844,7 +844,7 @@ pub fn trim_adapter<W: Write>(
     let pairs = crate::libs::fq::pairs::PairReader::new(infiles)?;
     crate::libs::par::ordered_map(
         pairs,
-        threads,
+        parallel,
         move |pair| {
             let pair = pair?;
             Ok(process_one(&pair, &opts, &table, &prob))

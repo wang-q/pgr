@@ -7,26 +7,31 @@ locally installed BBTools 39.38 (cbp package) on the Lambda test data
 ## Methodology
 
 * `hyperfine --warmup 2 --runs 6` per pair; mean ± σ reported.
-* pgr: single-threaded `target/release/pgr`; BBTools: `threads=8`.
+* pgr: parallel `target/release/pgr`; `fq trim-adapter` runs with
+  `--threads 8` (matching BBTools); `fq clump`, `kmer hist`, and `fq norm`
+  parallelize internally via rayon (logical CPU count, 32 on this host).
+  BBTools: `threads=8`.
 * Both sides write plain-text FASTQ (pgr does not gzip output); inputs are
   the same gzipped files (raw R1/R2, or the golden clumpify/trim/filter
   intermediates for the downstream steps).
 * Parameters match the anchr trim pipeline (`k=31` clumpify, `k=23` trim,
   `k=27` filter, `k=31` khist; `ordered=t`, fixed seeds).
+* Updated 2026-08-10 after pgr parallelization; the previous run was
+  single-threaded.
 
 ## Results
 
 | Step | BBTools 39.38 | pgr | Speedup |
 |---|---:|---:|---:|
-| clumpify / `fq clump` | 225.4 ± 5.7 ms | 74.1 ± 1.6 ms | 3.04x |
-| bbduk trim / `fq trim-adapter` | 408.5 ± 13.6 ms | 401.5 ± 3.3 ms | 1.02x |
-| bbduk filter / filter mode | 196.5 ± 6.2 ms | 110.8 ± 1.8 ms | 1.77x |
-| kmercountexact / `kmer hist` | 2.565 ± 0.015 s | 699.2 ± 7.6 ms | 3.67x |
-| repair / `fq split` | 183.5 ± 3.4 ms | 21.7 ± 0.6 ms | 8.46x |
-| reformat sample / `fq sample` | 198.4 ± 81.6 ms | 24.7 ± 0.5 ms | 8.02x |
-| bbnorm / `fq norm` | 888.1 ± 20.0 ms | 239.0 ± 4.7 ms | 3.72x |
+| clumpify / `fq clump` | 212.9 ± 5.0 ms | 88.1 ± 4.0 ms | 2.42x |
+| bbduk trim / `fq trim-adapter` | 389.3 ± 47.9 ms | 80.6 ± 8.0 ms | 4.83x |
+| bbduk filter / filter mode | 187.8 ± 6.4 ms | 74.4 ± 8.4 ms | 2.53x |
+| kmercountexact / `kmer hist` | 2.554 ± 0.014 s | 682.5 ± 4.3 ms | 3.74x |
+| repair / `fq split` | 174.8 ± 4.8 ms | 21.4 ± 0.7 ms | 8.16x |
+| reformat sample / `fq sample` | 157.5 ± 3.0 ms | 24.0 ± 0.6 ms | 6.57x |
+| bbnorm / `fq norm` | 838.7 ± 45.1 ms | 232.0 ± 6.5 ms | 3.62x |
 
-Sum of step means: BBTools ≈ 4.67 s, pgr ≈ 1.57 s (~3.0x end to end, without
+Sum of step means: BBTools ≈ 4.51 s, pgr ≈ 1.20 s (~3.8x end to end, without
 the JVM/script startup and intermediate gzip files of the real pipeline).
 
 ## Output equivalence
@@ -38,8 +43,10 @@ hash counts; see tests/bbtools/Lambda/README.md).
 
 ## Caveats
 
-* pgr is single-threaded; the trim step is dominated by the ported BBDuk
-  algorithm itself (essentially tied at 1.02x), while JVM-dominated steps
-  (clump, split, sample, khist) show the largest gains.
-* The `reformat sample` run had outliers (161-365 ms); treat its speedup as
-  approximate.
+* `fq trim-adapter` is the main worker-pool parallelized command (`--threads`,
+  default logical CPU count); on 50万-pair synthetic data it scaled from
+  9.2 s (1 thread) to 1.4 s (8 threads), 6.6x, with ~15 MB peak memory.
+* `fq clump`, `kmer hist`, and `fq norm` parallelize through rayon internally;
+  the Lambda data is small, so their parallel gain is limited (clump even
+  measured slightly slower than the earlier single-threaded run).
+* `fq split` / `fq sample` are I/O-bound and remain single-threaded.
