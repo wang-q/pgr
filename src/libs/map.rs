@@ -11,7 +11,6 @@ use crate::libs::nt::rev_comp;
 use anyhow::Result;
 use rayon::prelude::*;
 use std::io::Write;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 /// One reference contig (name + sequence).
 pub struct RefRecord {
@@ -24,9 +23,6 @@ pub struct RefRecord {
 pub struct MapIndex {
     keys: Vec<u128>,
     payloads: Vec<u64>,
-    /// Per-contig base offset into the coverage array.
-    offsets: Vec<usize>,
-    total_len: usize,
 }
 
 /// Options for [`map_files`].
@@ -34,7 +30,6 @@ pub struct MapOptions {
     pub k: usize,
     pub outm: Option<String>,
     pub outu: Option<String>,
-    pub basecov: Option<String>,
 }
 
 /// Mapping statistics.
@@ -78,31 +73,15 @@ pub fn build_index(refs: &[RefRecord], k: usize) -> Result<MapIndex> {
         });
     }
     radix_sort_u128(&mut keys, &mut payloads, 2 * k as u32);
-    let mut offsets = Vec::with_capacity(refs.len());
-    let mut total = 0usize;
-    for r in refs {
-        offsets.push(total);
-        total += r.seq.len();
-    }
-    Ok(MapIndex {
-        keys,
-        payloads,
-        offsets,
-        total_len: total,
-    })
+    Ok(MapIndex { keys, payloads })
 }
 
-/// Maps all reads from `read_paths` and writes SAM / basecov outputs.
+/// Maps all reads from `read_paths` and writes the SAM outputs.
 ///
 /// Reads are processed in parallel (rayon) and written in input order, so
 /// the output is deterministic across runs.
 pub fn map_files(refs: &[RefRecord], read_paths: &[String], opts: &MapOptions) -> Result<MapStats> {
     let index = build_index(refs, opts.k)?;
-    // Only track per-base coverage when it is requested.
-    let coverage: Option<Vec<AtomicU32>> = opts
-        .basecov
-        .as_ref()
-        .map(|_| (0..index.total_len).map(|_| AtomicU32::new(0)).collect());
 
     let mut stats = MapStats::default();
     let mut outm = opts.outm.as_ref().map(|p| pgr_writer(p)).transpose()?;
@@ -124,7 +103,7 @@ pub fn map_files(refs: &[RefRecord], read_paths: &[String], opts: &MapOptions) -
             block.push(rec.clone());
             if block.len() >= block_size {
                 write_block(
-                    &block, refs, &index, opts, &coverage, &mut outm, &mut outu, &mut stats,
+                    &block, opts.k, refs, &index, &mut outm, &mut outu, &mut stats,
                 )?;
                 block.clear();
             }
@@ -132,37 +111,21 @@ pub fn map_files(refs: &[RefRecord], read_paths: &[String], opts: &MapOptions) -
     }
     if !block.is_empty() {
         write_block(
-            &block, refs, &index, opts, &coverage, &mut outm, &mut outu, &mut stats,
+            &block, opts.k, refs, &index, &mut outm, &mut outu, &mut stats,
         )?;
     }
     drop(outm);
     drop(outu);
-
-    if let (Some(path), Some(coverage)) = (&opts.basecov, &coverage) {
-        let mut w = pgr_writer(path)?;
-        for (cid, r) in refs.iter().enumerate() {
-            let base = index.offsets[cid];
-            for (i, c) in coverage[base..base + r.seq.len()].iter().enumerate() {
-                let c = c.load(Ordering::Relaxed);
-                if c > 0 {
-                    writeln!(w, "{}\t{}\t{}", r.name, i, c)?;
-                }
-            }
-        }
-        w.flush()?;
-    }
     Ok(stats)
 }
 
-/// Maps one block of reads (parallel), accumulates coverage, and writes the
-/// SAM records in input order.
-#[allow(clippy::too_many_arguments)]
+/// Maps one block of reads (parallel) and writes the SAM records in input
+/// order.
 fn write_block(
     block: &[SeqRecord],
+    k: usize,
     refs: &[RefRecord],
     index: &MapIndex,
-    opts: &MapOptions,
-    coverage: &Option<Vec<AtomicU32>>,
     outm: &mut Option<Box<dyn Write + Send>>,
     outu: &mut Option<Box<dyn Write + Send>>,
     stats: &mut MapStats,
@@ -171,15 +134,7 @@ fn write_block(
         .par_iter()
         .map(|rec| {
             let read = rec.sequence();
-            let hits = map_read(read, opts.k, index, refs);
-            if let Some(coverage) = coverage {
-                for &(cid, pos, _) in &hits {
-                    let base = index.offsets[cid as usize] + pos as usize;
-                    for i in 0..read.len() {
-                        coverage[base + i].fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
+            let hits = map_read(read, k, index, refs);
             ReadResult {
                 name: String::from_utf8_lossy(rec.name()).into_owned(),
                 seq: read.to_vec(),

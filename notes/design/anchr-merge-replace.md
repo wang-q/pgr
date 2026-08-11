@@ -122,9 +122,9 @@ anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如�
 | # | 步骤 | 工具 | 作用 | pgr 现状 |
 |---|---|---|---|---|
 | 1 | clumpify | `clumpify.sh dedupe dupesubs=0` | 排序 + 精确整对去重（SE 追加） | `fq clump --dedupe` ✅ |
-| 2a | EC phase 1 | `bbmerge.sh ecco mix vstrict` + `ihist` | overlap 区域纠错（不合并） | `fq merge --ecco` ✅ |
+| 2a | EC phase 1 | `bbmerge.sh ecco mix vstrict` + `ihist` | overlap 区域纠错（不合并） | `fq ec-overlap` ✅ |
 | 2b | EC phase 2 | `clumpify.sh passes=4 ecc unpair repair` | clump 内共识纠错（单端） | 跳过（见 §3.3） |
-| 2c | EC phase 3 | `tadpole.sh ecc tossjunk tossdepth=2 tossuncorrectable` | kmer 图纠错 + 丢弃坏 read | `fq ecc` ✅ |
+| 2c | EC phase 3 | `tadpole.sh ecc tossjunk tossdepth=2 tossuncorrectable` | kmer 图纠错 + 丢弃坏 read | `fq ec-kmer` ✅ |
 | 3 | Read extension | `tadpole.sh mode=extend el=20 er=20 k=62` | 3'/5' 端扩展 reads | `fq extend` ✅ |
 | 4 | Read merging | `bbmerge-auto.sh strict k=81 extend2=80` + `ihist` | overlap 合并 + insert size 直方图 | `fq merge --extend2 --rem` ✅ |
 | 5 | Dedupe merged | `clumpify.sh dedupe dupesubs=0` | 合并后 reads 去重 | `fq clump --dedupe` ✅ |
@@ -149,8 +149,8 @@ anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如�
 
 | 工具 | pgr 命令 | 对照 |
 |---|---|---|
-| **bbmerge** | `fq merge`（--ecco / --strict / --no-make-vector / --extend2 --rem） | `merge.*` + `merge4.*` golden，net/classic/ecco/ihist 全一致 |
-| **tadpole ecc** | `fq ecc`（tossjunk/tossdepth/tossuncorrectable） | `ecct_sub.fq.gz` golden，丢弃判定一致 |
+| **bbmerge** | `fq merge`（--strict / --no-make-vector / --extend2 --rem） | `merge.*` + `merge4.*` golden，net/classic/ecco/ihist 全一致 |
+| **tadpole ecc** | `fq ec-kmer`（tossjunk/tossdepth/tossuncorrectable） | `ecct_sub.fq.gz` golden，丢弃判定一致 |
 | **tadpole extend** | `fq extend`（k=62 el/er） | `ext_sub.fq.gz` golden，扩展碱基一致 |
 | **clumpify ecc** | 跳过 | 与 tadpole ecc 冗余，anchr 可跳过（§3.3） |
 
@@ -250,7 +250,7 @@ pgr 简化实现可行。
 
 * **clumpify ecc（phase 2）建议不做**（与 phase 3 冗余、anchr 可跳过、
   用户反馈卡住）——除非要逐字节对齐默认 `"1 2 3"` 全流程；
-* 新命令 `fq ecc`（或并入）：tadpole 式 kmer 图纠错 + toss 参数
+* 新命令 `fq ec-kmer`（或并入）：tadpole 式 kmer 图纠错 + toss 参数
   （tossjunk/tossdepth/tossuncorrectable）——可复用 `s-filter` 的
   QualityTable 与判定语义；
 * 验证：与 `clumpify.sh ecc`/`tadpole.sh ecc` 黑盒对照。
@@ -269,7 +269,7 @@ pgr 简化实现可行。
    **clumpify ecc（phase 2）不做**（与 phase 3 冗余 + anchr 可跳过 +
    用户反馈卡住），单端纠错由 tadpole ecc 承担。
 2. **命名**：merge 流程的核心命令候选 `fq merge`（bbmerge 等价）、
-   `fq ecc` / `fq extend`（tadpole 等价）；沿用 pgr 长名风格 + bbduk 标注。
+   `fq ec-kmer` / `fq extend`（tadpole 等价）；沿用 pgr 长名风格 + bbduk 标注。
 3. **ihist 归属**：insert 检测在 BBTools 有三处——bbmerge ihist（merge
    流程用，随阶段 A 迁移）、tadpole `mode=insert`（不在流程、可选）、
    reformat ihist（2_insert_size 用，todo 挂账）。merge 流程的 ihist 由
@@ -310,11 +310,11 @@ pairs，`tests/cli_fq_merge.rs`）：
 
 ## 7. 实现状态（tadpole ecc/extend 迁移完成，2026-08-11）
 
-**`pgr fq ecc` / `pgr fq extend` 已实现并通过 BBTools 40.01 黑盒逐字节对照**
+**`pgr fq ec-kmer` / `pgr fq extend` 已实现并通过 BBTools 40.01 黑盒逐字节对照**
 （Lambda 40k pairs 全量 + 2k pairs 子集 golden，`tests/cli_fq_ecc.rs` /
 `tests/cli_fq_extend.rs`，fmt/clippy clean，全量测试绿）：
 
-* `fq ecc ... --toss-junk --toss-depth 2 --toss-uncorrectable` ≡
+* `fq ec-kmer ... --toss-junk --toss-depth 2 --toss-uncorrectable` ≡
   `tadpole.sh ecc tossjunk tossdepth=2 tossuncorrectable`（phase 3，
   丢弃判定 1702 对完全一致）；
 * `fq extend -k 62 --el 20 --er 20` ≡ `tadpole.sh mode=extend el=20 er=20
@@ -334,7 +334,7 @@ pairs，`tests/cli_fq_merge.rs`）：
    当碱基编码恰好等于深度时 BBTools 视作已修正跳过 —— 移植必须复刻。
 4. **extend 模式不做纠错**：`mode=extend` 时 Java `ecc_=false`（correctMode
    才置 true），`processRead` 直接扩展；pgr 用 `TadpoleOptions.ecc` 开关
-   区分（`fq ecc` 置 true、`fq extend` 默认 false）。
+   区分（`fq ec-kmer` 置 true、`fq extend` 默认 false）。
 5. **扩展不做左分支检查**：`ExtendThread.leftCounts` 从未初始化（null），
    `extendToRight2_inner` 只判右 junction；pgr `extend_to_right2` 的
    `use_left=false`。

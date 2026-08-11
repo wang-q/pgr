@@ -96,12 +96,25 @@
 * **`pgr asm map`** - maps reads to a reference requiring perfect matches
   (no mismatches, no gaps), replacing the bbwrap `perfectmode maxindel=0`
   call of the anchr `anchors` flow. Seed-and-verify over a canonical k-mer
-  index; outputs mapped/unmapped SAM and a per-base coverage file.
+  index; outputs mapped/unmapped SAM. Per-base coverage is derived from the
+  mapped SAM (`pgr sam to-rg` + `pgr rg coverage`) instead of an in-memory
+  counter, so mapping memory stays independent of reference size.
+* **`pgr sam to-rg`** - new command converting SAM alignments to `.rg`
+  range lines (`chr:start-end`, 1-based inclusive; M/D/N/=/X CIGAR ops
+  span the range, header and unmapped records are skipped). Bridges the
+  mapped SAM of `pgr asm map` to `pgr rg coverage` for the anchr `anchors`
+  coverage step.
 * **`pgr paf` query output lengths** - PAF columns 2/7
   (`query_length`/`target_length`) are now populated from per-sequence
   total lengths retained in the index (format v5; old `.paf.idx` files
   report a version error and ask for a rebuild). Previously both columns
   were always emitted as 0.
+* **fq correction commands renamed/split** - `pgr fq ecc` is now
+  `pgr fq ec-kmer` (k-mer-graph correction, tadpole `ecc`), and the
+  overlap-correction mode previously hidden as `fq merge --ecco` is a new
+  `pgr fq ec-overlap` command (bbmerge `ecco`). `fq merge` is now pure
+  overlap merging; the `--ecco`/`--mix`/`--vstrict` flags moved to
+  `ec-overlap` (default mix, `--no-mix` to disable).
 
 ## 0.5.0 - 2026-08-08
 

@@ -2,7 +2,7 @@
 
 > 2026-08-11。目标：替代 anchr 中 tadpole 的**组装用途**（contigMode）：
 > 2_insert_size 流程（硬依赖）与 unitigs 流程（`--unitigger tadpole` 可选
-> 分支）。ecc/extend 已由 `fq ecc`/`fq extend` 覆盖（见
+> 分支）。ecc/extend 已由 `fq ec-kmer`/`fq extend` 覆盖（见
 > [anchr-merge-replace.md](anchr-merge-replace.md) §6-7）。
 > 参考：BBTools-40.01 `assemble/Tadpole*.java`。
 

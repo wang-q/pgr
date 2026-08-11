@@ -12,7 +12,9 @@
 *   `clean`: Adapter k-mer trimming, quality and composition filtering (bbduk).
 *   `filter`: Discard reads matching reference k-mers (bbduk kfilter).
 *   `merge`: Overlap-merge paired-end reads (bbmerge-compatible).
-*   `ecc`: Error-correct reads by k-mer reassembly (tadpole-compatible).
+*   `ec-kmer`: Error-correct reads by k-mer reassembly (tadpole ecc).
+*   `ec-overlap`: Error-correct paired reads by overlap without joining
+    (bbmerge ecco).
 *   `extend`: Extend reads along the k-mer graph (tadpole-compatible).
 *   `assemble`: Assemble reads into contigs (tadpole-compatible).
 *   `norm`: Filter reads by k-mer depth (bbnorm-style cutoff).
@@ -526,12 +528,12 @@ pgr fq trim-qual [OPTIONS] <infiles>...
 
 ## merge
 
-Merges overlapping paired-end reads into single reads and/or error-corrects
-pairs by overlap, reproducing the BBTools `bbmerge.sh` / `bbmerge-auto.sh`
-overlap pipeline. `--ecco` corrects pairs without joining them (anchr merge
-phase 1); the default mode joins overlapping pairs and writes the unmerged
-pairs to `--outu` (anchr merge phase 4). `--extend2` with `--rem` reproduces
-the bbmerge-auto `extend2=N rem` mode: unmerged pairs are extended along a
+Merges overlapping paired-end reads into single reads, reproducing the
+BBTools `bbmerge.sh` / `bbmerge-auto.sh` overlap pipeline (anchr merge phase
+4): joining pairs are written to the output and unmerged pairs to `--outu`.
+For overlap-based error correction without joining, see
+[`pgr fq ec-overlap`](#ec-overlap). `--extend2` with `--rem` reproduces the
+bbmerge-auto `extend2=N rem` mode: unmerged pairs are extended along a
 k-mer graph (k=81) and the overlap is retried.
 
 ```bash
@@ -544,12 +546,8 @@ pgr fq merge [OPTIONS] <infiles>...
 *   `--outu <file>`: Output file for unmerged read pairs.
 *   `--ihist <file>`: Write the insert-size histogram (bbmerge `ihist`
     format).
-*   `--ecco`: Error-correct pairs by overlap without joining.
-*   `--mix`: Also write unmerged pairs to the main output (bbmerge: `mix`).
-    `--ecco` defaults to this, like `bbmerge.sh ... ecco`.
-*   `--no-mix`: Do not auto-mix when `--ecco` is set (bbmerge: `mix=f`).
-*   `--strict` / `--vstrict`: Apply the bbmerge strict/vstrict parameter
-    sets; explicit options override the preset values.
+*   `--strict`: Apply the bbmerge strict parameter set; explicit options
+    override the preset values.
 *   `--min-overlap <int>`: Minimum overlap (bbmerge: `minoverlap`; default
     11).
 *   `--min-overlap0 <int>`: Minimum overlap for pre-screening (bbmerge:
@@ -580,19 +578,13 @@ pgr fq merge [OPTIONS] <infiles>...
 
 ### Examples
 
-1.  **Error-correct by overlap, keeping all pairs (anchr phase 1)**:
-    ```bash
-    pgr fq merge R1.fq.gz R2.fq.gz -o ecco.fq.gz --ecco --vstrict \
-        --net bbmerge.bbnet --ihist ihist.merge1.txt
-    ```
-
-2.  **Merge overlapping pairs, unmerged to outu (anchr phase 4)**:
+1.  **Merge overlapping pairs, unmerged to outu (anchr phase 4)**:
     ```bash
     pgr fq merge in.fq.gz -o merged.fq.gz --outu unmerged.fq.gz \
         --strict --no-make-vector --ihist ihist.merge.txt
     ```
 
-3.  **Merge with tadpole extension retry**:
+2.  **Merge with tadpole extension retry**:
     ```bash
     pgr fq merge in.fq.gz -o merged.fq.gz --outu unmerged.fq.gz \
         --strict --no-make-vector --extend2 80 --rem
@@ -600,16 +592,18 @@ pgr fq merge [OPTIONS] <infiles>...
 
 ---
 
-## ecc
+## ec-kmer
 
 Error-corrects reads through the k-mer graph (reassemble mode), reproducing
 the BBTools `tadpole.sh ecc` behavior: k-mers are counted with a quality gate
 (`--min-prob`), per-read errors are detected from k-mer depth transitions and
 corrected by local reassembly, and reads can be discarded with the
 `tossjunk` / `tossdepth` / `tossuncorrectable` flags (anchr merge phase 3).
+This is the k-mer-graph counterpart of [`pgr fq ec-overlap`](#ec-overlap),
+which corrects paired reads from their overlap instead.
 
 ```bash
-pgr fq ecc [OPTIONS] <infiles>...
+pgr fq ec-kmer [OPTIONS] <infiles>...
 ```
 
 ### Options
@@ -630,22 +624,82 @@ pgr fq ecc [OPTIONS] <infiles>...
 
 1.  **Error-correct with tadpole defaults (anchr merge phase 3)**:
     ```bash
-    pgr fq ecc in.fq.gz -o ecct.fq.gz --toss-junk --toss-depth 2 \
+    pgr fq ec-kmer in.fq.gz -o ecct.fq.gz --toss-junk --toss-depth 2 \
         --toss-uncorrectable
     ```
 
 2.  **Only correct, keep everything**:
     ```bash
-    pgr fq ecc R1.fq R2.fq -o corrected.fq --kmer 31
+    pgr fq ec-kmer R1.fq R2.fq -o corrected.fq --kmer 31
     ```
 
 ---
+
+## ec-overlap
+
+Error-corrects paired-end reads using the evidence of their overlapping
+region, without joining the pair, reproducing the BBTools
+`bbmerge.sh ... ecco` mode (anchr merge phase 1). It is the overlap-based
+counterpart of [`pgr fq ec-kmer`](#ec-kmer): this command needs paired reads
+with a true overlap, while `ec-kmer` corrects from the k-mer graph.
+
+```bash
+pgr fq ec-overlap [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `-o, --outfile <file>`: Output filename.
+*   `--outu <file>`: Output file for untouched pairs (when `--no-mix`).
+*   `--ihist <file>`: Write the insert-size histogram (bbmerge `ihist`
+    format).
+*   `--no-mix`: Send only corrected pairs to the output (bbmerge: `mix=f`);
+    by default all pairs are written (bbmerge `mix`).
+*   `--strict` / `--vstrict`: Apply the bbmerge strict/vstrict parameter
+    sets; explicit options override the preset values.
+*   `--min-overlap <int>`: Minimum overlap (bbmerge: `minoverlap`; default
+    11).
+*   `--min-overlap0 <int>`: Minimum overlap for pre-screening (bbmerge:
+    `minoverlap0`; default 8).
+*   `--min-insert <int>`: Minimum insert size (default 15).
+*   `--min-insert0 <int>`: Minimum insert size for pre-screening (default:
+    auto).
+*   `--max-ratio <float>`: Maximum error ratio (bbmerge: `maxratio`; default
+    0.09).
+*   `--ratio-margin <float>`: Ratio margin (default 5.5).
+*   `--ratio-offset <float>`: Ratio offset (default 0.55).
+*   `--min-second-ratio <float>`: Minimum ratio for the second-best overlap
+    (default 0.1).
+*   `--ratio-reduction <int>`: Overlap reduction for ratio mode (default 3).
+*   `--min-entropy <int>`: Minimum entropy score (default 39).
+*   `--efilter <float>`: Expected-error filter ratio; 0 disables it (default
+    6).
+*   `--pfilter <float>`: Probability filter; 0 disables it (default
+    0.00004).
+*   `--no-make-vector`: Disable the BBMerge MAKE_VECTOR behavior (ratio
+    maxratio 0.7), using the classic overlap filters instead of the net.
+*   `--net <file>`: BBMerge overlap-filter net file (`bbmerge.bbnet`);
+    required in make-vector mode (the default).
+
+### Examples
+
+1.  **Error-correct by overlap, keeping all pairs (anchr phase 1)**:
+    ```bash
+    pgr fq ec-overlap R1.fq.gz R2.fq.gz -o ecco.fq.gz --vstrict \
+        --net bbmerge.bbnet --ihist ihist.merge1.txt
+    ```
+
+2.  **Only corrected pairs to the output**:
+    ```bash
+    pgr fq ec-overlap in.fq.gz -o ecco.fq.gz --outu rest.fq.gz \
+        --no-mix --no-make-vector
+    ```
 
 ## extend
 
 Extends reads in both directions along the k-mer graph, stopping at junctions
 and dead ends, reproducing the BBTools `tadpole.sh mode=extend` behavior
-(k > 31 uses the Tadpole2 long-k-mer path). Unlike `fq ecc`, extend mode does
+(k > 31 uses the Tadpole2 long-k-mer path). Unlike `fq ec-kmer`, extend mode does
 not run k-mer error correction. Extended bases get BBTools' fake quality
 (phred 30).
 
@@ -680,4 +734,3 @@ pgr fq extend [OPTIONS] <infiles>...
     ```
 
 ---
-

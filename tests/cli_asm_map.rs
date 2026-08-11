@@ -164,13 +164,14 @@ fn command_asm_map_short_read_unmapped() {
     assert_eq!(sam_lines(&outu).len(), 1);
 }
 
-/// basecov reports every covered reference position with its count.
+/// Per-base coverage is derived from the mapped SAM via `pgr sam to-rg` and
+/// `pgr rg coverage` (the compositional anchors pipeline).
 #[test]
-fn command_asm_map_basecov() {
+fn command_asm_map_coverage_pipeline() {
     let out_dir = tempfile::tempdir().unwrap();
     let ref_file = out_dir.path().join("ut.fa");
     let reads_file = out_dir.path().join("reads.fq");
-    let basecov = out_dir.path().join("basecov.txt");
+    let outm = out_dir.path().join("mapped.sam");
     std::fs::write(&ref_file, format!(">ut\n{REF}\n")).unwrap();
     write_fastq(&reads_file, &[("a", &REF[10..60]), ("b", &REF[20..70])]);
     PgrCmd::new()
@@ -179,25 +180,37 @@ fn command_asm_map_basecov() {
             "map",
             ref_file.to_str().unwrap(),
             reads_file.to_str().unwrap(),
-            "--basecov",
-            basecov.to_str().unwrap(),
+            "--outm",
+            outm.to_str().unwrap(),
             "-k",
             "31",
         ])
         .assert()
         .success();
-    let cov: Vec<(usize, u32)> = std::fs::read_to_string(&basecov)
-        .unwrap()
-        .lines()
-        .map(|l| {
-            let f: Vec<&str> = l.split('\t').collect();
-            (f[1].parse().unwrap(), f[2].parse().unwrap())
-        })
-        .collect();
-    assert!(!cov.is_empty());
-    // Overlap [20..60) is covered twice, the flanks once.
-    assert_eq!(cov.iter().filter(|(_, c)| *c == 2).count(), 40);
-    assert!(cov.iter().all(|(_, c)| *c <= 2));
+    let (rg, _) = PgrCmd::new()
+        .args(&["sam", "to-rg", outm.to_str().unwrap()])
+        .run();
+    // One range per mapped read, 1-based inclusive (ref 0-based 10..60 and
+    // 20..70).
+    assert_eq!(rg.lines().collect::<Vec<_>>(), ["ut:11-60", "ut:21-70"]);
+    let rg_file = out_dir.path().join("mapped.rg");
+    std::fs::write(&rg_file, &rg).unwrap();
+    let cov_json = out_dir.path().join("cov.json");
+    PgrCmd::new()
+        .args(&[
+            "rg",
+            "coverage",
+            rg_file.to_str().unwrap(),
+            "-m",
+            "2",
+            "-o",
+            cov_json.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    // The 40-bp overlap (1-based 21..60) is the only region covered twice.
+    let cov = std::fs::read_to_string(&cov_json).unwrap();
+    assert!(cov.contains("21-60"), "cov: {cov}");
 }
 
 /// Output is deterministic across runs.
@@ -215,7 +228,6 @@ fn command_asm_map_deterministic() {
     for i in 0..2 {
         let outm = out_dir.path().join(format!("m{i}.sam"));
         let outu = out_dir.path().join(format!("u{i}.sam"));
-        let basecov = out_dir.path().join(format!("c{i}.txt"));
         PgrCmd::new()
             .args(&[
                 "asm",
@@ -226,18 +238,12 @@ fn command_asm_map_deterministic() {
                 outm.to_str().unwrap(),
                 "--outu",
                 outu.to_str().unwrap(),
-                "--basecov",
-                basecov.to_str().unwrap(),
                 "-k",
                 "31",
             ])
             .assert()
             .success();
-        outs.push((
-            std::fs::read(&outm).unwrap(),
-            std::fs::read(&outu).unwrap(),
-            std::fs::read(&basecov).unwrap(),
-        ));
+        outs.push((std::fs::read(&outm).unwrap(), std::fs::read(&outu).unwrap()));
     }
     assert_eq!(outs[0], outs[1]);
 }
@@ -249,7 +255,6 @@ fn command_asm_map_lambda_sanity() {
     let ref_file = out_dir.path().join("ut.fa");
     let reads_file = out_dir.path().join("reads.fq.gz");
     let outm = out_dir.path().join("mapped.sam");
-    let basecov = out_dir.path().join("basecov.txt");
     // Reference: assembled Lambda contigs (golden from the assemble tests).
     let (stdout, _) = PgrCmd::new()
         .args(&[
@@ -275,8 +280,6 @@ fn command_asm_map_lambda_sanity() {
             reads_file.to_str().unwrap(),
             "--outm",
             outm.to_str().unwrap(),
-            "--basecov",
-            basecov.to_str().unwrap(),
             "-k",
             "31",
         ])
@@ -284,6 +287,8 @@ fn command_asm_map_lambda_sanity() {
         .success();
     let mapped = sam_lines(&outm);
     assert!(!mapped.is_empty(), "no reads mapped");
-    let cov_lines = std::fs::read_to_string(&basecov).unwrap();
-    assert!(!cov_lines.trim().is_empty());
+    let (rg, _) = PgrCmd::new()
+        .args(&["sam", "to-rg", outm.to_str().unwrap()])
+        .run();
+    assert!(!rg.trim().is_empty());
 }

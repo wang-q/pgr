@@ -1,6 +1,7 @@
 pub mod clean;
 pub mod clump;
-pub mod ecc;
+pub mod ec_kmer;
+pub mod ec_overlap;
 pub mod extend;
 pub mod filter;
 pub mod interleave;
@@ -29,7 +30,8 @@ pub fn make_subcommand() -> Command {
         .subcommand(sample::make_subcommand())
         .subcommand(split::make_subcommand())
         .subcommand(clean::make_subcommand())
-        .subcommand(ecc::make_subcommand())
+        .subcommand(ec_kmer::make_subcommand())
+        .subcommand(ec_overlap::make_subcommand())
         .subcommand(extend::make_subcommand())
         .subcommand(filter::make_subcommand())
         .subcommand(s_filter::make_subcommand())
@@ -49,7 +51,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("sample", sub_matches)) => sample::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("clean", sub_matches)) => clean::execute(sub_matches),
-        Some(("ecc", sub_matches)) => ecc::execute(sub_matches),
+        Some(("ec-kmer", sub_matches)) => ec_kmer::execute(sub_matches),
+        Some(("ec-overlap", sub_matches)) => ec_overlap::execute(sub_matches),
         Some(("extend", sub_matches)) => extend::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
         Some(("s-filter", sub_matches)) => s_filter::execute(sub_matches),

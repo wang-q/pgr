@@ -43,22 +43,6 @@ fn bench_map(c: &mut Criterion) {
             k: 31,
             outm: None,
             outu: None,
-            basecov: None,
-        };
-        b.iter(|| {
-            let stats = map_files(refs(), read_paths(), &opts).unwrap();
-            black_box(stats.mapped)
-        })
-    });
-    group.bench_function("map_lambda_2k_with_basecov", |b| {
-        let out_dir = std::env::temp_dir().join("pgr_asm_map_bench");
-        std::fs::create_dir_all(&out_dir).unwrap();
-        let basecov = out_dir.join("basecov.txt").to_string_lossy().into_owned();
-        let opts = MapOptions {
-            k: 31,
-            outm: None,
-            outu: None,
-            basecov: Some(basecov),
         };
         b.iter(|| {
             let stats = map_files(refs(), read_paths(), &opts).unwrap();

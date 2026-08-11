@@ -12,7 +12,8 @@ This command maps reads to a reference (typically an assembly) requiring
 every read to match exactly: no mismatches and no gaps, mirroring BBTools
 `bbwrap.sh perfectmode maxindel=0 strictmaxindel`. This replaces the
 bbwrap call of the anchr `anchors` flow, whose downstream only needs the
-mapped/unmapped counts and the per-base coverage.
+mapped/unmapped counts and the per-base coverage (derived from the mapped
+SAM with `pgr sam to-rg` and `pgr rg coverage`).
 
 Mapping is seed-and-verify: the reference's canonical k-mers are indexed
 once, each read seeds on its first k-mer, and every candidate position is
@@ -22,18 +23,18 @@ matching multiple positions are reported at all of them (`ambiguous=all`).
 Notes:
 * The reference is FASTA (plain or gzipped); reads are FASTA/FASTQ, one or
   more files (R1/R2 or several single-end files)
-* `--outm`/`--outu` write standard SAM (header included); `--basecov`
-  writes `RefName Pos Coverage` (0-based) with coverage > 0 only
+* `--outm`/`--outu` write standard SAM (header included)
+* Per-base coverage is derived from the mapped SAM, not accumulated here
 * Reads shorter than `--kmer` are unmapped
 * Processing is parallel (rayon) and the output is deterministic: reads
   are written in input order
 
 Examples:
-1. Map reads back to an assembly and report coverage (anchr anchors step):
-   pgr asm map UT.fasta R1.fq.gz R2.fq.gz --outm mapped.sam --outu unmapped.sam --basecov basecov.txt
+1. Map reads back to an assembly (anchr anchors step):
+   pgr asm map UT.fasta R1.fq.gz R2.fq.gz --outm mapped.sam --outu unmapped.sam
 
-2. Only the coverage profile:
-   pgr asm map UT.fasta reads.fq.gz --basecov basecov.txt
+2. Derive per-base coverage from the mapped SAM (anchr anchors step):
+   pgr sam to-rg mapped.sam | pgr rg coverage stdin -m 2 -o cov.json
 
 3. Use a longer seed k-mer:
    pgr asm map ref.fa reads.fq.gz -k 41 --outm mapped.sam
@@ -73,12 +74,6 @@ Examples:
                 .num_args(1)
                 .help("SAM output of unmapped reads"),
         )
-        .arg(
-            Arg::new("basecov")
-                .long("basecov")
-                .num_args(1)
-                .help("Per-base coverage output (RefName Pos Coverage)"),
-        )
         .arg(crate::cmd_pgr::args::parallel_arg_with_default("8"))
 }
 
@@ -94,7 +89,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         k: *args.get_one::<usize>("kmer").unwrap(),
         outm: args.get_one::<String>("outm").cloned(),
         outu: args.get_one::<String>("outu").cloned(),
-        basecov: args.get_one::<String>("basecov").cloned(),
     };
     let refs = read_fasta(&ref_files).context("failed to read reference")?;
     let stats = map_files(&refs, &read_files, &opts)?;

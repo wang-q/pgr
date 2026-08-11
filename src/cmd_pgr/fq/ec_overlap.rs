@@ -4,25 +4,25 @@ use pgr::libs::fq::bbnet::CellNet;
 use pgr::libs::fq::merge::{merge, write_ihist, MergeOptions, Preset};
 use std::io::Write;
 
-/// Build the clap subcommand for merge.
+/// Build the clap subcommand for ec-overlap.
 pub fn make_subcommand() -> Command {
-    Command::new("merge")
-        .about("Merges overlapping paired-end reads (bbmerge-compatible)")
+    Command::new("ec-overlap")
+        .about("Error-corrects paired reads by overlap without joining (bbmerge ecco)")
         .after_help(
             r###"
-This command merges overlapping paired-end reads into single reads,
-reproducing the BBTools `bbmerge.sh` / `bbmerge-auto.sh` overlap pipeline
-(anchr merge phase 4). Joining pairs are written to the output and unmerged
-pairs to `--outu`. For overlap-based error correction without joining, see
-`pgr fq ec-overlap` (anchr merge phase 1). `--extend2` with `--rem`
-reproduces the bbmerge-auto `extend2=N rem` mode: unmerged pairs are
-extended along a k-mer graph (k=81) and the overlap is retried, requiring
-the extended overlap to match the unextended one.
+This command error-corrects paired-end reads using the evidence of their
+overlapping region, without joining the pair, reproducing the BBTools
+`bbmerge.sh ... ecco` mode (anchr merge phase 1). It is the overlap-based
+counterpart of `pgr fq ec-kmer` (tadpole ecc): this command needs paired
+reads with a true overlap, while `ec-kmer` corrects from the k-mer graph.
 
 Notes:
 * Input is 1 interleaved FASTQ file or 2 paired files (R1, R2)
-* `--strict` applies the bbmerge strict parameter set; explicit options
-  override the preset values
+* Corrected pairs are written to the output by default (bbmerge `mix`);
+  pass `--no-mix` to send only the corrected pairs to the output and the
+  untouched pairs to `--outu`
+* `--strict`/`--vstrict` apply the bbmerge strict/vstrict parameter sets;
+  explicit options override the preset values
 * `--ihist` writes the insert-size histogram in the bbmerge `ihist` format
 * By default the BBMerge overlap net (bbmerge.bbnet) filters merges, so
   `--net FILE` is required unless `--no-make-vector` is given
@@ -30,16 +30,13 @@ Notes:
 * Supports both plain text and gzipped (.gz) files
 
 Examples:
-1. Merge overlapping pairs, unmerged to outu (anchr phase 4):
-   pgr fq merge in.fq.gz -o merged.fq.gz --outu unmerged.fq.gz \
-       --strict --no-make-vector --ihist ihist.merge.txt
+1. Error-correct by overlap, keeping all pairs (anchr merge phase 1):
+   pgr fq ec-overlap R1.fq.gz R2.fq.gz -o ecco.fq.gz --vstrict \
+       --net bbmerge.bbnet --ihist ihist.merge1.txt
 
-2. Tune the overlap parameters explicitly:
-   pgr fq merge R1.fq R2.fq -o out.fq --min-overlap 11 --max-ratio 0.075
-
-3. Merge with tadpole extension retry (anchr merge phase 4):
-   pgr fq merge in.fq.gz -o merged.fq.gz --outu unmerged.fq.gz \
-       --strict --no-make-vector --extend2 80 --rem --ihist ihist.merge.txt
+2. Only corrected pairs to the output, the rest to outu:
+   pgr fq ec-overlap in.fq.gz -o ecco.fq.gz --outu rest.fq.gz \
+       --no-mix --no-make-vector
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
@@ -51,7 +48,7 @@ Examples:
             Arg::new("outu")
                 .long("outu")
                 .num_args(1)
-                .help("Output file for unmerged read pairs"),
+                .help("Output file for untouched pairs (when --no-mix)"),
         )
         .arg(
             Arg::new("ihist")
@@ -60,10 +57,22 @@ Examples:
                 .help("Write the insert-size histogram to this file"),
         )
         .arg(
+            Arg::new("no_mix")
+                .long("no-mix")
+                .action(clap::ArgAction::SetTrue)
+                .help("Send only corrected pairs to the output (bbmerge: mix=f)"),
+        )
+        .arg(
             Arg::new("strict")
                 .long("strict")
                 .action(clap::ArgAction::SetTrue)
                 .help("Apply the bbmerge strict parameter set"),
+        )
+        .arg(
+            Arg::new("vstrict")
+                .long("vstrict")
+                .action(clap::ArgAction::SetTrue)
+                .help("Apply the bbmerge vstrict parameter set"),
         )
         .arg(
             Arg::new("min_overlap")
@@ -161,22 +170,9 @@ Examples:
                 .num_args(1)
                 .help("BBMerge overlap-filter net file (bbmerge.bbnet)"),
         )
-        .arg(
-            Arg::new("extend2")
-                .long("extend2")
-                .num_args(1)
-                .value_parser(value_parser!(usize))
-                .help("Extend unmerged pairs by up to this many bases and retry (bbmerge-auto: extend2)"),
-        )
-        .arg(
-            Arg::new("rem")
-                .long("rem")
-                .action(clap::ArgAction::SetTrue)
-                .help("Require the extended overlap to match the unextended one (bbmerge-auto: rem)"),
-        )
 }
 
-/// Execute the merge command.
+/// Execute the ec-overlap command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
@@ -187,12 +183,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outu = args.get_one::<String>("outu").cloned();
     let ihist = args.get_one::<String>("ihist").cloned();
 
-    let preset = if args.get_flag("strict") {
+    if args.get_flag("strict") && args.get_flag("vstrict") {
+        anyhow::bail!("--strict and --vstrict are mutually exclusive");
+    }
+    let preset = if args.get_flag("vstrict") {
+        Preset::VStrict
+    } else if args.get_flag("strict") {
         Preset::Strict
     } else {
         Preset::Normal
     };
     let mut opts = MergeOptions::from_preset(preset);
+    opts.ecco = true;
+    opts.mix = !args.get_flag("no_mix");
     if let Some(x) = args.get_one::<usize>("min_overlap") {
         opts.min_overlap = *x;
     }
@@ -224,7 +227,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opts.min_entropy = *x;
     }
     if let Some(x) = args.get_one::<f32>("efilter") {
-        opts.efilter = (*x > 0.0).then_some(*x);
+        opts.efilter = Some(*x);
     }
     if let Some(x) = args.get_one::<f32>("pfilter") {
         opts.pfilter = *x;
@@ -232,40 +235,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if args.get_flag("no_make_vector") {
         opts.make_vector = false;
     }
-    if let Some(path) = args.get_one::<String>("net") {
-        opts.net = Some(CellNet::load(path)?);
-    }
-    if let Some(x) = args.get_one::<usize>("extend2") {
-        opts.extend2 = *x;
-    }
-    opts.rem = args.get_flag("rem");
-    if opts.extend2 > 0 {
-        // bbmerge-auto forces MAKE_VECTOR=false whenever a tadpole (extend2 /
-        // eccTadpole / kfilter) is active.
-        opts.make_vector = false;
-    }
-    if opts.make_vector && opts.net.is_none() {
-        anyhow::bail!(
-            "make-vector mode (the default) requires --net with a bbmerge.bbnet \
-             file; use --no-make-vector for the classic overlap filters"
-        );
+    if let Some(net) = args.get_one::<String>("net") {
+        opts.net = Some(CellNet::load(net).context("failed to load overlap net")?);
     }
 
     let mut out = pgr::libs::io::writer(outfile)
         .with_context(|| format!("failed to open output {outfile}"))?;
-    let mut outu_w = match &outu {
-        Some(path) => Some(
-            pgr::libs::io::writer(path).with_context(|| format!("failed to open output {path}"))?,
-        ),
-        None => None,
-    };
+    let mut outu_w = outu
+        .as_ref()
+        .map(|p| pgr::libs::io::writer(p))
+        .transpose()?;
     let stats = merge(&infiles, &mut out, outu_w.as_mut(), &opts)?;
     out.flush()?;
     if let Some(path) = &ihist {
         let mut w =
-            pgr::libs::io::writer(path).with_context(|| format!("failed to open output {path}"))?;
+            pgr::libs::io::writer(path).with_context(|| format!("failed to open ihist {path}"))?;
         write_ihist(&mut w, &stats)?;
         w.flush()?;
     }
+    eprintln!(
+        "Pairs: {}  Joined: {}  Bases corrected: {}",
+        stats.pairs, stats.joined, stats.errors_corrected
+    );
     Ok(())
 }

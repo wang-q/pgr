@@ -13,8 +13,10 @@
 1. **anchr 模板替换**（用户自己处理）：`tadpole.sh` →
    `pgr asm contig`（2_insert_size/unitigs，注意 `0_cleanup.tera.sh`
    文件名同步）；`bbwrap.sh perfectmode` → `pgr asm map`（anchors，
-   `--outm/--outu/--basecov` 输出名与模板对齐）。已知偏差：contig 的
-   bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
+   `--outm/--outu` 输出名与模板对齐；覆盖度不再由 map 输出，改走
+   `pgr sam to-rg` + `pgr rg coverage` 组合管道，见 `asm-map.md`）。
+   已知偏差：contig 的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），
+   已接受确定性输出。
 2. **真实数据验证**（待数据）：unitigs/map 与 bcalm/bbmap 黑盒对照。
 
 **本轮新增（未提交，工作区）**：
@@ -22,13 +24,16 @@
 - `asm contig`：`--no-bubbles`、`--min-count-seed`、`--min-coverage`。
 - `asm unitig`：`--min-count-seed`（bcalm `-abundance-min`）、
   `--links`/`--gfa`（LinkTigs 语义边输出）、circular 环标记。
-- `asm map`：完美匹配回贴（参考 k-mer 索引 + 种子验证 + SAM/basecov），
+- `asm map`：完美匹配回贴（参考 k-mer 索引 + 种子验证 + SAM 输出），
   anchors 流程 bbwrap 替代；流式分块（100k/块，内存可控）、outm/outu
   SAM 头对称；基准 build ~1 ms / 2k reads ~3.7 ms。
+- `sam to-rg`：SAM → `.rg` 行（1-based 含端点，M/D/N/=/X 计跨度，
+  跳过头与 unmapped），衔接 `asm map` 与 `rg coverage`；basecov 内存累计
+  已整体移出 map（4 B/bp 数组删除，覆盖度从 SAM 派生，语义等价）。
 - 性能：contig 计数并行 + 排序快照（576→157 ms，~3.7×，`5c92439` 已提交
   perf 部分）；radix 化实测不划算（回退，见 `fq-assemble.md` §7）。
 - **端到端演练（Lambda 20k，release）**：contig 20 条/0.2 s → unitig
-  32 条 → map 40k reads 84.9% 完美回贴/0.07 s，basecov 49k 行；
+  32 条 → map 40k reads 84.9% 完美回贴/0.07 s；
   命令串联可用（RefName 含头字段与 BBTools tadpole+bbmap 组合一致）。
 
 **提交建议**（git 只读，用户侧提交）：
@@ -37,9 +42,10 @@
    `fq/mod.rs`（移除）、`libs/mod.rs`、`libs/fq/assemble.rs`（unitig 核心 +
    links/gfa/circular）、删除 `fq/assemble.rs`+`fq/unitig.rs`、测试
    `cli_asm_*` + 删除 `cli_fq_assemble.rs`+`cli_fq_unitig.rs`、
-   `docs/asm.md`、`docs/fq.md`、`notes/design/asm-map.md`。
-2. `test+perf(asm map): streaming blocks, symmetric SAM headers, benchmarks`：
-   `libs/map.rs` 流式/头对称、`benches/asm_map_benchmark.rs`、
+   `docs/asm.md`、`docs/sam.md`、`docs/fq.md`、`notes/design/asm-map.md`、
+   `src/cmd_pgr/sam/`、`src/libs/fmt/sam.rs`。
+2. `test+perf(asm map): streaming blocks, symmetric SAM headers, no in-memory basecov`：
+   `libs/map.rs` 流式/头对称/basecov 移除、`benches/asm_map_benchmark.rs`、
    `Cargo.toml`、`benches/fq_assemble_benchmark.rs`（unitigs 条目）。
 3. `docs: assembly handover notes and command index`：`CHANGELOG.md`、
    `notes/todo.md`、`notes/design/fq-assemble.md`、`notes/project-understanding.md`。
@@ -49,7 +55,7 @@
 - **trim 8 步 M0-M8 全部移植**（fq sample/clump/split/clean/filter/norm/
   trim-adapter/kmer hist），与 BBTools 39.38 逐字节一致，代码已提交 →
   `design/anchr-trim-replace.md`。
-- **anchr merge 流程 7 步全部移植**（fq merge/ecc/extend/assemble +
+- **anchr merge 流程 7 步全部移植**（fq merge/ec-kmer/ec-overlap/extend/assemble +
   split --repair + s-filter），golden/统计对照完成；clumpify ecc 按计划
   跳过 → `design/anchr-merge-replace.md`、`design/fq-assemble.md`。
 
@@ -185,13 +191,14 @@
       对照方向与边集合。
 - [ ] **pgr asm map 真实数据验证**：已实现（`asm/map.rs`，设计
       `asm-map.md`）；待用真实 UT.fasta + reads 与 bbmap 输出对照
-      mapped 比例与 basecov（本机 Java 配对读 gz 失败，黑盒对照暂缓）。
+      mapped 比例与覆盖度（`sam to-rg` + `rg coverage`，本机 Java 配对
+      读 gz 失败，黑盒对照暂缓）。
 - [x] **asm map 内存优化（2026-08-11 完成）**：reads 流式分块（100k/
       块，有界内存，块内并行 + 按序写出）；outm/outu SAM 头对称
       （bbmap `useSharedHeader` 对齐，模板 `wc -l` 比例不偏）。
-      Lambda 2k：无输出 ~3.7 ms / +basecov ~7.9 ms
-      （`asm_map_benchmark.rs`）。basecov 分块局部计数在 2k 数据上
-      回归已回退，百万级 reads 时再评估。
+      Lambda 2k：无输出 ~3.7 ms（`asm_map_benchmark.rs`）。**同日后续：
+      basecov 不再在内存累计**（4 B/bp 数组删除），改为 `sam to-rg` +
+      `rg coverage` 从 SAM 派生（职责分离，语义等价），见 `asm-map.md`。
 - [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree

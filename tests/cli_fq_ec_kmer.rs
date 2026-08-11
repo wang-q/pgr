@@ -16,13 +16,13 @@ fn read_gz(path: &str) -> Vec<u8> {
 /// pairs, byte-identical to BBTools 40.01 `assemble.Tadpole ... ecc tossjunk
 /// tossdepth=2 tossuncorrectable threads=1` (tests/bbtools/Lambda/README.md).
 #[test]
-fn command_fq_ecc_matches_bbtools_golden() {
+fn command_fq_ec_kmer_matches_bbtools_golden() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("ecct.fq");
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
             "-o",
             out.to_str().unwrap(),
@@ -41,13 +41,13 @@ fn command_fq_ecc_matches_bbtools_golden() {
 
 /// Without toss flags all reads are kept and only corrected.
 #[test]
-fn command_fq_ecc_keeps_all_without_toss() {
+fn command_fq_ec_kmer_keeps_all_without_toss() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("ecct.fq");
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
             "-o",
             out.to_str().unwrap(),
@@ -60,13 +60,13 @@ fn command_fq_ecc_keeps_all_without_toss() {
 
 /// Toss decisions are per-pair: a pair is dropped only when both mates fail.
 #[test]
-fn command_fq_ecc_tossdepth_drops_bad_pairs() {
+fn command_fq_ec_kmer_tossdepth_drops_bad_pairs() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("ecct.fq");
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
             "-o",
             out.to_str().unwrap(),
@@ -81,13 +81,13 @@ fn command_fq_ecc_tossdepth_drops_bad_pairs() {
 
 /// A zero k-mer length must fail cleanly instead of panicking.
 #[test]
-fn command_fq_ecc_rejects_zero_kmer() {
+fn command_fq_ec_kmer_rejects_zero_kmer() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("out.fq");
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
             "-o",
             out.to_str().unwrap(),
@@ -101,7 +101,7 @@ fn command_fq_ecc_rejects_zero_kmer() {
 /// FASTA input has no quality scores; error detection uses the fixed quality
 /// 20 (BBTools null-quality behavior) instead of indexing an empty vector.
 #[test]
-fn command_fq_ecc_handles_fasta_input() {
+fn command_fq_ec_kmer_handles_fasta_input() {
     let out_dir = tempfile::tempdir().unwrap();
     let infile = out_dir.path().join("in.fa");
     let out = out_dir.path().join("out.fa");
@@ -113,7 +113,7 @@ fn command_fq_ecc_handles_fasta_input() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             infile.to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -126,13 +126,13 @@ fn command_fq_ecc_handles_fasta_input() {
 
 /// `--parallel` values are validated but the pipeline stays single-pass.
 #[test]
-fn command_fq_ecc_parallel_is_validated() {
+fn command_fq_ec_kmer_parallel_is_validated() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("out.fq");
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
             "-o",
             out.to_str().unwrap(),
@@ -144,7 +144,7 @@ fn command_fq_ecc_parallel_is_validated() {
     PgrCmd::new()
         .args(&[
             "fq",
-            "ecc",
+            "ec-kmer",
             "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
             "-o",
             out.to_str().unwrap(),

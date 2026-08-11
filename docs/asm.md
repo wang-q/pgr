@@ -143,6 +143,11 @@ candidate position is verified over the full read length (forward or
 reverse strand). Reads matching multiple positions are reported at all of
 them (`ambiguous=all` semantics).
 
+Per-base coverage is not accumulated in memory here: it is derived from the
+mapped SAM with `pgr sam to-rg` and `pgr rg coverage` (see examples), which
+is cheaper when the reference is large and keeps the mapping command
+single-purpose.
+
 ```bash
 pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
 ```
@@ -152,23 +157,20 @@ pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
 *   `-k, --kmer <int>`: Seed k-mer length (default 31, range 1..=64).
 *   `--outm <file>`: SAM output of perfectly matched reads.
 *   `--outu <file>`: SAM output of unmapped reads.
-*   `--basecov <file>`: Per-base coverage output (`RefName Pos Coverage`,
-    0-based, coverage > 0 only).
 *   `-p, --parallel <int|auto>`: Worker threads (real parallelism via
     rayon; output stays deterministic and in input order).
 
 ### Examples
 
-1.  **Map reads back to an assembly and report coverage (anchr anchors
-    step)**:
+1.  **Map reads back to an assembly (anchr anchors step)**:
     ```bash
     pgr asm map UT.fasta R1.fq.gz R2.fq.gz \
-        --outm mapped.sam --outu unmapped.sam --basecov basecov.txt
+        --outm mapped.sam --outu unmapped.sam
     ```
 
-2.  **Only the coverage profile**:
+2.  **Derive per-base coverage from the mapped SAM (anchr anchors step)**:
     ```bash
-    pgr asm map UT.fasta reads.fq.gz --basecov basecov.txt
+    pgr sam to-rg mapped.sam | pgr rg coverage stdin -m 2 -o cov.json
     ```
 
 3.  **Use a longer seed k-mer**:

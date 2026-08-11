@@ -3,9 +3,9 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::fq::tadpole::{run, TadpoleOptions};
 use std::io::Write;
 
-/// Build the clap subcommand for ecc.
+/// Build the clap subcommand for ec-kmer.
 pub fn make_subcommand() -> Command {
-    Command::new("ecc")
+    Command::new("ec-kmer")
         .about("Error-corrects reads by k-mer reassembly (tadpole-compatible)")
         .after_help(
             r###"
@@ -24,11 +24,11 @@ Notes:
 
 Examples:
 1. Error-correct with tadpole defaults (anchr merge phase 3):
-   pgr fq ecc in.fq.gz -o ecct.fq.gz --toss-junk --toss-depth 2 \
+   pgr fq ec-kmer in.fq.gz -o ecct.fq.gz --toss-junk --toss-depth 2 \
        --toss-uncorrectable
 
 2. Only correct, keep everything:
-   pgr fq ecc R1.fq R2.fq -o corrected.fq --kmer 31
+   pgr fq ec-kmer R1.fq R2.fq -o corrected.fq --kmer 31
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
@@ -94,7 +94,7 @@ Examples:
         )
 }
 
-/// Execute the ecc command.
+/// Execute the ec-kmer command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
