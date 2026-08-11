@@ -42,7 +42,7 @@ Examples:
                 .short('k')
                 .num_args(1)
                 .default_value("31")
-                .value_parser(value_parser!(usize))
+                .value_parser(clap::builder::RangedU64ValueParser::<usize>::new().range(1..))
                 .help("K-mer length"),
         )
         .arg(
@@ -90,7 +90,7 @@ Examples:
                 .short('p')
                 .num_args(1)
                 .default_value("auto")
-                .help("Worker threads (accepted; processing is deterministic single-pass)"),
+                .help("Accepted for tadpole.sh compatibility; ignored (deterministic single-pass)"),
         )
 }
 
@@ -107,6 +107,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         ecc: true,
         ..Default::default()
     };
+    // Validate the thread-count value; processing stays deterministic
+    // single-pass (see the design notes), so the result is not used.
+    crate::cmd_pgr::args::parse_parallel_auto(args.get_one::<String>("parallel").unwrap())?;
     if let Some(x) = args.get_one::<f32>("min_prob") {
         opts.min_prob = *x;
     }

@@ -385,3 +385,40 @@ ihist 全一致，`merge4.*` golden + `cli_fq_merge.rs` 测试）。
 至此 anchr merge 流程 7 步全部有 pgr 等价命令（clumpify 去重 / bbmerge
 ecco / clumpify ecc（跳过）/ tadpole ecc / tadpole extend / bbmerge-auto
 extend2+rem / clumpify 去重 / bbduk qtrim / repair）。
+
+## 8. 代码审核修复（2026-08-11）
+
+对 bbmerge/tadpole 迁移代码做了一轮完整审核（对照 BBTools-40.01 源码 +
+本机 Java 实测），修复如下：
+
+1. **panic 修复**：`--kmer 0` 在 clap 层校验（`RangedU64ValueParser`，
+   `libs::fq::tadpole::run` 另有 `k>=1` 防御）；FASTA（无质量）输入在
+   `count_errors`/`count_errors_from` 传 `None`（BBTools null quality 用
+   固定 q=20），不再越界。
+2. **`--ecco` 默认 mix**：对齐 `bbmerge.sh`（`ecco && !setMix` 自动
+   `MIX_BAD_AND_GOOD=true`）；新增 `--no-mix` 表达 `mix=f`。此前
+   `--ecco` 不带 `--mix` 会静默丢弃未合并 reads（golden 一直显式带
+   `--mix`，未暴露）。
+3. **efilter 从死选项变为生效**：classic 模式按 Java 语义先跑
+   expected-error filter（触发则跳过 pfilter，保护"观测 bad 与质量预期
+   一致"的 pair 不被 pfilter 丢弃）；`extraMult` 在 make-vector 模式
+   对齐 Java 的 4.0（原恒 1.2，低危保真度偏差）。合成用例与 Java
+   `strict makevector=f` 逐字节一致。
+4. **清理**：`count_read_kmers` 里残留的 `chain12_hits` cfg(test) 探针、
+   `extend_read`/`process_read` 的 `let _ =` 死语句、libs 里不可达的
+   `--extend2 requires --no-make-vector` bail（cmd 层与 Java 自身都会
+   强制 make_vector=false）均删除。
+5. **`--parallel`**：ecc/extend 接受但忽略，改为校验值合法性
+   （`parse_parallel_auto`），帮助文本注明"为 tadpole.sh CLI 兼容保留、
+   忽略（确定性单线程）"。
+6. **文档**：`docs/fq.md` 补上 merge/ecc/extend 三个子命令章节
+   （此前全 fq 子命令唯独这三个没有文档）。
+7. **测试**：新增 7 个回归测试——ecco 缺省 mix 与 golden 逐字节一致、
+   `--no-mix` 只输出可纠正对、efilter 保护合成用例、`--kmer 0` 报错不
+   panic、FASTA 输入不 panic、`--parallel` 校验。
+
+**复核更正**：审核初稿把"双 1bp reads"列为 RET_BAD/RET_AMBIG 偏差，
+重读 `findOverlapInThread` 写出逻辑后确认 Java 的 RET_BAD 同样写入
+outu（`else if(listb!=null)`），pgr 语义一致，无需修复；
+`from_phred` 的 saturating 与 Java byte 溢出的差异仅 phred>122 可达，
+内部质量上限（merge≤50、tadpole≤32）使该分支实际不可达，保持现状。

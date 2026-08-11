@@ -78,3 +78,79 @@ fn command_fq_ecc_tossdepth_drops_bad_pairs() {
     let out = std::fs::read(&out).unwrap();
     assert_eq!(std::str::from_utf8(&out).unwrap().lines().count(), 11184); // matches BBTools tossdepth=2 subset
 }
+
+/// A zero k-mer length must fail cleanly instead of panicking.
+#[test]
+fn command_fq_ecc_rejects_zero_kmer() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "ecc",
+            "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
+            "-o",
+            out.to_str().unwrap(),
+            "--kmer",
+            "0",
+        ])
+        .assert()
+        .failure();
+}
+
+/// FASTA input has no quality scores; error detection uses the fixed quality
+/// 20 (BBTools null-quality behavior) instead of indexing an empty vector.
+#[test]
+fn command_fq_ecc_handles_fasta_input() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let infile = out_dir.path().join("in.fa");
+    let out = out_dir.path().join("out.fa");
+    std::fs::write(
+        &infile,
+        ">r1\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n>r2\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC\n",
+    )
+    .unwrap();
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "ecc",
+            infile.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let out = std::fs::read_to_string(&out).unwrap();
+    assert_eq!(out.lines().count(), 4);
+}
+
+/// `--parallel` values are validated but the pipeline stays single-pass.
+#[test]
+fn command_fq_ecc_parallel_is_validated() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "ecc",
+            "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
+            "-o",
+            out.to_str().unwrap(),
+            "--parallel",
+            "abc",
+        ])
+        .assert()
+        .failure();
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "ecc",
+            "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
+            "-o",
+            out.to_str().unwrap(),
+            "--parallel",
+            "8",
+        ])
+        .assert()
+        .success();
+}

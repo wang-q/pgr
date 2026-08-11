@@ -192,6 +192,93 @@ fn command_fq_merge_requires_net_in_make_vector_mode() {
 }
 
 #[test]
+fn command_fq_merge_ecco_without_mix_keeps_all_reads() {
+    // `bbmerge.sh ... ecco` without an explicit `mix` auto-sets
+    // MIX_BAD_AND_GOOD, so every pair is written to the main output; the
+    // result must match the golden that was generated with `ecco mix`.
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("ecco.fq");
+    lambda(
+        &[
+            "--ecco",
+            "--vstrict",
+            "--net",
+            "tests/bbtools/Lambda/golden/bbmerge.bbnet",
+        ],
+        out.to_str().unwrap(),
+        None,
+        None,
+    );
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        read_gz("tests/bbtools/Lambda/golden/merge.ecco.fq.gz")
+    );
+}
+
+#[test]
+fn command_fq_merge_ecco_no_mix_writes_only_corrected_pairs() {
+    // `bbmerge ... ecco mix=f`: only overlapping pairs are corrected; the
+    // rest are dropped when no --outu is given.
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("ecco.fq");
+    lambda(
+        &[
+            "--ecco",
+            "--no-mix",
+            "--vstrict",
+            "--net",
+            "tests/bbtools/Lambda/golden/bbmerge.bbnet",
+        ],
+        out.to_str().unwrap(),
+        None,
+        None,
+    );
+    let out = std::fs::read(&out).unwrap();
+    assert_eq!(std::str::from_utf8(&out).unwrap().lines().count(), 80);
+}
+
+#[test]
+fn command_fq_merge_efilter_keeps_noisy_overlap_that_pfilter_would_reject() {
+    // Two high-quality reads with a 40 bp overlap carrying two mismatches:
+    // the expected-error filter trips before the probability filter, so the
+    // merge is kept (classic mode, strict preset). Without the efilter step
+    // the pair would be rejected by pfilter. Verified byte-identical to
+    // BBTools 40.01 `BBMerge ... strict makevector=f`.
+    let out_dir = tempfile::tempdir().unwrap();
+    let in1 = out_dir.path().join("r1.fq");
+    let in2 = out_dir.path().join("r2.fq");
+    let out = out_dir.path().join("merged.fq");
+    let outu = out_dir.path().join("unmerged.fq");
+    let r1 = "AAGCCCAATAAACCACTCTGACTGGCCGAATAGGGATATAGGCAACGACATGTGCGGCGACCCTTGCGACAGTGACGCTTTCGCCGTTGCCTAAACCTAT";
+    let r2 = "ATAGGTTTAGGCAACGGCGTAAGCGTCACTGTCGGAAGGG";
+    let q1 = "I".repeat(r1.len());
+    let q2 = "I".repeat(r2.len());
+    std::fs::write(&in1, format!("@ef1/1\n{r1}\n+\n{q1}\n")).unwrap();
+    std::fs::write(&in2, format!("@ef1/2\n{r2}\n+\n{q2}\n")).unwrap();
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "merge",
+            in1.to_str().unwrap(),
+            in2.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--outu",
+            outu.to_str().unwrap(),
+            "--strict",
+            "--no-make-vector",
+        ])
+        .assert()
+        .success();
+    let merged = std::fs::read_to_string(&out).unwrap();
+    assert_eq!(merged.lines().count(), 4);
+    assert!(merged.starts_with(
+        "@ef1/1\nAAGCCCAATAAACCACTCTGACTGGCCGAATAGGGATATAGGCAACGACATGTGCGGCGACCCTTNCGACAGTGACGCTTNCGCCGTTGCCTAAACCTAT\n"
+    ));
+    assert!(std::fs::read(&outu).unwrap().is_empty());
+}
+
+#[test]
 fn command_fq_merge_joins_perfect_overlap() {
     let out_dir = tempfile::tempdir().unwrap();
     let in1 = out_dir.path().join("r1.fq");

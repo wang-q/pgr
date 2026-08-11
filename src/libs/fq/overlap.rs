@@ -53,6 +53,7 @@ pub fn mate_by_overlap_ratio(
     offset: f32,
     g_incr: f32,
     b_incr: f32,
+    make_vector: bool,
 ) -> Overlap {
     // Java: minOverlap=max(4, minOverlap0, minOverlap);
     //       minOverlap0=mid(4, minOverlap0, minOverlap);
@@ -106,7 +107,9 @@ pub fn mate_by_overlap_ratio(
     let mut second_best_ratio = 1f32;
     let mut best_bad_int = -1i32;
     let mut second_bad_int = -1i32;
-    let extra_mult = 1.2f32;
+    // BBMerge raises the scan cutoff when the net path is active
+    // (`extraMult=TAG_CUSTOM || MAKE_VECTOR ? 4f : 1.2f`).
+    let extra_mult = if make_vector { 4.0f32 } else { 1.2f32 };
     let extra_badlimit = 20f32;
     let largest = alen + blen - min_overlap0 as i32;
     let smallest = min_insert0 as i32;
@@ -294,7 +297,7 @@ mod tests {
         // r1 = 20 nt, b = reverse-complemented read2 (r1's last 12 nt).
         let r1 = b"GCTAAAGACAATTACATAAC";
         let b = b"ACAATTACATAAC";
-        let o = mate_by_overlap_ratio(r1, b, 4, 8, 5, 20, 0.09, 0.1, 5.5, 0.55, 0.95, 0.95);
+        let o = mate_by_overlap_ratio(r1, b, 4, 8, 5, 20, 0.09, 0.1, 5.5, 0.55, 0.95, 0.95, false);
         assert!(o.insert > 0);
         assert!(!o.ambig);
         assert_eq!(o.bad, 0);
@@ -307,7 +310,7 @@ mod tests {
         // tested insert is alen+blen-4 rather than alen+blen.
         let a = b"ATACACGTCAGCACGAAACTTGTT";
         let b = b"CACGAAACTTGTT"; // reverse-complemented read2 tail
-        let o = mate_by_overlap_ratio(a, b, 0, 8, 5, 24, 0.09, 0.1, 5.5, 0.55, 0.95, 0.95);
+        let o = mate_by_overlap_ratio(a, b, 0, 8, 5, 24, 0.09, 0.1, 5.5, 0.55, 0.95, 0.95, false);
         assert!(o.insert > 0);
         assert_eq!(o.bad, 0);
     }

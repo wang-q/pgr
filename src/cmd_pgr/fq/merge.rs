@@ -23,7 +23,9 @@ Notes:
 * Input is 1 interleaved FASTQ file or 2 paired files (R1, R2)
 * `--strict`/`--vstrict` apply the bbmerge strict/vstrict parameter sets;
   explicit options override the preset values
-* `--mix` also writes unmerged pairs to the main output (used with --ecco)
+* `--ecco` defaults to `--mix` (all reads are written to the output, like
+  `bbmerge.sh ... ecco`); pass `--no-mix` to send only the corrected pairs
+  to the main output and the rest to `--outu`
 * `--ihist` writes the insert-size histogram in the bbmerge `ihist` format
 * By default the BBMerge overlap net (bbmerge.bbnet) filters merges, so
   `--net FILE` is required unless `--no-make-vector` is given
@@ -74,7 +76,13 @@ Examples:
             Arg::new("mix")
                 .long("mix")
                 .action(clap::ArgAction::SetTrue)
-                .help("Also write unmerged pairs to the main output"),
+                .help("Also write unmerged pairs to the main output (bbmerge: mix)"),
+        )
+        .arg(
+            Arg::new("no_mix")
+                .long("no-mix")
+                .action(clap::ArgAction::SetTrue)
+                .help("Do not auto-mix when --ecco is set (bbmerge: mix=f)"),
         )
         .arg(
             Arg::new("strict")
@@ -258,7 +266,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opts.pfilter = *x;
     }
     opts.ecco = args.get_flag("ecco");
-    opts.mix = args.get_flag("mix");
+    opts.mix = args.get_flag("mix") || (opts.ecco && !args.get_flag("no_mix"));
     if args.get_flag("no_make_vector") {
         opts.make_vector = false;
     }

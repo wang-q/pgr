@@ -63,3 +63,22 @@ fn command_fq_extend_defaults_keep_all_reads() {
     let out = std::fs::read(&out).unwrap();
     assert_eq!(std::str::from_utf8(&out).unwrap().lines().count(), 16000);
 }
+
+/// A zero k-mer length must fail cleanly instead of panicking.
+#[test]
+fn command_fq_extend_rejects_zero_kmer() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "extend",
+            "tests/bbtools/Lambda/golden/ecco_sub.fq.gz",
+            "-o",
+            out.to_str().unwrap(),
+            "--kmer",
+            "0",
+        ])
+        .assert()
+        .failure();
+}

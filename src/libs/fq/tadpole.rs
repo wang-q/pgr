@@ -370,8 +370,6 @@ fn count_read_kmers(
     let mut kmer = Kmer::new(k);
     let mut len = 0usize;
     let mut prob = 1f32;
-    #[cfg(test)]
-    let mut chain12_hits: Vec<(usize, usize, Vec<u64>)> = Vec::new();
     for (i, &b) in bases.iter().enumerate() {
         if base_defined(b) {
             kmer.push_right(base_code(b));
@@ -389,20 +387,7 @@ fn count_read_kmers(
             prob = 1.0;
         }
         if len >= k && prob >= min_prob2 {
-            #[cfg(test)]
-            {
-                let canon = kmer.canonical();
-                if canon.words == [6920120224318325416, 1892834842471360100] {
-                    chain12_hits.push((bases.len(), i + 1 - k, kmer.words.clone()));
-                }
-            }
             *map.entry(kmer.canonical()).or_insert(0) += 1;
-        }
-    }
-    #[cfg(test)]
-    {
-        for (len, pos, words) in &chain12_hits {
-            eprintln!("real-table chain12 hit: len={len} pos={pos} words={words:?}");
         }
     }
 }
@@ -954,7 +939,13 @@ pub fn error_correct(
         return 0;
     }
     let mut counts = fill_counts(&kmers, table);
-    let possible_errors = count_errors(&counts, Some(quals), opts.k, opts);
+    // FASTA input has no qualities; BBTools substitutes a fixed quality 20.
+    let qs = if quals.is_empty() {
+        None
+    } else {
+        Some(quals.as_slice())
+    };
+    let possible_errors = count_errors(&counts, qs, opts.k, opts);
     tracker.suspected = possible_errors;
     let expected = expected_errors(quals);
     let counts0 = counts.clone();
@@ -1283,7 +1274,6 @@ pub fn extend_read(
     opts: &TadpoleOptions,
     numeric_id: u64,
 ) -> usize {
-    let initial = bases.len();
     let mut extension_right = 0usize;
     let mut extension_left = 0usize;
     if opts.extend_right > 0 {
@@ -1327,7 +1317,6 @@ pub fn extend_read(
         }
         extension = extension_left + extension_right;
     }
-    let _ = initial;
     extension
 }
 
@@ -1459,7 +1448,6 @@ pub fn process_read(
             stats.reads_extended += 1;
         }
     }
-    let _ = initial_len;
     stats.bases_in += initial_len as u64;
     false
 }
@@ -1472,7 +1460,8 @@ fn count_errors_from(
 ) -> usize {
     let kmers = fill_kmers(bases, opts.k);
     let counts = fill_counts(&kmers, table);
-    count_errors(&counts, Some(quals), opts.k, opts)
+    let qs = if quals.is_empty() { None } else { Some(quals) };
+    count_errors(&counts, qs, opts.k, opts)
 }
 
 /// Applies the BBTools phred round-trip to a record's quality scores.
@@ -1493,6 +1482,11 @@ pub fn run<W: Write>(
     out: &mut W,
     opts: &TadpoleOptions,
 ) -> Result<TadpoleStats> {
+    anyhow::ensure!(
+        opts.k >= 1,
+        "k-mer length must be at least 1, got {}",
+        opts.k
+    );
     // Pass 1: read all records into memory, canonicalizing qualities.
     let mut records: Vec<SeqRecord> = Vec::new();
     let mut reader1 = SeqReader::new(&infiles[0])?;

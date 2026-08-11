@@ -258,6 +258,7 @@ pub fn process_pair(
         opts.ratio_offset,
         0.95,
         0.95,
+        opts.make_vector,
     );
     let mut best_insert = res.insert;
     let best_bad = res.bad;
@@ -319,9 +320,19 @@ pub fn process_pair(
         }
         if !ambig && best_insert > 0 && has_qual {
             // BBMerge converts ASCII quality to phred (applyQualOffset, -33)
-            // at parse time; the probability filter works on phred values.
+            // at parse time; both filters work on phred values. The expected
+            // error filter sets ambig (suppressing the probability filter),
+            // protecting pairs whose observed mismatches match the quality
+            // expectation from being discarded by pfilter.
             let qual1 = to_phred(&seq1, &raw1);
-            if opts.pfilter > 0.0 {
+            let mut efilter_ambig = false;
+            if let Some(ef) = opts.efilter {
+                let expected = expected_mismatches(&seq1, &rc2, &qual1, &qual2, best_insert);
+                if (expected + opts.efilter_offset) * ef < best_bad as f32 {
+                    efilter_ambig = true;
+                }
+            }
+            if !efilter_ambig && opts.pfilter > 0.0 {
                 let prob = probability(&seq1, &rc2, &qual1, &qual2, best_insert);
                 if prob < opts.pfilter {
                     best_insert = -1;
@@ -680,11 +691,9 @@ pub fn merge<W: Write>(
 
     // `extend2` (bbmerge-auto / tadpole mode) builds a k-mer table from the
     // input reads and extends unmerged pairs, mirroring BBMerge's
-    // `extendAndMerge` retry. BBMerge forces MAKE_VECTOR=false in this mode.
+    // `extendAndMerge` retry. BBMerge forces MAKE_VECTOR=false in this mode;
+    // the CLI does the same before calling this function.
     let table = if opts.extend2 > 0 {
-        if opts.make_vector {
-            anyhow::bail!("--extend2 requires --no-make-vector (bbmerge-auto forces it)");
-        }
         let reads: Vec<(Vec<u8>, Vec<u8>)> = {
             let mut r1 = SeqRecord::new();
             let mut r2 = SeqRecord::new();
