@@ -2,7 +2,6 @@
 
 use super::KmerTable;
 use crate::libs::ds::radix_sort::radix_sort_bytes_par;
-use crate::libs::kmer::key::Kmer;
 use anyhow::Context;
 use rayon::prelude::*;
 use std::io::Write;
@@ -46,23 +45,26 @@ fn table_profiles(seqs: &[Vec<u8>], k: usize, table: &KmerTable) -> Vec<Vec<u16>
     // Collect every valid window as (key, location); per-sequence vectors so
     // the collection itself can run in parallel, then flatten for sorting.
     let key_bytes = k.div_ceil(4);
-    let per_seq: Vec<Vec<(Kmer, Loc)>> = seqs
+    let per_seq: Vec<(Vec<u8>, Vec<Loc>)> = seqs
         .par_iter()
         .enumerate()
         .map(|(si, seq)| {
-            let mut v = Vec::new();
-            super::canonical_keys(seq, k, |p, key| v.push((key, Loc::new(si, p))));
-            v
+            let mut keys = Vec::with_capacity(seq.len().saturating_sub(k - 1) * key_bytes);
+            let mut locs = Vec::with_capacity(seq.len().saturating_sub(k - 1));
+            super::canonical_keys(seq, k, |p, key| {
+                keys.extend_from_slice(key.to_bytes());
+                locs.push(Loc::new(si, p));
+            });
+            (keys, locs)
         })
         .collect();
-    let n_windows: usize = per_seq.iter().map(Vec::len).sum();
-    let mut keys: Vec<u8> = Vec::with_capacity(n_windows * key_bytes);
+    let n_bytes: usize = per_seq.iter().map(|(k, _)| k.len()).sum();
+    let n_windows = n_bytes / key_bytes;
+    let mut keys: Vec<u8> = Vec::with_capacity(n_bytes);
     let mut locs: Vec<Loc> = Vec::with_capacity(n_windows);
-    for v in per_seq {
-        for (key, loc) in v {
-            keys.extend_from_slice(key.to_bytes());
-            locs.push(loc);
-        }
+    for (k, l) in per_seq {
+        keys.extend_from_slice(&k);
+        locs.extend(l);
     }
     radix_sort_bytes_par(&mut keys, key_bytes, &mut locs);
     // Merge sorted windows against the (sorted, deduplicated) table: equal

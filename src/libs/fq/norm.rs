@@ -211,7 +211,7 @@ fn pair_tossed(s1: &ReadStats, s2: Option<&ReadStats>, min_depth: usize) -> bool
 fn read_stats(rec: &SeqRecord, table: &KmerTable, opts: &NormOptions) -> ReadStats {
     let mut cov: Vec<u32> = Vec::new();
     crate::libs::kmer::canonical_keys(rec.sequence(), opts.k, |_, key| {
-        cov.push(table_count(table, &key));
+        cov.push(table_count(table, key));
     });
     score_cov(&cov, opts)
 }
@@ -491,7 +491,7 @@ fn collect_bucket_keys(
     bucketed: &mut [Vec<(u32, Kmer)>],
 ) {
     crate::libs::kmer::canonical_keys(seq, k, |_, key| {
-        bucketed[bucket_of(&key, buckets)].push((read_idx, key));
+        bucketed[bucket_of(key, buckets)].push((read_idx, *key));
     });
 }
 

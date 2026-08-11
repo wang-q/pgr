@@ -36,20 +36,23 @@ pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
         "k must be in 1..={}, got {k}",
         crate::libs::kmer::key::Kmer::MAX_K
     );
-    let per_seq: Vec<Vec<crate::libs::kmer::key::Kmer>> = seqs
+    let key_bytes = k.div_ceil(4);
+    // Collect packed bytes directly (a per-window `Vec<Kmer>` would pay a
+    // 40-byte copy per window for no benefit).
+    let mut per_seq: Vec<Vec<u8>> = seqs
         .par_iter()
         .map(|seq| {
-            let mut keys = Vec::new();
-            super::canonical_keys(seq, k, |_, key| keys.push(key));
-            keys
+            let mut raw = Vec::with_capacity(seq.len().saturating_sub(k - 1) * key_bytes);
+            super::canonical_keys(seq, k, |_, key| raw.extend_from_slice(key.to_bytes()));
+            raw
         })
         .collect();
     let n: usize = per_seq.iter().map(Vec::len).sum();
-    let mut keys: Vec<u8> = Vec::with_capacity(n * k.div_ceil(4));
-    for v in &per_seq {
-        for km in v {
-            keys.extend_from_slice(km.to_bytes());
-        }
+    let mut keys: Vec<u8> = Vec::with_capacity(n);
+    for v in &mut per_seq {
+        // Move each per-sequence buffer instead of copying (a single-contig
+        // input moves its whole buffer in O(1)).
+        keys.append(v);
     }
     Ok(count_keys(keys, k))
 }

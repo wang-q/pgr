@@ -53,6 +53,77 @@ fn bench_build_and_profiles(c: &mut Criterion) {
             black_box(n)
         })
     });
+    group.bench_function("radix_sort_mg1655", |b| {
+        let key_bytes = k.div_ceil(4);
+        let mut raw: Vec<u8> = Vec::new();
+        for seq in &seqs {
+            kmer::canonical_keys(seq, k, |_, key| raw.extend_from_slice(key.to_bytes()));
+        }
+        let n = raw.len() / key_bytes;
+        b.iter(|| {
+            let mut keys = raw.clone();
+            let mut no_payload: Vec<()> = vec![(); n];
+            pgr::libs::ds::radix_sort::radix_sort_bytes_par(&mut keys, key_bytes, &mut no_payload);
+            black_box(keys.len())
+        })
+    });
+    group.bench_function("radix_sort_seq_mg1655", |b| {
+        let key_bytes = k.div_ceil(4);
+        let mut raw: Vec<u8> = Vec::new();
+        for seq in &seqs {
+            kmer::canonical_keys(seq, k, |_, key| raw.extend_from_slice(key.to_bytes()));
+        }
+        let n = raw.len() / key_bytes;
+        b.iter(|| {
+            let mut keys = raw.clone();
+            let mut no_payload: Vec<()> = vec![(); n];
+            pgr::libs::ds::radix_sort::radix_sort_bytes(&mut keys, key_bytes, &mut no_payload);
+            black_box(keys.len())
+        })
+    });
+    group.bench_function("group_keys_mg1655", |b| {
+        // Pre-sorted packed keys (built once); measure only the grouping
+        // scan that turns the sorted list into (unique key, count) pairs.
+        let key_bytes = k.div_ceil(4);
+        let mut keys: Vec<u8> = Vec::new();
+        for seq in &seqs {
+            kmer::canonical_keys(seq, k, |_, key| keys.extend_from_slice(key.to_bytes()));
+        }
+        let n = keys.len() / key_bytes;
+        pgr::libs::ds::radix_sort::radix_sort_bytes(&mut keys, key_bytes, &mut vec![(); n]);
+        b.iter(|| {
+            let n = keys.len() / key_bytes;
+            let mut counts: Vec<u32> = Vec::with_capacity(n);
+            let mut i = 0usize;
+            while i < n {
+                let mut j = i + 1;
+                while j < n
+                    && keys[j * key_bytes..(j + 1) * key_bytes]
+                        == keys[i * key_bytes..(i + 1) * key_bytes]
+                {
+                    j += 1;
+                }
+                counts.push((j - i) as u32);
+                i = j;
+            }
+            black_box(counts.len())
+        })
+    });
+    group.bench_function("collect_keys_only_mg1655", |b| {
+        use rayon::prelude::*;
+        let key_bytes = k.div_ceil(4);
+        b.iter(|| {
+            let per_seq: Vec<Vec<u8>> = seqs
+                .par_iter()
+                .map(|seq| {
+                    let mut raw = Vec::with_capacity(seq.len() * key_bytes);
+                    kmer::canonical_keys(seq, k, |_, key| raw.extend_from_slice(key.to_bytes()));
+                    raw
+                })
+                .collect();
+            black_box(per_seq.len())
+        })
+    });
     group.finish();
 }
 
@@ -129,7 +200,7 @@ fn bench_lookups(c: &mut Criterion) {
     let key_bytes = table.key_bytes();
     let mut windows: Vec<pgr::libs::kmer::key::Kmer> = Vec::new();
     for seq in &seqs {
-        kmer::canonical_keys(seq, k, |_, key| windows.push(key));
+        kmer::canonical_keys(seq, k, |_, key| windows.push(*key));
     }
     let index = BenchPrefixIndex::new(&table.keys, key_bytes);
     let mut group = c.benchmark_group("kmer_lookup");

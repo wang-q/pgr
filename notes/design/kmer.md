@@ -745,7 +745,62 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
 > 与 §8 裁定一致。
 > 基准（MG1655 4.6 Mb）：count_mg1655 219 ms；canonical 发射
 > 25.6 ms（双窗口滚动，k=17 每窗口 ~20 ops，字节表示的必要成本，
-> 相对 u128 键回归约 10%，符合 §12.4 预期；k=81 能力由此获得）。
+> 相对 u128 键基线：count 整体 +29%（u128 ≈170 ms，由初版字节
+> criterion change +75% 反推），canonical 纯发射 +780%
+> （25.6 vs 2.9 ms）。
+
+> **性能修复（2026-08-12，向 FastK 学习后的优化）**：初版字节实现
+> count 297 ms（+75%）→ 双窗口滚动 219 ms（+29%）→ **158 ms**。
+> 拆解（MG1655 k=17）：发射 ~27 ms、radix 排序 45 ms（独立测，
+> 含 clone）、分组 ~47 ms；158 ms 已快于 u128 基线（~170 ms）与
+> FastK 8 线程实测（188 ms）。关键优化：
+> * **收集直落字节**：`build_table`/`table_profiles` 不再收集
+>   `Vec<Kmer>`（40 B/条）再转字节，emit 直接 `extend` 打包字节
+>   （省 460 万 × 40 B 拷贝）；
+> * **emit 传引用**：`canonical_keys` 闭包参数 `&Kmer`，消除每窗口
+>   40 B 值拷贝；
+> * **`append` 移动缓冲**（-27%）：`build_table` 把 per-seq 字节
+>   缓冲 `append` 移动而非 `extend` 拷贝（单 contig 23 MB 零拷贝）；
+> * **canonical 半长比较**（学 FastK `KMd2`）：正/反链镜像对称，
+>   比较前 `ceil(kb/2)` 字节即可——实测非瓶颈，保留语义；
+> * 尝试过 u64 块滚动（k=17 时块转换开销 > 字节循环），回退。
+> 结论：字节表示的真实开销集中在发射（~27 ms）与 radix（45 ms），
+> 通过消除自身拷贝浪费（`Vec<Kmer>` 中间层、23 MB 复制）即可
+> 反超 u128 与 FastK；k=81 能力与打包内存由此无性能代价获得。
+
+> **线程对比（2026-08-12 实测，MG1655 k=17 建表）**：
+>
+> | 配置 | pgr | FastK | 差距 |
+> |---|---|---|---|
+> | 单线程 | 347 ms | 481 ms（`-T1`） | pgr 快 28% |
+> | 8 线程 | 158 ms | 188 ms（`-T8`） | pgr 快 16% |
+>
+> pgr 单线程 347 ms 分解：发射 27 ms（8%）、radix 排序 240 ms（69%）、
+> 分组/收集 ~80 ms。可比性：pgr 基准从内存序列开始，FastK 含文件读 +
+> 写表（481 ms 中一部分），真实差距略小于 28% 但方向不变。多线程
+> 加速均受内存带宽限制：pgr 2.2×、FastK 2.56×。**下一步优化方向 =
+> radix 排序本身（单线程 240 ms）**，对照 FastK `MSDsort.c`/`LSDsort.c`
+> 的分块 + MSD/LSD 混合 + shell 阈值策略。
+
+> **radix 排序对照 FastK 的结论（2026-08-12）**：
+> * 精确拆解（MG1655 k=17，单线程）：发射 27 ms、radix 排序
+>   240 ms（par 单线程 242 与顺序版 243 相当，无 par 开销）、
+>   分组扫描仅 12.6 ms、其余 ~67 ms 为收集/分配。
+> * FastK `MSDsort.c` 结构 = American-flag MSD（`radix_sort` 递归
+>   分桶 + cycle 置换）+ shell 小段（`S_thr0/1/2`、`GAP1/2`）+
+>   **排序叶子段直接 `COUNT`**（`hist_kmers`/`invert_kmers`，省二次
+>   分组扫描）+ 按第一字节分块多线程（`PARTS`/`sort_thread`）；
+>   `LSDsort.c` 用于 profile（迭代 LSD）。pgr `radix_sort_bytes`
+>   与之同源同构（同一 Myers MSD 家族），单线程 240 ms 与 FastK
+>   排序同量级。
+> * **尝试过且无收益、已回退**：u64 块滚动（k=17 块转换开销 > 字节
+>   循环）、置换路径 `copy_within` 替代逐字节拷贝（编译器已合成为
+>   memcpy，copy_within 反而 +1.6%）。半长比较（学 FastK `KMd2`）
+>   非瓶颈但语义正确，保留。
+> * 结论：单线程 radix 240 ms 是 American-flag MSD 的随机访问
+>   本质成本；FastK 的进一步手段（super-mer 加权、LSD）依赖其
+>   数据模型（pgr 明确不做 super-mer，§1），不迁移。当前 pgr
+>   单线程/多线程均快于 FastK，此方向收尾。
 
 ### 12.4 风险与决策点
 
@@ -762,3 +817,25 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
   （k=31/40）内存**下降**（10-12 B vs 16 B）；M5 基准确认（预期 ≤10%）。
 * **canonical 语义**：FastK 逐字节取小与现有 u128 `min(fwd,rc)` 都是
   字典序取小，k≤64 集合不变——M2 用 golden 回归锁定。
+
+### 12.5 参考实现对照记录（2026-08-12 补）
+
+> 实施时 `push_right`/`push_left` 字节滚动与 radix 字节版为推导实现、
+> 以 golden 锁定；此处对照 FASTK-master 源码确认等价性，作为依据追溯。
+
+* **表条目布局**（`count.c` `kmer_list_thread`）：按 k-mer 最高字节值分桶
+  （`fours[kf]`），桶内条目 = 占位 `0` + 后续字节（最高字节由桶身份
+  提供，最终落在前缀索引）+ u16 count；`fill[-1] &= KCLIP` 裁余位。
+  pgr `KmerTable` 直接存完整字节（`keys` 打包区）+ u32 count，与 FastK
+  表字节逐条一致（golden 实测：`acgta` = `1b 00`，k=5）。
+* **canonical**（`count.c`）：正/反链逐字节比较取小，k%4 余位 KCLIP
+  裁剪；pgr `Kmer::canonical` 字节比较等价（与比较起点无关，§12.1）。
+* **排序**（`MSDsort.c`）：American-flag MSD radix，直接操作字节数组，
+  从最高字节（digit=0）向低位推进；pgr `radix_sort_bytes` 同构（分离
+  key/payload 并行交换、无限 cycle 栈、insertion 小段）。排序结果
+  均为字节升序，等价。
+* **窗口滚动**（`count.c`）：FastK 在 super-mer 连续位流中滚动（
+  `fptr`/`rptr` 位偏移 `fs`/`rs`），k-mer 字节按偏移提取——依附
+  super-mer 位流编码（pgr 明确不做，§1）；pgr 的 Kmer 值类型直接维护
+  打包字节（`push_right`/`push_left` 整体移位），语义与位流滚动等价
+  （golden 逐条一致），差异是内存模型配套的选择。

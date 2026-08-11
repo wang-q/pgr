@@ -48,7 +48,7 @@ impl KmerTable {
 /// containing N or any other non-ACGT base is skipped (FastK splits on gaps
 /// and its profile has a 0 at such positions). `k` must be `<= Kmer::MAX_K`
 /// (the caller validates); larger values emit nothing.
-pub fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, key::Kmer)) {
+pub fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, &key::Kmer)) {
     let n = seq.len();
     if n < k || k > key::Kmer::MAX_K {
         return;
@@ -76,15 +76,37 @@ pub fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, key::Kme
         // forward base `x` prepends `3-x` to the rc), so the canonical key
         // costs one byte compare per window instead of a per-window rc.
         let mut win_rc = win.rc();
-        emit(start, if win <= win_rc { win } else { win_rc });
+        emit(
+            start,
+            if canonical_le(&win, &win_rc) {
+                &win
+            } else {
+                &win_rc
+            },
+        );
         for i in start + 1..=end - k {
             let x = codes[seq[i + k - 1] as usize] as u8;
             win.push_right(x);
             win_rc.push_left(3 - x);
-            emit(i, if win <= win_rc { win } else { win_rc });
+            emit(
+                i,
+                if canonical_le(&win, &win_rc) {
+                    &win
+                } else {
+                    &win_rc
+                },
+            );
         }
         start = end;
     }
+}
+
+/// FastK canonical comparison: only the first half of the packed bytes
+/// matter, because forward and reverse complement are mirror-symmetric
+/// (`count.c` compares `KMd2 = (KMER_BYTES+1)>>1` bytes).
+fn canonical_le(a: &key::Kmer, b: &key::Kmer) -> bool {
+    let half = a.key_bytes().div_ceil(2);
+    a.to_bytes()[..half] <= b.to_bytes()[..half]
 }
 
 /// Base -> 2-bit code (0..3) or 4 (N / ambiguity); indexed by byte value.
