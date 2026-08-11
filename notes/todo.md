@@ -73,6 +73,12 @@
 3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
    直方图，pgr 无 SAM 命令，用户决定放着。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。
+5. **kmer table 的 k 上限 64 vs anchr 2_fastk 的 k=81**（2026-08-11 记录，
+   `design/kmer.md` §11）：anchr `2_fastk.tera.sh` 用 `FastK -t1
+   -k<21|51|81>`，k=21/51 没问题，**k=81 超出 `pgr kmer table` 当前
+   u128 上限 64**，属已知缺口。若替代 2_fastk 需要 k=81，给 `libs/kmer`
+   扩表示（参考 FastK 字节打包或 u128 双字），当前未做；`asm
+   contig`/`unitig` 走 tadpole 多字 Kmer，k=81 已可用，不受影响。
 
 ---
 

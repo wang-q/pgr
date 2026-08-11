@@ -33,7 +33,8 @@ pgr asm contig [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31).
+*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound — k > 64
+    uses multi-word k-mers).
 *   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
 *   `--min-contig-len <int>`: Minimum contig length (default:
     `max(124, 2*k)`).
@@ -87,7 +88,8 @@ pgr asm unitig [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31).
+*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound — k > 64
+    uses multi-word k-mers).
 *   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
 *   `--min-contig-len <int>`: Minimum unitig length (default:
     `max(124, 2*k)`).

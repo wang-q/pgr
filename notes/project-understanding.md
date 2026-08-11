@@ -381,6 +381,22 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `libs/par.rs`：并行辅助
 - `libs/translate.rs`：序列翻译（六框翻译）
 
+### 4.5 k-mer 表示与 k 范围（2026-08-11 记录）
+
+k 的上限由表示决定，不是全局统一的（完整记录见 `design/kmer.md` §11）：
+
+* **u128 单字（2 bit/碱基）→ k ≤ 64**：`libs/kmer`（`.pkt`）、`libs/pgi`
+  （`.pgi`）、`libs/map`。命令侧 = `pgr kmer` 全家、`pgr pgi build`/
+  `align pgi`、`pgr asm map`；校验在 `build_table`/`build_from_seqs`/
+  `build_index`（均 `ensure!(1..=64)`）。
+* **tadpole 多字 `Kmer`（`libs/fq/tadpole.rs`）→ 无上限**：`asm contig`/
+  `asm unitig`、`fq extend`/`ec-kmer`、`fq merge` extend2（硬编码 k=81）。
+  项目里唯一为 k>64 设计的表示。
+* **FastK 参考实现：无上限，默认 k=40**（字节打包 `(2k+7)>>3`，不是固定
+  字长）。pgr 的 64 上限是移植选型，不是 FastK 约束。
+* **已知缺口**：anchr `2_fastk` 用 `FastK -k<21|51|81>`，k=81 超出
+  `pgr kmer table` 当前能力（见 `design/kmer.md` §11.2）。
+
 ## 5. 设计模式与约定
 
 ### 5.1 命令模式

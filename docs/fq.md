@@ -608,7 +608,7 @@ pgr fq ec-kmer [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31).
+*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound).
 *   `--min-prob <float>`: Ignore k-mers below this error-free probability
     (default 0.5).
 *   `--toss-junk`: Discard reads that cannot be used for assembly.
@@ -709,7 +709,7 @@ pgr fq extend [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31).
+*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound).
 *   `--el <int>`: Extend to the left by at most this many bases (default
     100).
 *   `--er <int>`: Extend to the right by at most this many bases (default

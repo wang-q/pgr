@@ -32,7 +32,7 @@ singletons (FastK `-t1` semantics).
 | Argument | Description |
 |----------|-------------|
 | `infiles` | Input FASTA/FASTQ file(s) to process |
-| `-k`, `--kmer` | K-mer size (default: 17) |
+| `-k`, `--kmer` | K-mer size (default: 17; range 1..=64) |
 | `-o`, `--outfile` | Output `.pkt` filename |
 
 ```bash
@@ -57,7 +57,7 @@ pgr kmer hist [OPTIONS] --outfile <outfile> [infile]
 |----------|-------------|
 | `infile` | Input FASTA/FASTQ file to process (unless `--table` is given) |
 | `-t, --table <file>` | Reuse a k-mer table (`.pkt`); k is read from the table |
-| `-k, --kmer <int>` | K-mer size (required unless `--table` is given) |
+| `-k, --kmer <int>` | K-mer size, range 1..=64 (required unless `--table` is given) |
 | `-o, --outfile <file>` | Output `.hist` filename |
 | `--khist-text <file>` | Also write the kmercountexact text histogram |
 | `--peaks <file>` | Also write the kmercountexact peaks summary |
@@ -91,7 +91,7 @@ differs. `k` is read from the table unless `--kmer` is given explicitly.
 |----------|-------------|
 | `infile` | Input FASTA/FASTQ file to process |
 | `-t`, `--table` | Reuse a k-mer table (`.pkt`); k is read from the table |
-| `-k`, `--kmer` | K-mer size (required unless `--table` is given) |
+| `-k`, `--kmer` | K-mer size, range 1..=64 (required unless `--table` is given) |
 | `-o`, `--outfile` | Output `.pkp` filename |
 
 ```bash
@@ -112,7 +112,7 @@ reuse an existing `.pkt` table.
 |----------|-------------|
 | `infile` | Input FASTA/FASTQ file (unless `--table` is given) |
 | `-t`, `--table` | Reuse a k-mer table (`.pkt`); k is read from the table |
-| `-k`, `--kmer` | K-mer size (required unless `--table` is given) |
+| `-k`, `--kmer` | K-mer size, range 1..=64 (required unless `--table` is given) |
 | `-o`, `--outfile` | Output `.hist` filename |
 
 ```bash
@@ -145,7 +145,7 @@ KatGC).
 |----------|-------------|
 | `infile` | Input FASTA/FASTQ file (unless `--table` is given) |
 | `-t`, `--table` | Reuse a k-mer table (`.pkt`); k is read from the table |
-| `-k`, `--kmer` | K-mer size (required unless `--table` is given) |
+| `-k`, `--kmer` | K-mer size, range 1..=64 (required unless `--table` is given) |
 | `-X`, `--xmax` | Absolute x max (also caps the count axis; default: auto) |
 | `-x`, `--xrel` | Max x as a multiple of the peak coverage (default: 2.1) |
 | `--tex` | Render a LaTeX heatmap instead of the `.kgc` matrix |
@@ -184,7 +184,7 @@ The threshold defaults to the detected Phred offset (+33/+64) plus 5
 | Argument | Description |
 |----------|-------------|
 | `infile` | Input FASTQ file to process (FASTA is rejected) |
-| `-k`, `--kmer` | K-mer size (default: 17) |
+| `-k`, `--kmer` | K-mer size (default: 17; range 1..=64) |
 | `-q`, `--qual-thresh` | Quality ASCII threshold (default: detected Phred offset + 5) |
 | `-b`, `--bits` | Count bits (quorum `create_database -b`; max count = 2^bits − 1) |
 | `-o`, `--outfile` | Output histogram filename |
@@ -211,7 +211,7 @@ an existing `.pkt` table.
 |----------|-------------|
 | `infile` | Input FASTA/FASTQ file (unless `--table` is given) |
 | `-t`, `--table` | Reuse a k-mer table (`.pkt`); k is read from the table |
-| `-k`, `--kmer` | K-mer size (required unless `--table` is given) |
+| `-k`, `--kmer` | K-mer size, range 1..=64 (required unless `--table` is given) |
 | `--model` | Fit the GenomeScope model (kmercov/het/genome size) |
 | `--plot` | With `--model`, also write `spectra.tex` to the output directory |
 | `-p`, `--ploidy` | Ploidy for the model (1 or 2; default 1) |

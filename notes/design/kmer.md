@@ -572,3 +572,41 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
   计数 = golden 38961）、`command_kmer_qcheck_real_lambda`（flagged
   2–5%）、`command_kmer_profile_real_lambda`（36384 profiles，self/
   relative）；全部引用现有 golden，不新增测试料，合成行为测试保留。
+
+## 11. k 的范围与表示（2026-08-11 记录）
+
+> 背景：排查"项目里哪些命令能用 k=81"时发现，k 的上限不是全局统一的，
+> 而是由**三种 k-mer 表示**各自决定。此前文档只零散提及（`pgi.md`
+> "at most 64"、`fq-assemble.md` §7 的 k>64 radix 搁置），没有一处
+> 完整记录，故补本节。
+
+### 11.1 三条表示路线
+
+| 表示 | 上限 | 使用方 | 校验点 |
+|---|---|---|---|
+| u128 单字（2 bit/碱基） | **k ≤ 64** | `libs/kmer`（`KmerTable.keys: Vec<u128>`）、`libs/pgi`（`PgiEntry` u128）、`libs/map`（`MapIndex.keys`） | `count::build_table`、`pgi::build_from_seqs`、`map::build_index` 均 `ensure!(1..=64)`；`.pkt`/`.pgi` 读时另有 header 校验 |
+| tadpole 多字 `Kmer`（`libs/fq/tadpole.rs`，`Vec<u64>` 共 2k 位，镜像 BBTools long array） | **无上限（k≥1）** | `asm contig`/`asm unitig`、`fq extend`/`fq ec-kmer`、`fq merge` extend2（硬编码 k=81） | CLI 仅 `range(1..)`；排序用 `cmp_bases` 比较排序，与 k 无关 |
+| FastK 参考实现（`FASTK-master/`） | **无硬上限** | 参考实现本身 | `ARG_POSITIVE` 只要求 k>0 |
+
+要点：
+
+* **u128 = 128 bit ÷ 2 bit/碱基 = 64**，这是 map/pgi/kmer 三族上限
+  的共同来源；CLI 层大多只收 `usize`，越界在 lib 层报友好错误。
+* **tadpole 多字 Kmer 是项目里唯一为 k>64 设计的表示**，`asm contig`/
+  `unitig` 用 `cmp_bases` 比较排序（与 k 无关），k=81 可用；
+  `fq-assemble.md` §7 的"k>64 多 word radix 泛化搁置"只是排序优化的
+  取舍，不是能力上限。
+* **FastK 的 40 是默认值不是上限**：`FastK.c` `KMER=40` + `ARG_POSITIVE`
+  （仅 >0）；k-mer 字节打包 `KMER_BYTES=(2k+7)>>3`，k 多大都能存，只是
+  每条记录内存线性增长。**pgr 的 64 上限是移植选型**（u128 排序/radix/
+  查表方便），不是 FastK 的约束。
+
+### 11.2 实际场景对照（为什么重要）
+
+* anchr `unitigs.tera.sh`：tadpole `k ∈ opt.kmer`（如 "31 81"）→
+  `pgr asm contig`/`asm unitig` 已覆盖（多字 Kmer，k=81 OK）。
+* anchr `2_fastk.tera.sh`：`FastK -t1 -k<21|51|81>` → **k=81 超出
+  `pgr kmer table` 当前能力（u128 上限 64）**，是已知缺口（k=21/51
+  没问题）。若将来替代 2_fastk 需要 k=81，得给 `libs/kmer` 扩表示
+  （参考 FastK 字节打包，或 u128 双字），当前未做。
+* `pgr asm map`/`pgr pgi`：默认 31/40，均 ≤64，anchors/GIX 场景无缺口。
