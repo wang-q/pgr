@@ -4,85 +4,25 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-11：pgr asm 命令族就绪，待提交）
-
-**当前交接**：组装相关整合为 `pgr asm` 命令族（contig/unitig/map），
-全量 1690 测试绿、fmt/clippy clean。设计：
-`design/fq-assemble.md`（contig/unitig）、`design/asm-map.md`（map）。
-**下一步**：
-1. **anchr 模板替换**（用户自己处理）：`tadpole.sh` →
-   `pgr asm contig`（2_insert_size/unitigs，注意 `0_cleanup.tera.sh`
-   文件名同步）；`bbwrap.sh perfectmode` → `pgr asm map`（anchors，
-   `--outm/--outu` 输出名与模板对齐；覆盖度不再由 map 输出，改走
-   `pgr sam to-rg` + `pgr rg coverage` 组合管道，见 `asm-map.md`）。
-   2_insert_size 的 bbmap ×2 → `pgr asm map --paired --max-reads
-   {{opt.reads}}` + `pgr sam ihist`（reformat ihist 替代；Picard 保留
-   外部）；tadpole 分支的"完整比对器"缺口取消——完美匹配对足以估计
-   插入长度分布（见 `asm-map.md` §2.6）。
-   已知偏差：contig 的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），
-   已接受确定性输出。
-2. **真实数据验证**（待数据）：unitigs/map 与 bcalm/bbmap 黑盒对照。
-
-**本轮新增（未提交，工作区）**：
-- `pgr asm` 顶级命令族：contig/unitig 自 `fq` 迁入，新增 `map`。
-- `asm contig`：`--no-bubbles`、`--min-count-seed`、`--min-coverage`。
-- `asm unitig`：`--min-count-seed`（bcalm `-abundance-min`）、
-  `--links`/`--gfa`（LinkTigs 语义边输出）、circular 环标记。
-- `asm map`：完美匹配回贴（参考 k-mer 索引 + 种子验证 + SAM 输出），
-  anchors 流程 bbwrap 替代；流式分块（100k/块，内存可控）、outm/outu
-  SAM 头对称；基准 build ~1 ms / 2k reads ~3.7 ms。
-- `sam to-rg`：SAM → `.rg` 行（1-based 含端点，M/D/N/=/X 计跨度，
-  跳过头与 unmapped），衔接 `asm map` 与 `rg coverage`；basecov 内存累计
-  已整体移出 map（4 B/bp 数组删除，覆盖度从 SAM 派生，语义等价）。
-- `asm map --paired`/`--max-reads`：配对模式（R1/R2 双端都完美才算
-  mapped，SAM 写配对位/RNEXT/PNEXT/TLEN；一端的 pair 整对进 outu）；
-  `--max-reads` 对齐 bbmap `reads=`。`sam ihist`：插入片段直方图
-  （reformat ihist 文本格式，proper FR 计数，noodles 解析）。
-- 性能：contig 计数并行 + 排序快照（576→157 ms，~3.7×，`5c92439` 已提交
-  perf 部分）；radix 化实测不划算（回退，见 `fq-assemble.md` §7）。
-- **端到端演练（Lambda 20k，release）**：contig 20 条/0.2 s → unitig
-  32 条 → map 40k reads 84.9% 完美回贴/0.07 s；
-  命令串联可用（RefName 含头字段与 BBTools tadpole+bbmap 组合一致）。
-
-**提交建议**（git 只读，用户侧提交）：
-1. `feat(asm): add top-level assembly commands (contig/unitig/map)`：
-   `src/cmd_pgr/asm/`、`src/libs/map.rs`、`src/pgr.rs`、`cmd_pgr/mod.rs`、
-   `fq/mod.rs`（移除）、`libs/mod.rs`、`libs/fq/assemble.rs`（unitig 核心 +
-   links/gfa/circular）、删除 `fq/assemble.rs`+`fq/unitig.rs`、测试
-   `cli_asm_*` + 删除 `cli_fq_assemble.rs`+`cli_fq_unitig.rs`、
-   `docs/asm.md`、`docs/sam.md`、`docs/fq.md`、`notes/design/asm-map.md`、
-   `src/cmd_pgr/sam/`、`src/libs/fmt/sam.rs`。
-2. `test+perf(asm map): streaming blocks, symmetric SAM headers, paired mode, sam ihist`：
-   `libs/map.rs` 流式/头对称/basecov 移除、`benches/asm_map_benchmark.rs`、
-   `Cargo.toml`（noodles-sam/noodles-core）、`benches/fq_assemble_benchmark.rs`
-   （unitigs 条目）、`asm/map.rs`（--paired/--max-reads）、`sam/ihist.rs`。
-3. `docs: assembly handover notes and command index`：`CHANGELOG.md`、
-   `notes/todo.md`、`notes/design/fq-assemble.md`、`notes/project-understanding.md`。
-
-**已完成（一行结论，细节见各设计笔记）**：
-
-- **trim 8 步 M0-M8 全部移植**（fq sample/clump/split/clean/filter/norm/
-  trim-adapter/kmer hist），与 BBTools 39.38 逐字节一致，代码已提交 →
-  `design/anchr-trim-replace.md`。
-- **anchr merge 流程 7 步全部移植**（fq merge/ec-kmer/ec-overlap/extend/assemble +
-  split --repair + s-filter），golden/统计对照完成；clumpify ecc 按计划
-  跳过 → `design/anchr-merge-replace.md`、`design/fq-assemble.md`。
-
 **挂账/待决**：
 
 1. **norm 精确 vs 近似定稿**（§4.8 未定）：pgr 走精确表 + 外部桶（1TB
    答案）；bbnorm bits=16 近似表结果依赖 -Xmx。差异 = 定义差异不是 bug。
 2. **anchr 模板替换**（用户自己处理，命令已齐）：trim.era.sh 的 bbtools
-   调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）；
-   merge.era.sh 的 bbduk 纯 qtrim → `pgr fq trim-adapter ... --no-ktrim
+   调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）：
+   clumpify dedupe → `fq clump --dedupe`；bbduk trim/filter → `fq clean`/
+   `fq filter`；bbduk 纯 qtrim（merge）→ `fq trim-adapter --no-ktrim
    --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual>
-   --minlen <len>`；trim.era.sh 的 bbduk 两次调用 → `pgr fq clean`（trim）
-   + `pgr fq filter`（filter）；**新增**：2_insert_size/unitigs 的
-   `tadpole.sh` → `pgr asm contig`（含 0_cleanup 文件名同步）。
-3. **ihist（已完成 2026-08-12）**：`pgr sam ihist`（noodles 解析配对
-   SAM，reformat ihist 文本格式；`asm map --paired` 提供输入）。
-4. **bbnorm 深度分箱**：暂不做（§4.9）。
-5. **kmer table 的 k 上限 64 vs anchr 2_fastk 的 k=81**（2026-08-11 记录，
+   --minlen <len>`；reformat sample → `fq sample`；kmercountexact →
+   `kmer hist`；repair → `fq split --repair`（含 8_spades/8_mr_spades 的
+   hnsm 管道形态）；tadpole contig → `asm contig`（unitigs/2_insert_size，
+   含 0_cleanup 文件名同步）；anchors bbwrap → `asm map` + `sam to-rg` +
+   `rg coverage`；2_insert_size bbmap ×2 → `asm map --paired --max-reads
+   {{opt.reads}}` + `sam ihist`（reformat ihist 替代，Picard 保留外部；
+   完美匹配对足以估计插入长度，见 `asm-map.md` §2.6）。已知偏差：contig
+   的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
+3. **bbnorm 深度分箱**：暂不做（§4.9）。
+4. **kmer table 的 k 上限 64 vs anchr 2_fastk 的 k=81**（2026-08-11 记录，
    `design/kmer.md` §11）：anchr `2_fastk.tera.sh` 用 `FastK -t1
    -k<21|51|81>`，k=21/51 没问题，**k=81 超出 `pgr kmer table` 当前
    u128 上限 64**，属已知缺口。若替代 2_fastk 需要 k=81，给 `libs/kmer`
@@ -93,6 +33,22 @@
 
 **历史会话（已完成，一行结论，细节见各设计笔记）**：
 
+- **asm 命令族 + SAM 工具（2026-08-11/12 提交）**：`pgr asm`
+  contig/unitig/map（含 `--min-count-seed`、`--links`/`--gfa`、
+  `--paired`/`--max-reads`）、`pgr sam` ihist/to-rg（noodles-sam 0.81
+  解析）；basecov 移出 map（SAM 派生）；map 流式分块 + 头对称；contig
+  计数并行 + 排序快照（576→157 ms）；写出端手写（refname 全头字段与
+  noodles 严格字符集冲突）→ `design/asm-map.md`、`design/fq-assemble.md`、
+  `design/kmer.md` §11。
+- **fq 纠错命令拆分（2026-08-11 提交）**：`fq ecc`→`ec-kmer`、
+  `merge --ecco`→`ec-overlap`，golden 对照逐字节一致 →
+  `design/anchr-merge-replace.md`。
+- **trim 8 步 M0-M8 全部移植**（fq sample/clump/split/clean/filter/norm/
+  trim-adapter/kmer hist），与 BBTools 39.38 逐字节一致，代码已提交 →
+  `design/anchr-trim-replace.md`。
+- **anchr merge 流程 7 步全部移植**（fq merge/ec-kmer/ec-overlap/extend/assemble +
+  split --repair + s-filter），golden/统计对照完成；clumpify ecc 按计划
+  跳过 → `design/anchr-merge-replace.md`、`design/fq-assemble.md`。
 - **2026-08-09 `pgr kmer` 七子命令全量交付**（table/profile/hist/gc/
   qhist/qcheck/gsize，含 GenomeScope 2.0 原生迁移 `--model`、plot
   heat/spectra 拆分、`.pkt`/`.pkp`/`.hist` 三格式定稿），测试 1544 全绿
@@ -161,6 +117,14 @@
   zlib-rs AVX2，见 `benchmarks/bench-profile-hotspots.md` 场景 1）。
 - `fq clump` 多参数 golden 验证：**不做**（体积控制，见
   `design/anchr-trim-replace.md` §4.4 M1 注）。
+- **filterbytile.sh / 光学去重：不做**（2026-08-10/12）——flowcell tile
+  坐标质量过滤（trim `--tile`，默认关）与光学去重同源，需坐标解析且无
+  真实坐标数据可验证；`design/anchr-trim-replace.md` §3/§4 已记录。
+  另注：8_spades/8_mr_spades 的 `repair.sh`（hnsm filter 管道）由
+  `pgr fq split --repair` 覆盖，模板改写时验证 stdin/interleaved 形态。
+- **asm contig 计数表 radix 化：已评估不做**（2026-08-11 基准：Lambda
+  20k 下 radix 比 `cmp_bases` 比较排序慢，几十万 k-mer 规模不划算；
+  数百万级再评估，见 `fq-assemble.md` §7）。
 
 ## 5. 待实现 / 待决策（2026-08-09 文档扫描补充）
 
@@ -194,9 +158,6 @@
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
       一并处理）（来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
-- [x] **asm contig 计数表 radix 化：已评估不做**（2026-08-11 基准：
-      Lambda 20k 下 radix 比 `cmp_bases` 比较排序慢，几十万 k-mer
-      规模不划算；数百万级再评估，见 `fq-assemble.md` §7）。
 - [ ] **pgr asm unitig 真实数据验证**：已实现为独立命令（借鉴 BCALM
       graph3，顺序无关/无气泡；设计 `fq-assemble.md` §8）；待用 anchr
       `pe.cor.fa` 与 bcalm 输出对照 unitig 集合与连续性。
@@ -208,12 +169,6 @@
       `asm-map.md`）；待用真实 UT.fasta + reads 与 bbmap 输出对照
       mapped 比例与覆盖度（`sam to-rg` + `rg coverage`，本机 Java 配对
       读 gz 失败，黑盒对照暂缓）。
-- [x] **asm map 内存优化（2026-08-11 完成）**：reads 流式分块（100k/
-      块，有界内存，块内并行 + 按序写出）；outm/outu SAM 头对称
-      （bbmap `useSharedHeader` 对齐，模板 `wc -l` 比例不偏）。
-      Lambda 2k：无输出 ~3.7 ms（`asm_map_benchmark.rs`）。**同日后续：
-      basecov 不再在内存累计**（4 B/bp 数组删除），改为 `sam to-rg` +
-      `rg coverage` 从 SAM 派生（职责分离，语义等价），见 `asm-map.md`。
 - [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree
