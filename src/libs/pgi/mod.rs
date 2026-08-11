@@ -680,19 +680,12 @@ impl<R: Read> PgiStream<R> {
 /// Pack a 2-bit k-mer (high bits first) into `kmer_bytes = ceil(k/4)` bytes,
 /// big-endian, low bits zero-padded.
 pub(crate) fn pack_kmer(kmer: u128, k: usize, out: &mut [u8]) {
-    for (i, byte) in out.iter_mut().enumerate() {
-        // Bases 4i..4i+3 high-aligned within the byte; missing trailing
-        // bases (k % 4 != 0) leave the low bits zero.
-        let mut b = 0u8;
-        for j in 0..4 {
-            let base_idx = 4 * i + j;
-            if base_idx < k {
-                let base = ((kmer >> (2 * (k - 1 - base_idx))) & 3) as u8;
-                b |= base << (2 * (3 - j));
-            }
-        }
-        *byte = b;
-    }
+    // The `2*k` significant bits are the low bits of the u128; shift them to
+    // the top of the last `kmer_bytes` bytes so the trailing bits are zero,
+    // then take that big-endian slice (matching the per-byte loop above).
+    let kmer_bytes = k.div_ceil(4);
+    let shift = 8 * kmer_bytes - 2 * k;
+    out[..kmer_bytes].copy_from_slice(&(kmer << shift).to_be_bytes()[16 - kmer_bytes..]);
 }
 
 /// Unpack a big-endian 2-bit k-mer byte array back to a `u128`.

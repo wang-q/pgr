@@ -182,6 +182,7 @@ pub fn build_from_seqs(
     no_rev: bool,
     mask: bool,
 ) -> anyhow::Result<PgiIndex> {
+    let t_start = std::time::Instant::now();
     // k must fit `2*k` significant bits in a u128 kmer key; check `k <= 64`
     // directly so an extreme CLI value (e.g. `usize::MAX`) is rejected with a
     // friendly error instead of overflowing `k * 2`.
@@ -256,6 +257,12 @@ pub fn build_from_seqs(
         b
     };
 
+    log::debug!(
+        "pgi build: collect {} records in {:?}",
+        buf.keys.len(),
+        std::time::Instant::now().duration_since(t_start)
+    );
+    let t_sort = std::time::Instant::now();
     // Sort globally by k-mer with an in-place MSD radix sort (no auxiliary
     // arrays); equal k-mers stay contiguous so the grouping below produces
     // entries strictly ascending by k-mer. The parallel variant distributes
@@ -265,8 +272,9 @@ pub fn build_from_seqs(
         &mut buf.payloads,
         2 * k as u32,
     );
+    log::debug!("pgi build: sort in {:?}", t_sort.elapsed());
     let keys = buf.keys;
-    let payloads = buf.payloads;
+    let mut payloads = buf.payloads;
     anyhow::ensure!(
         payloads.len() <= u32::MAX as usize,
         "too many k-mer records: {} (max {})",
@@ -278,11 +286,12 @@ pub fn build_from_seqs(
     let mut packed_keys: Vec<u8> = Vec::with_capacity(keys.len() * key_bytes);
     let mut entries: Vec<PgiEntry> = Vec::with_capacity(keys.len());
     let mut positions: Vec<u64> = Vec::with_capacity(keys.len());
+    let t_group = std::time::Instant::now();
     let mut i = 0usize;
     while i < keys.len() {
         let kmer = keys[i];
         let pos_start = positions.len() as u32;
-        let mut j = i;
+        let mut j = i + 1;
         // A syncmer position can be selected twice (it is the minimum of two
         // adjacent windows); `collect_one_contig` dedups via `queued` only
         // while the position is still pending, so when the position is
@@ -290,13 +299,25 @@ pub fn build_from_seqs(
         // (kmer, pos, strand) record is emitted twice. Drop the exact
         // duplicate payloads here so the index holds one record per physical
         // position (a diff frequency would falsely trip the `--freq` filter).
-        let mut seen: std::collections::HashSet<u64> =
-            std::collections::HashSet::with_capacity((j - i).min(64));
-        while j < keys.len() && keys[j] == kmer {
-            if seen.insert(payloads[j]) {
-                positions.push(payloads[j]);
+        // Most groups hold a single record; skip the dedup machinery there.
+        // Larger groups dedup by sorting their (small) payload run and
+        // dropping adjacent duplicates -- cheaper than a hash set for the
+        // typical group size of 2-4.
+        if j >= keys.len() || keys[j] != kmer {
+            positions.push(payloads[i]);
+        } else {
+            while j < keys.len() && keys[j] == kmer {
+                j += 1;
             }
-            j += 1;
+            payloads[i..j].sort_unstable();
+            positions.push(payloads[i]);
+            let mut prev = payloads[i];
+            for &p in &payloads[i + 1..j] {
+                if p != prev {
+                    positions.push(p);
+                    prev = p;
+                }
+            }
         }
         let mut packed = [0u8; 16];
         pack_kmer(kmer, k, &mut packed);
@@ -307,6 +328,7 @@ pub fn build_from_seqs(
         });
         i = j;
     }
+    log::debug!("pgi build: group in {:?}", t_group.elapsed());
 
     Ok(PgiIndex {
         k,
