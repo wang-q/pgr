@@ -527,8 +527,8 @@ op 码的精确编码（`CigarOp::new`，impg.rs#L79-91）：`=`=0、`X`=1、`I`
 - **1ALN/TPA**：从 tracepoint 解码，需要 `trace_spacing` 与（可能的）目标序列做 BiWFA 还原。
 
 **双向索引的 CIGAR 处理** — 索引构建时**不**对 CIGAR 做任何变换（只交换坐标 + 打 `REVERSED_BIT`，
-见 §3.1）；CIGAR 翻转在查询时按需完成：[`get_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L542)
-对 `metadata.is_reversed()` 的 entry 调用 [`invert_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L144)
+  见 §3.1）；CIGAR 翻转在查询时按需完成：[`get_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L495)
+  （对 `metadata.is_reversed()` 的 entry 在 L544 调用 [`invert_cigar_ops`](../../../impg-0.4.1/src/impg.rs#L144)）
 把 A 视角的 CIGAR 转换为 B 视角。两步变换：(1) `I`↔`D` 交换（query 的 insertion 变成 target 的
 deletion）；(2) 仅当 `strand == Reverse` 时反转 CIGAR 数组（负链比对在反向互补坐标上读取，op 顺序
 需逆序）。`=`/`X`/`M` 保持不变。**注意 `invert_cigar_ops` 全仓库有 2 个生产调用点**（另有 6 处测试调用，

@@ -82,8 +82,10 @@ fast 模式再快 1.8–2.7×。
   每 chunk 每 seed 一次 `next_u64`（64 位 → 64 维），逐 16 轮 × 4 维写入
   `hv`；与标量逐位一致（`test_simd_hd_enc` 断言相等）。
 * **CLI 细节（utils.rs clap）**：`sketch` 子命令有 `-t --thread`（默认 16）、
-  `-C --canonical`（默认 `true`，控制 `FastxReader` 是否用 canonical k-mer，
-  sketch.rs:25）、`-a --ani_th`（默认 85.0，但 sketch 阶段不消费）；每个
+  `-C --canonical`（默认 `true`，仅写入 `FileSketch.canonical`，sketch.rs:25；
+  **实际不控制 canonical 化**——`extract_kmer_hash` 无条件调
+  `canonical_kmers`，sketch.rs:89，故 `-C` 在 sketch 路径也是死参数）、
+  `-a --ani_th`（默认 85.0，但 sketch 阶段不消费）；每个
   子命令都重复声明了整组参数，但很多（`-m/-k/-d/-Q` 等）实际不参与计算
   （见上"死参数"）。
 * **压缩恒开（`if_compressed`）**：`if_compressed: true, // TODO`

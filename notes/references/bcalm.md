@@ -1,6 +1,6 @@
-# bcalm-master (BCALM 2)：紧凑 de Bruijn 图构建（源码分析）
+# bcalm (BCALM 2)：紧凑 de Bruijn 图构建（源码分析）
 
-> 2026-08 整理，纯源码分析（`bcalm-master/`，版本 `v2.2.3`）。BCALM 2 是
+> 2026-08 整理，纯源码分析（`bcalm/`，版本 `v2.2.3`）。BCALM 2 是
 > Rayan Chikhi 等人的紧凑 de Bruijn 图（compacted de Bruijn graph, cdBG）构建
 > 工具，ISMB 2016 / Bioinformatics 32(12): i201–i208。**后续更新**：用户补全了
 > `gatb-core` 子模块（`git submodule` 已检出到 `gatb-core/gatb-core/`），核心算法
@@ -29,7 +29,7 @@
 ## 2. 仓库结构
 
 ```
-bcalm-master/
+bcalm/
 ├── src/            # 薄封装：main.cpp + bcalm_1.cpp/hpp，全部委托给 GATB
 ├── gatb-core/
 │   └── gatb-core/src/gatb/
@@ -353,7 +353,7 @@ overlap 恰好构成类型 4 的镜像对——所以 overlap 天然满足双向
 
 ---
 
-*参考来源: 本项目源码 `bcalm-master/`（src/ + gatb-core/gatb-core/src/gatb/bcalm2/
+*参考来源: 本项目源码 `bcalm/`（src/ + gatb-core/gatb-core/src/gatb/bcalm2/
 bcalm_algo.cpp、bglue_algo.cpp、ograph.cpp、unionFind.hpp + debruijn/impl/LinkTigs.cpp、
 UnitigsConstructionAlgorithm.cpp + bidirected-graphs-in-bcalm2/bidirected-graphs-in-bcalm2.md
 + scripts/ + README.md + CMakeLists.txt + example/ + thirdparty/）*

@@ -84,7 +84,7 @@ cutadapt 的接头去除核心是一个 Cython 实现的**混合 cost/score 半�
 
 半全局：允许以零代价跳过 reference（接头）/query（read）的前缀和后缀，由 4 个 bit flag 控制（`EndSkip`：REFERENCE_START=1、QUERY_START=2、REFERENCE_END=4、QUERY_STOP=8；全设即 SEMIGLOBAL=15）。adapter 类型通过 `Where` 枚举映射到 flag 组合（见 §3.3）。
 
-- **双矩阵**：每格同时维护 `cost`（编辑距离，mismatch=1、indel=indel_cost）和 `score`（match=+1、mismatch/insertion/deletion=−2，_align.pyx:16-19）。`cost` 用于错误率约束，`score` 用于最优化选择。
+- **双矩阵**：每格同时维护 `cost`（编辑距离，mismatch=1、indel=indel_cost）和 `score`（match=+1、mismatch=−1、insertion/deletion=−2，_align.pyx:16-19）。`cost` 用于错误率约束，`score` 用于最优化选择。
 - **错误率上限**：`k = int(max_error_rate * m)`（m=接头长）。候选需满足 `cost <= effective_length * max_error_rate` 且 `length >= min_overlap`，其中 `effective_length` 扣除了 N 通配碱基（_align.pyx:557-560）。
 - **最优化判据**（_align.pyx:146-154）：① error_rate 不超上限；② 其中 score 最高；③ score 相同时错误数最少；④ 仍相同时取 read 内最左位置。
 - **单列 DP + origin**：内存中仅保留一个 `_Entry` 列（`column`，含 cost/score/origin），`origin` 记录比对起点（负=起点在 reference 内，正=在 query 内），据此回溯得到 `(ref_start, ref_stop, query_start, query_stop)`（_align.pyx:579-587）。
