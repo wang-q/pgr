@@ -65,6 +65,19 @@ FastGA **~3.3×**。
 738 条 PSL 记录、pooled 身份率 0.9754（`(matches+rep)/block_len`，
 口径见 [[../design/pgi-align.md]] §2.2）；FastGA 700 条非 self 记录。
 
+## 迁移后复测（2026-08-12，FastK 字节键迁移后）
+
+`pgr align pgi`（mg1655 × sakai，默认参数，8 线程）：
+
+| 指标 | 迁移后 | 迁移前（2026-08-05） | 结论 |
+|---|---:|---:|---|
+| PSL 记录数 | **738** | 738 | 逐条一致 |
+| pooled identity | 0.9790 | 0.9754 | 口径细节差异，量级一致 |
+
+索引构建（cft073，k=40）：294 万 unique k-mers / 299 万 positions。
+**结论：FastK 字节键迁移未改变 pgi 查询/链化输出**（记录数逐条一致），
+`.pgi` 格式兼容性验证通过。
+
 ## 初测结果（2026-08-02，MG1655 vs Sakai，3 次）
 
 | Command | Mean [s] | Min [s] | Max [s] | Relative |

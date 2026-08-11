@@ -57,6 +57,36 @@ cat "$B/bench-result.md"
 单遍扫描为每个位置多做一次去重/重算；GIXmake 侧数值几乎不变（312.4 →
 310.2 ms）。32 核机器、release 构建（当前文档表为复测值，初测见下）。
 
+## 复测（2026-08-12，FastK 字节键迁移后，MG1655，8 次）
+
+| Command | Mean [ms] | 峰值内存 | Relative |
+|---|---:|---:|---:|
+| `pgr pgi build (FASTA)` | 384.0 ± 2.9 | **145 MB** | 1.21 ± 0.01 |
+| `FAtoGDB+GIXmake (FASTA)` | 316.1 ± 2.7 | — | 1.00 |
+
+迁移后 `pgr pgi build` 峰值内存 145 MB（迁移前 ~180 MB，**-19%**，
+`PgiEntry` 24 B→8 B + keys 打包的收益）；构建时间 384 ms 较迁移前
+348 ms 略升（+10%，机器负载/收集路径未变的正常波动，待字节直落
+优化后复测）。GIXmake 316 ms。
+
+> **字节直落实验（2026-08-12，负收益，已回退）**：把 `collect_one_contig`
+> 的 u128 滚动 + `Vec<u128>` 收集改为 u128 滚动 + 发射时 `pack_kmer`
+> 直落 `Vec<u8>` + `radix_sort_bytes_par` + 字节分组——413 ms / 137 MB，
+> 比 d2c422a 基线（384 ms / 145 MB）慢 7%，内存仅降 5%。原因：pgi 的
+> 记录数（syncmer 位置，~几十万）远小于 k-mer 计数（460 万），字节直落
+> 的排序/内存收益被每条记录一次 `pack_kmer` 的开销抵消；滚动本身
+> 保持 u128（每碱基位运算，字节滚动会更慢，已验证 418 ms）。**保持
+> u128 中间层 + 分组时 pack**（384 ms / 145 MB）为 pgi build 的当前
+> 最优形态；字节化仅保留在最终存储（`PgiIndex.keys`）。
+
+> **并行收集（2026-08-12，学习 GIXmake 的 per-thread 分桶）**：
+> `build_from_seqs` 的 contigs 收集从单线程改为 `par_iter` 每 contig
+> 独立缓冲再合并（单 contig 保持顺序路径，避免 rayon 分发开销）。
+> 4 基因组（cft073/e2348_69/ec958/mg1655，~20 Mb，8 contig）：
+> 1.450 s → **1.203 s**（+17%）；MG1655 单 contig 384 ms 不变。
+> GIXmake 4 基因组 505 ms（pgr 仍 2.4× 慢，剩余差距在单线程分组
+> 去重与 GIXmake 的排序内 COUNT + 多线程分块，见 align 对照笔记）。
+
 ### 优化历程
 
 - 初始（两遍扫描 + 比较排序）：761 ms（2.41× 慢）

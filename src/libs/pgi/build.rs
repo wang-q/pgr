@@ -4,6 +4,7 @@ use super::{pack_kmer, pack_position, PgiEntry, PgiIndex};
 use crate::libs::nt::rc_key;
 use crate::libs::syncmer::SyncmerParams;
 use anyhow::Context;
+use rayon::prelude::*;
 use std::collections::{HashSet, VecDeque};
 
 /// Parallel growable buffers for (key, contig, pos, strand) records.
@@ -218,13 +219,42 @@ pub fn build_from_seqs(
         .iter()
         .map(|(_, s)| (s.len() / window).saturating_mul(4) + 64)
         .sum();
-    let mut buf = RecordBuf {
-        keys: Vec::with_capacity(est),
-        payloads: Vec::with_capacity(est),
+    // Collect each contig into a growable buffer, in parallel when there is
+    // more than one contig (GIXmake does the same with per-thread buckets;
+    // the per-contig work is independent and the sort below makes the merge
+    // order irrelevant). A single contig stays sequential to avoid the rayon
+    // dispatch overhead.
+    let mut buf = if contigs.len() == 1 {
+        let mut b = RecordBuf {
+            keys: Vec::with_capacity(est),
+            payloads: Vec::with_capacity(est),
+        };
+        collect_one_contig(&contigs[0].1, 0, k, &params, no_rev, &mut b);
+        b
+    } else {
+        let per_contig: Vec<RecordBuf> = contigs
+            .par_iter()
+            .enumerate()
+            .map(|(cid, (_, seq))| {
+                let cap = est / contigs.len() + 64;
+                let mut b = RecordBuf {
+                    keys: Vec::with_capacity(cap),
+                    payloads: Vec::with_capacity(cap),
+                };
+                collect_one_contig(seq, cid as u32, k, &params, no_rev, &mut b);
+                b
+            })
+            .collect();
+        let mut b = RecordBuf {
+            keys: Vec::with_capacity(est),
+            payloads: Vec::with_capacity(est),
+        };
+        for mut pb in per_contig {
+            b.keys.append(&mut pb.keys);
+            b.payloads.append(&mut pb.payloads);
+        }
+        b
     };
-    for (cid, (_, seq)) in contigs.iter().enumerate() {
-        collect_one_contig(seq, cid as u32, k, &params, no_rev, &mut buf);
-    }
 
     // Sort globally by k-mer with an in-place MSD radix sort (no auxiliary
     // arrays); equal k-mers stay contiguous so the grouping below produces
