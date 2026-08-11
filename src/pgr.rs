@@ -16,6 +16,7 @@ fn main() -> anyhow::Result<()> {
         .color(ColorChoice::Auto)
         .subcommand(cmd_pgr::ms::make_subcommand())
         .subcommand(cmd_pgr::align::make_subcommand())
+        .subcommand(cmd_pgr::asm::make_subcommand())
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::dist::make_subcommand())
@@ -40,6 +41,9 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::kmer::make_subcommand())
         .after_help(
             r###"Subcommand groups:
+
+* Assembly:
+    * asm - Assembly tools: contig, unitig
 
 * Sequences:
     * 2bit - 2bit query and extraction
@@ -86,6 +90,7 @@ fn main() -> anyhow::Result<()> {
     match app.get_matches().subcommand() {
         Some(("ms", sub_matches)) => cmd_pgr::ms::execute(sub_matches),
         Some(("align", sub_matches)) => cmd_pgr::align::execute(sub_matches),
+        Some(("asm", sub_matches)) => cmd_pgr::asm::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("dist", sub_matches)) => cmd_pgr::dist::execute(sub_matches),

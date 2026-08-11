@@ -99,6 +99,10 @@ name = "fq_assemble_benchmark"
 harness = false
 
 [[bench]]
+name = "asm_map_benchmark"
+harness = false
+
+[[bench]]
 name = "paf_index_benchmark"
 harness = false
 

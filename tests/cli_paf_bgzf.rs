@@ -64,8 +64,8 @@ fn command_paf_query_gzipped() {
         .args(&["paf", "query", path.to_str().unwrap(), "B:0-100"])
         .run();
     assert!(stderr.contains("Building index"));
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
-    assert!(stdout.contains("C\t0\t0\t50\t+\tB"), "C not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "A not found");
+    assert!(stdout.contains("C\t100\t0\t50\t+\tB"), "C not found");
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn command_paf_query_bgzf() {
     let (stdout, _) = PgrCmd::new()
         .args(&["paf", "query", path.to_str().unwrap(), "B:0-100"])
         .run();
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "A not found");
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn command_paf_index_gz_save_and_query() {
     let (stdout, _) = PgrCmd::new()
         .args(&["paf", "query", idx_path.to_str().unwrap(), "B:0-100"])
         .run();
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "A not found");
 }
 
 // ── Lazy CIGAR loading (BGZF virtual-position) ──────────────────
@@ -182,8 +182,8 @@ fn command_paf_query_bgzf_lazy_cigar_resolved() {
         stderr.contains("mode: lazy"),
         "expected lazy mode banner on query, got: {stderr}"
     );
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
-    assert!(stdout.contains("C\t0\t0\t50\t+\tB"), "C not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "A not found");
+    assert!(stdout.contains("C\t100\t0\t50\t+\tB"), "C not found");
     // CIGAR tag must be present (proves lazy fetch worked).
     assert!(stdout.contains("cg:Z:100M"), "CIGAR not resolved");
 }
@@ -216,7 +216,7 @@ fn command_paf_bgzf_lazy_persist_and_reload() {
         .run();
     assert!(stderr.contains("Loading index"));
     assert!(
-        stdout.contains("A\t0\t0\t100\t+\tB"),
+        stdout.contains("A\t100\t0\t100\t+\tB"),
         "A not found after reload"
     );
     assert!(
@@ -267,6 +267,6 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         ])
         .run();
     assert!(stderr.contains("mode: lazy"));
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "1-hop A not found");
-    assert!(stdout.contains("C\t0\t0\t100\t+\tA"), "2-hop C not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "1-hop A not found");
+    assert!(stdout.contains("C\t100\t0\t100\t+\tA"), "2-hop C not found");
 }

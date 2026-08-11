@@ -4,15 +4,45 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-11：pgr fq assemble 完成并已提交）
+## 0. 会话交接（2026-08-11：pgr asm 命令族就绪，待提交）
 
-**当前交接**：tadpole 组装迁移 `pgr fq assemble` 已实现并验证（设计见
-`design/fq-assemble.md`），已提交（`752aafc`，含 cmd/libs/测试/golden/
-文档/设计笔记），全量 1661 测试绿、fmt/clippy clean。
-**下一步**：anchr 侧模板替换——`2_insert_size.tera.sh` / `unitigs.tera.sh`
-的 `tadpole.sh` → `pgr fq assemble`，注意 `0_cleanup.tera.sh` 文件名
-同步。已知偏差：bubble 解析与 tadpole 有少量差异（其 expand 顺序依赖
-`-Xmx` 相关哈希布局），已按用户确认接受确定性输出（§6）。
+**当前交接**：组装相关整合为 `pgr asm` 命令族（contig/unitig/map），
+全量 1675 测试绿、fmt/clippy clean。设计：
+`design/fq-assemble.md`（contig/unitig）、`design/asm-map.md`（map）。
+**下一步**：
+1. **anchr 模板替换**（用户自己处理）：`tadpole.sh` →
+   `pgr asm contig`（2_insert_size/unitigs，注意 `0_cleanup.tera.sh`
+   文件名同步）；`bbwrap.sh perfectmode` → `pgr asm map`（anchors，
+   `--outm/--outu/--basecov` 输出名与模板对齐）。已知偏差：contig 的
+   bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
+2. **真实数据验证**（待数据）：unitigs/map 与 bcalm/bbmap 黑盒对照。
+
+**本轮新增（未提交，工作区）**：
+- `pgr asm` 顶级命令族：contig/unitig 自 `fq` 迁入，新增 `map`。
+- `asm contig`：`--no-bubbles`、`--min-count-seed`、`--min-coverage`。
+- `asm unitig`：`--min-count-seed`（bcalm `-abundance-min`）、
+  `--links`/`--gfa`（LinkTigs 语义边输出）、circular 环标记。
+- `asm map`：完美匹配回贴（参考 k-mer 索引 + 种子验证 + SAM/basecov），
+  anchors 流程 bbwrap 替代；流式分块（100k/块，内存可控）、outm/outu
+  SAM 头对称；基准 build ~1 ms / 2k reads ~3.7 ms。
+- 性能：contig 计数并行 + 排序快照（576→157 ms，~3.7×，`5c92439` 已提交
+  perf 部分）；radix 化实测不划算（回退，见 `fq-assemble.md` §7）。
+- **端到端演练（Lambda 20k，release）**：contig 20 条/0.2 s → unitig
+  32 条 → map 40k reads 84.9% 完美回贴/0.07 s，basecov 49k 行；
+  命令串联可用（RefName 含头字段与 BBTools tadpole+bbmap 组合一致）。
+
+**提交建议**（git 只读，用户侧提交）：
+1. `feat(asm): add top-level assembly commands (contig/unitig/map)`：
+   `src/cmd_pgr/asm/`、`src/libs/map.rs`、`src/pgr.rs`、`cmd_pgr/mod.rs`、
+   `fq/mod.rs`（移除）、`libs/mod.rs`、`libs/fq/assemble.rs`（unitig 核心 +
+   links/gfa/circular）、删除 `fq/assemble.rs`+`fq/unitig.rs`、测试
+   `cli_asm_*` + 删除 `cli_fq_assemble.rs`+`cli_fq_unitig.rs`、
+   `docs/asm.md`、`docs/fq.md`、`notes/design/asm-map.md`。
+2. `test+perf(asm map): streaming blocks, symmetric SAM headers, benchmarks`：
+   `libs/map.rs` 流式/头对称、`benches/asm_map_benchmark.rs`、
+   `Cargo.toml`、`benches/fq_assemble_benchmark.rs`（unitigs 条目）。
+3. `docs: assembly handover notes and command index`：`CHANGELOG.md`、
+   `notes/todo.md`、`notes/design/fq-assemble.md`、`notes/project-understanding.md`。
 
 **已完成（一行结论，细节见各设计笔记）**：
 
@@ -33,7 +63,7 @@
    --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual>
    --minlen <len>`；trim.era.sh 的 bbduk 两次调用 → `pgr fq clean`（trim）
    + `pgr fq filter`（filter）；**新增**：2_insert_size/unitigs 的
-   `tadpole.sh` → `pgr fq assemble`（含 0_cleanup 文件名同步）。
+   `tadpole.sh` → `pgr asm contig`（含 0_cleanup 文件名同步）。
 3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
    直方图，pgr 无 SAM 命令，用户决定放着。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。
@@ -75,8 +105,9 @@
 
 ## 2. 低风险审计记录项（可顺手修）
 
-- [ ] PAF `query_length`/`target_length` 恒 0：**待决策**——改 `.paf.idx`
-      持久化 src_size，影响索引格式兼容性（来源：`audit/audit-paf.md`）。
+- [x] PAF `query_length`/`target_length` 恒 0：**已修复**（2026-08-11，
+      `.paf.idx` v5 持久化每序列长度，旧索引报错重建；
+      `audit/audit-paf.md`）。
 - [ ] `syncmer.rs` 重复发射同一位置：**暂缓**——消费方已去重，收益小风险高
       （来源：`audit/audit-rept-sd.md`）。
 
@@ -142,11 +173,25 @@
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
       一并处理）（来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
-- [ ] **fq assemble 计数表 radix 化（k>64 多 word）**：`sorted_entries`
-      现用比较排序；泛化 Myers radix sort（`libs/ds/radix_sort.rs` 目前
-      u128 特化）到多 word 后替换，查询侧二分 vs HashMap 先基准
-      （Lambda 20k 基线：build ~100 ms / 全流程 ~157 ms，
-      `benches/fq_assemble_benchmark.rs`）。
+- [x] **asm contig 计数表 radix 化：已评估不做**（2026-08-11 基准：
+      Lambda 20k 下 radix 比 `cmp_bases` 比较排序慢，几十万 k-mer
+      规模不划算；数百万级再评估，见 `fq-assemble.md` §7）。
+- [ ] **pgr asm unitig 真实数据验证**：已实现为独立命令（借鉴 BCALM
+      graph3，顺序无关/无气泡；设计 `fq-assemble.md` §8）；待用 anchr
+      `pe.cor.fa` 与 bcalm 输出对照 unitig 集合与连续性。
+- [ ] **pgr asm unitig L: 边/GFA 真实对照**：`--links`/`--gfa` 已实现
+      （LinkTigs 语义，方向规则见 `fq-assemble.md` §8 + 单测）；待与
+      bcalm `LinkTigs` 输出（`.unitigs.fa` 的 `L:` 头）在真实数据上
+      对照方向与边集合。
+- [ ] **pgr asm map 真实数据验证**：已实现（`asm/map.rs`，设计
+      `asm-map.md`）；待用真实 UT.fasta + reads 与 bbmap 输出对照
+      mapped 比例与 basecov（本机 Java 配对读 gz 失败，黑盒对照暂缓）。
+- [x] **asm map 内存优化（2026-08-11 完成）**：reads 流式分块（100k/
+      块，有界内存，块内并行 + 按序写出）；outm/outu SAM 头对称
+      （bbmap `useSharedHeader` 对齐，模板 `wc -l` 比例不偏）。
+      Lambda 2k：无输出 ~3.7 ms / +basecov ~7.9 ms
+      （`asm_map_benchmark.rs`）。basecov 分块局部计数在 2k 数据上
+      回归已回退，百万级 reads 时再评估。
 - [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree

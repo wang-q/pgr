@@ -39,13 +39,13 @@ fn read_gz(path: &str) -> Vec<u8> {
 /// notes/design/fq-assemble.md), so the popped output is compared by
 /// sequence set rather than byte-for-byte.
 #[test]
-fn command_fq_assemble_matches_tadpole_contig_set() {
+fn command_asm_contig_matches_tadpole_contig_set() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("contigs.fa");
     PgrCmd::new()
         .args(&[
-            "fq",
-            "assemble",
+            "asm",
+            "contig",
             "tests/bbtools/Lambda/R1.2k.fq.gz",
             "tests/bbtools/Lambda/R2.2k.fq.gz",
             "-o",
@@ -95,15 +95,15 @@ fn command_fq_assemble_matches_tadpole_contig_set() {
 
 /// Repeated runs produce byte-identical output (deterministic scan order).
 #[test]
-fn command_fq_assemble_is_deterministic() {
+fn command_asm_contig_is_deterministic() {
     let out_dir = tempfile::tempdir().unwrap();
     let out1 = out_dir.path().join("a.fa");
     let out2 = out_dir.path().join("b.fa");
     for out in [&out1, &out2] {
         PgrCmd::new()
             .args(&[
-                "fq",
-                "assemble",
+                "asm",
+                "contig",
                 "tests/bbtools/Lambda/R1.2k.fq.gz",
                 "tests/bbtools/Lambda/R2.2k.fq.gz",
                 "-o",
@@ -121,15 +121,15 @@ fn command_fq_assemble_is_deterministic() {
 /// at least as many contigs as the default bubble-popped output, and the
 /// no-bubbles run is byte-identical across repeated invocations.
 #[test]
-fn command_fq_assemble_no_bubbles_keeps_parallel_contigs() {
+fn command_asm_contig_no_bubbles_keeps_parallel_contigs() {
     let out_dir = tempfile::tempdir().unwrap();
     let default_out = out_dir.path().join("default.fa");
     let nb1 = out_dir.path().join("nb1.fa");
     let nb2 = out_dir.path().join("nb2.fa");
     PgrCmd::new()
         .args(&[
-            "fq",
-            "assemble",
+            "asm",
+            "contig",
             "tests/bbtools/Lambda/R1.2k.fq.gz",
             "tests/bbtools/Lambda/R2.2k.fq.gz",
             "-o",
@@ -142,8 +142,8 @@ fn command_fq_assemble_no_bubbles_keeps_parallel_contigs() {
     for out in [&nb1, &nb2] {
         PgrCmd::new()
             .args(&[
-                "fq",
-                "assemble",
+                "asm",
+                "contig",
                 "tests/bbtools/Lambda/R1.2k.fq.gz",
                 "tests/bbtools/Lambda/R2.2k.fq.gz",
                 "-o",
@@ -168,13 +168,13 @@ fn command_fq_assemble_no_bubbles_keeps_parallel_contigs() {
 
 /// A zero k-mer length must fail cleanly instead of panicking.
 #[test]
-fn command_fq_assemble_rejects_zero_kmer() {
+fn command_asm_contig_rejects_zero_kmer() {
     let out_dir = tempfile::tempdir().unwrap();
     let out = out_dir.path().join("out.fa");
     PgrCmd::new()
         .args(&[
-            "fq",
-            "assemble",
+            "asm",
+            "contig",
             "tests/bbtools/Lambda/R1.2k.fq.gz",
             "tests/bbtools/Lambda/R2.2k.fq.gz",
             "-o",
@@ -188,7 +188,7 @@ fn command_fq_assemble_rejects_zero_kmer() {
 
 /// Assembles a small synthetic repeat into contigs.
 #[test]
-fn command_fq_assemble_small_synthetic() {
+fn command_asm_contig_small_synthetic() {
     let out_dir = tempfile::tempdir().unwrap();
     let infile = out_dir.path().join("in.fa");
     let out = out_dir.path().join("out.fa");
@@ -199,8 +199,8 @@ fn command_fq_assemble_small_synthetic() {
     std::fs::write(&infile, format!(">r1\n{seq}\n>r2\n{seq}\n")).unwrap();
     PgrCmd::new()
         .args(&[
-            "fq",
-            "assemble",
+            "asm",
+            "contig",
             infile.to_str().unwrap(),
             "-o",
             out.to_str().unwrap(),
@@ -214,4 +214,97 @@ fn command_fq_assemble_small_synthetic() {
     let recs = parse_fa(&std::fs::read(&out).unwrap());
     assert!(!recs.is_empty());
     assert!(recs.iter().any(|(_, s)| s.contains("ACGTACGT")));
+}
+
+/// Raising the seeding threshold drops low-depth k-mers (tadpole
+/// `mincountseed`).
+#[test]
+fn command_asm_contig_min_count_seed() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let infile = out_dir.path().join("in.fa");
+    let seq = "AAGCCCAATAAACCACTCTGACTGGCCGAATAGGGATATAGGCAACGACATGTGCGGCGA";
+    // 2 identical reads: every k-mer has count 2 (not seeded at the default
+    // threshold of 3, seeded at --min-count-seed 2).
+    let fa = format!(">r1\n{seq}\n>r2\n{seq}\n");
+    std::fs::write(&infile, fa).unwrap();
+    let default_out = out_dir.path().join("default.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "contig",
+            infile.to_str().unwrap(),
+            "-o",
+            default_out.to_str().unwrap(),
+            "--kmer",
+            "31",
+            "--min-contig-len",
+            "1",
+        ])
+        .assert()
+        .success();
+    assert!(parse_fa(&std::fs::read(&default_out).unwrap()).is_empty());
+    let low_out = out_dir.path().join("low.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "contig",
+            infile.to_str().unwrap(),
+            "-o",
+            low_out.to_str().unwrap(),
+            "--kmer",
+            "31",
+            "--min-contig-len",
+            "1",
+            "--min-count-seed",
+            "2",
+        ])
+        .assert()
+        .success();
+    assert!(!parse_fa(&std::fs::read(&low_out).unwrap()).is_empty());
+}
+
+/// Raising the minimum coverage drops low-depth contigs (tadpole
+/// `mincoverage`).
+#[test]
+fn command_asm_contig_min_coverage() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let infile = out_dir.path().join("in.fa");
+    let seq = "AAGCCCAATAAACCACTCTGACTGGCCGAATAGGGATATAGGCAACGACATGTGCGGCGA";
+    // 4 identical reads: every k-mer has count 4 (mean coverage ~4).
+    let fa = format!(">r1\n{seq}\n>r2\n{seq}\n>r3\n{seq}\n>r4\n{seq}\n");
+    std::fs::write(&infile, fa).unwrap();
+    let default_out = out_dir.path().join("default.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "contig",
+            infile.to_str().unwrap(),
+            "-o",
+            default_out.to_str().unwrap(),
+            "--kmer",
+            "31",
+            "--min-contig-len",
+            "1",
+        ])
+        .assert()
+        .success();
+    assert!(!parse_fa(&std::fs::read(&default_out).unwrap()).is_empty());
+    let strict_out = out_dir.path().join("strict.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "contig",
+            infile.to_str().unwrap(),
+            "-o",
+            strict_out.to_str().unwrap(),
+            "--kmer",
+            "31",
+            "--min-contig-len",
+            "1",
+            "--min-coverage",
+            "5",
+        ])
+        .assert()
+        .success();
+    assert!(parse_fa(&std::fs::read(&strict_out).unwrap()).is_empty());
 }

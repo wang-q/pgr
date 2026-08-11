@@ -23,8 +23,8 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
         .args(&["paf", "query", "stdin", "B:0-100"])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
-    assert!(stdout.contains("C\t0\t0\t50\t+\tB"), "C not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "A not found");
+    assert!(stdout.contains("C\t100\t0\t50\t+\tB"), "C not found");
     assert!(stdout.contains("gi:f:"), "gi tag missing");
     assert!(stdout.contains("cg:Z:"), "cg tag missing");
 }
@@ -39,8 +39,14 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         .args(&["paf", "query", "stdin", "B:0-100", "--transitive"])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A (1-hop) not found");
-    assert!(stdout.contains("C\t0\t0\t100\t+\tA"), "C (2-hop) not found");
+    assert!(
+        stdout.contains("A\t100\t0\t100\t+\tB"),
+        "A (1-hop) not found"
+    );
+    assert!(
+        stdout.contains("C\t100\t0\t100\t+\tA"),
+        "C (2-hop) not found"
+    );
 }
 
 #[test]
@@ -84,7 +90,10 @@ fn command_paf_query_max_depth_1() {
         ])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A (1-hop) not found");
+    assert!(
+        stdout.contains("A\t100\t0\t100\t+\tB"),
+        "A (1-hop) not found"
+    );
     assert!(!stdout.contains("C\t"), "C should NOT appear: max-depth=1");
 }
 
@@ -107,7 +116,10 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
         ])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("C\t0\t0\t100\t+\tD"), "C (1-hop) not found");
+    assert!(
+        stdout.contains("C\t100\t0\t100\t+\tD"),
+        "C (1-hop) not found"
+    );
     assert!(!stdout.contains("B\t"), "B (2-hop) should NOT appear: -m 1");
     assert!(!stdout.contains("A\t"), "A (3-hop) should NOT appear: -m 1");
 }
@@ -125,8 +137,8 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
         .args(&["paf", "query", "stdin", "D:0-100", "--transitive"])
         .stdin(paf)
         .run();
-    assert!(stdout_default.contains("C\t0\t0\t100\t+\tD"), "C (1-hop)");
-    assert!(stdout_default.contains("B\t0\t0\t100\t+\tC"), "B (2-hop)");
+    assert!(stdout_default.contains("C\t100\t0\t100\t+\tD"), "C (1-hop)");
+    assert!(stdout_default.contains("B\t100\t0\t100\t+\tC"), "B (2-hop)");
     assert!(
         !stdout_default.contains("A\t"),
         "A (3-hop) should NOT appear at default max-depth=2"
@@ -145,7 +157,7 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
         .stdin(paf)
         .run();
     assert!(
-        stdout_unlim.contains("A\t0\t0\t100\t+\tB"),
+        stdout_unlim.contains("A\t100\t0\t100\t+\tB"),
         "A (3-hop) at -m 0"
     );
 }
@@ -171,8 +183,14 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
         .args(&["paf", "query", "stdin", "B:0-100"])
         .stdin(paf)
         .run();
-    assert!(stdout_no.contains("A\t0\t0\t100\t+\tB"), "A without filter");
-    assert!(stdout_no.contains("C\t0\t0\t100\t+\tB"), "C without filter");
+    assert!(
+        stdout_no.contains("A\t100\t0\t100\t+\tB"),
+        "A without filter"
+    );
+    assert!(
+        stdout_no.contains("C\t100\t0\t100\t+\tB"),
+        "C without filter"
+    );
 
     // With filter: only A (C has no B->C chain).
     let (stdout_f, stderr) = PgrCmd::new()
@@ -187,7 +205,7 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
         .stdin(paf)
         .run();
     assert!(
-        stdout_f.contains("A\t0\t0\t100\t+\tB"),
+        stdout_f.contains("A\t100\t0\t100\t+\tB"),
         "A should be syntenic"
     );
     assert!(
@@ -223,7 +241,7 @@ fn command_paf_query_syntenic_filter_no_overlap() {
         .stdin(paf)
         .run();
     assert!(
-        !stdout.contains("A\t0\t0\t100\t+\tB"),
+        !stdout.contains("A\t100\t0\t100\t+\tB"),
         "A should be dropped: chain query span 200-300 does not overlap A's 0-100"
     );
 }

@@ -352,6 +352,7 @@ mod tests {
         names.insert("T".to_string(), 1u32);
         let idx = PafIndex {
             names,
+            seq_lens: IndexMap::new(),
             trees: HashMap::new(),
             reverse_trees: HashMap::new(),
             lazy_source: None,

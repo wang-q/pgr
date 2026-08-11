@@ -60,19 +60,48 @@
   shards plus a `.complete` marker. Old FastK caches are ignored and rebuilt
   once on the first run after upgrading.
 
-### FASTQ (`fq`)
+### Assembly (`asm`)
 
-* **`fq assemble --no-bubbles`** - keeps parallel-path contigs separate
+* **`pgr asm`** - new top-level command family grouping assembly tools:
+  `contig` (tadpole-compatible seeded assembly) and `unitig` (BCALM-style
+  maximal unitigs), moved out of `pgr fq` so assembly commands live under
+  one roof (future: read mapping, polishing, scaffolding).
+* **`asm contig --no-bubbles`** - keeps parallel-path contigs separate
   (tadpole `popbubbles=f`) instead of merging bubble branches into a
   representative path. Bubble popping remains the default (`popbubbles=t`
   compatible); the flag makes the pre-pop contig set directly observable
   and deterministic for downstream unitig workflows.
-* **`fq assemble` performance** - the k-mer count table is now built with
+* **`asm contig` performance** - the k-mer count table is now built with
   rayon-parallel per-chunk counting (the same pattern as the native `kmer`
   pipeline) and the multi-pass seeding scans iterate a once-built
   canonical-k-mer sorted snapshot instead of re-sorting the hash table each
   pass. Lambda 20k-read benchmark: full assembly 576 ms -> 157 ms (~3.7x),
   with byte-identical output.
+* **`asm contig --min-count-seed`** - exposes the seeding depth threshold
+  (tadpole `mincountseed`, default 3) so low-coverage data can be assembled
+  with a lower seed cutoff.
+* **`asm contig --min-coverage`** - exposes the minimum mean coverage for a
+  contig (tadpole `mincoverage`, default 1.0).
+* **`pgr asm unitig`** - new command for BCALM-style maximal unitigs: every
+  solid k-mer compresses into its unique non-branching path
+  (order-independent, no bubble popping), best for high-coverage or
+  error-corrected input such as the anchr `unitigs` step's `pe.cor.fa`.
+* **`asm unitig --min-count-seed`** - exposes the solid k-mer count
+  threshold (default 3, the bcalm `-abundance-min` equivalent) so the
+  abundance cutoff can be tuned per dataset.
+* **`asm unitig --links` / `--gfa`** - unitig graph output: `--links`
+  appends BCALM-style `L:` entries to FASTA headers and `--gfa` emits a
+  GFA 1.0 graph, both connecting unitigs that share an endpoint (k-1)-mer
+  (LinkTigs semantics).
+* **`pgr asm map`** - maps reads to a reference requiring perfect matches
+  (no mismatches, no gaps), replacing the bbwrap `perfectmode maxindel=0`
+  call of the anchr `anchors` flow. Seed-and-verify over a canonical k-mer
+  index; outputs mapped/unmapped SAM and a per-base coverage file.
+* **`pgr paf` query output lengths** - PAF columns 2/7
+  (`query_length`/`target_length`) are now populated from per-sequence
+  total lengths retained in the index (format v5; old `.paf.idx` files
+  report a version error and ask for a rebuild). Previously both columns
+  were always emitted as 0.
 
 ## 0.5.0 - 2026-08-08
 

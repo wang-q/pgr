@@ -4,7 +4,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pgr::libs::fmt::seq::{SeqReader, SeqRecord};
-use pgr::libs::fq::assemble::{assemble, AssembleOptions};
+use pgr::libs::fq::assemble::{assemble, assemble_unitigs, AssembleOptions};
 use pgr::libs::fq::tadpole::TadpoleTable;
 use std::sync::OnceLock;
 
@@ -62,6 +62,17 @@ fn bench_build_and_assemble(c: &mut Criterion) {
         b.iter(|| {
             let mut out = Vec::new();
             let stats = assemble(infiles(), &mut out, &opts).unwrap();
+            black_box(stats.contigs_built)
+        })
+    });
+    group.bench_function("assemble_unitigs_k31_20k", |b| {
+        let opts = AssembleOptions {
+            k: 31,
+            ..AssembleOptions::default()
+        };
+        b.iter(|| {
+            let mut out = Vec::new();
+            let stats = assemble_unitigs(infiles(), &mut out, &opts).unwrap();
             black_box(stats.contigs_built)
         })
     });

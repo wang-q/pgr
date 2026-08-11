@@ -70,6 +70,9 @@ pub type QueryResult = (
 /// In-memory PAF index: name↔id mapping + per-target COI interval trees.
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
+    /// Total length per sequence name (PAF columns 2/7), for emitting
+    /// `query_length`/`target_length` in query output.
+    pub seq_lens: IndexMap<String, u32>,
     pub(crate) trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
     /// Mirror index: for each `+` strand record, a reversed entry is inserted
     /// into `reverse_trees[query_id]` so BFS can traverse from query → target

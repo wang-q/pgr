@@ -331,9 +331,6 @@ pub type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
 ///   (cols 10-12 + tags) reflect the **full source CIGAR**, not the slice.
 ///   Consumers needing slice-consistent tags should re-derive them from the
 ///   emitted `cg` after trimming to the projected coordinates.
-/// - `query_length` / `target_length` (cols 2, 7) are emitted as `0` because
-///   `PafIndex` does not retain per-sequence total lengths. Filling these
-///   requires an index-format change to persist `src_size`.
 pub fn output_paf<W: Write>(
     writer: &mut W,
     idx: &PafIndex,
@@ -342,6 +339,8 @@ pub fn output_paf<W: Write>(
     for (query_id, q_iv, t_iv, cigar, _, _, strand) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
         let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
+        let qlen = idx.seq_lens.get(qname).copied().unwrap_or(0);
+        let tlen = idx.seq_lens.get(tname).copied().unwrap_or(0);
         // Use cigar-derived block_length (matches + mismatches + ins_bp +
         // del_bp) for consistency with `matches` and `cg`, which also come
         // from the full source CIGAR. The previous formula (query span)
@@ -356,8 +355,8 @@ pub fn output_paf<W: Write>(
         let (ts, te) = orient_interval(t_iv.first, t_iv.last);
         writeln!(
             writer,
-            "{}\t0\t{}\t{}\t{}\t{}\t0\t{}\t{}\t{}\t{}\t255\tgi:f:{:.6}\tbi:f:{:.6}\tcg:Z:{}",
-            qname, qs, qe, strand, tname, ts, te, matches, block_len, gi, bi, cg
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t255\tgi:f:{:.6}\tbi:f:{:.6}\tcg:Z:{}",
+            qname, qlen, qs, qe, strand, tname, tlen, ts, te, matches, block_len, gi, bi, cg
         )?;
     }
     Ok(())

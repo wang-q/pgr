@@ -336,6 +336,7 @@ mod tests {
     fn empty_index() -> PafIndex {
         PafIndex {
             names: IndexMap::new(),
+            seq_lens: IndexMap::new(),
             trees: HashMap::new(),
             reverse_trees: HashMap::new(),
             lazy_source: None,

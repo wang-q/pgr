@@ -15,6 +15,7 @@ pub mod lastz;
 pub mod linalg;
 pub mod lm;
 pub mod loc;
+pub mod map;
 pub mod ms;
 pub mod nt;
 pub mod nt_simd;

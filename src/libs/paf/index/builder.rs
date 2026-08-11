@@ -11,22 +11,34 @@ use std::io::BufRead;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
+/// Records the total length of a PAF line's query and target sequences
+/// (first-wins on name conflicts).
+fn collect_seq_lens(rec: &crate::libs::paf::record::PafRecord, lens: &mut IndexMap<String, u32>) {
+    lens.entry(rec.query_name.clone())
+        .or_insert(rec.query_length);
+    lens.entry(rec.target_name.clone())
+        .or_insert(rec.target_length);
+}
+
 impl PafIndex {
     /// Build an index from a single PAF reader (in-memory CIGAR).
     pub fn build<R: BufRead>(reader: R) -> anyhow::Result<Self> {
         let records = parse_paf(reader)?;
         let mut names = IndexMap::new();
+        let mut seq_lens = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
         let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
 
         for rec in &records {
             insert_record(rec, &mut names, &mut by_target, &mut by_query, None)?;
+            collect_seq_lens(rec, &mut seq_lens);
         }
 
         let trees = build_trees(by_target);
         let reverse_trees = build_trees(by_query);
         Ok(PafIndex {
             names,
+            seq_lens,
             trees,
             reverse_trees,
             lazy_source: None,
@@ -37,12 +49,14 @@ impl PafIndex {
     /// Build an index from multiple PAF readers (in-memory CIGAR).
     pub fn build_multi<R: BufRead>(readers: Vec<R>) -> anyhow::Result<Self> {
         let mut names = IndexMap::new();
+        let mut seq_lens = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
         let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
 
         for reader in readers {
             for rec in &parse_paf(reader)? {
                 insert_record(rec, &mut names, &mut by_target, &mut by_query, None)?;
+                collect_seq_lens(rec, &mut seq_lens);
             }
         }
 
@@ -50,6 +64,7 @@ impl PafIndex {
         let reverse_trees = build_trees(by_query);
         Ok(PafIndex {
             names,
+            seq_lens,
             trees,
             reverse_trees,
             lazy_source: None,
@@ -84,6 +99,7 @@ impl PafIndex {
         let mut reader = CachedBgzfReader::open_virtual(path, capacity)?;
 
         let mut names = IndexMap::new();
+        let mut seq_lens = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
         let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
         let mut line = String::new();
@@ -102,12 +118,14 @@ impl PafIndex {
             let rec =
                 parse_paf_line(trimmed).with_context(|| format!("invalid PAF line: {trimmed}"))?;
             insert_record(&rec, &mut names, &mut by_target, &mut by_query, Some(vpos))?;
+            collect_seq_lens(&rec, &mut seq_lens);
         }
 
         let trees = build_trees(by_target);
         let reverse_trees = build_trees(by_query);
         Ok(PafIndex {
             names,
+            seq_lens,
             trees,
             reverse_trees,
             lazy_source: Some(Mutex::new(CachedBgzfReader::open_virtual(path, capacity)?)),

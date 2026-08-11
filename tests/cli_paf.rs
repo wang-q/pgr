@@ -118,8 +118,8 @@ fn command_paf_index_multiple_files() {
     let (stdout, _) = PgrCmd::new()
         .args(&["paf", "query", idx.to_str().unwrap(), "X:0-100"])
         .run();
-    assert!(stdout.contains("A\t0\t0\t50\t+\tX"), "A not found");
-    assert!(stdout.contains("B\t0\t0\t50\t+\tX"), "B not found");
+    assert!(stdout.contains("A\t100\t0\t50\t+\tX"), "A not found");
+    assert!(stdout.contains("B\t100\t0\t50\t+\tX"), "B not found");
 }
 
 // ── persist roundtrip (index save → query load) ─────────────────
@@ -152,8 +152,8 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
         .args(&["paf", "query", idx_path.to_str().unwrap(), "B:0-100"])
         .run();
     assert!(stderr.contains("Loading index"));
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
-    assert!(stdout.contains("C\t0\t0\t50\t+\tB"), "C not found");
+    assert!(stdout.contains("A\t100\t0\t100\t+\tB"), "A not found");
+    assert!(stdout.contains("C\t100\t0\t50\t+\tB"), "C not found");
 }
 
 #[test]
@@ -234,8 +234,14 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         ])
         .run();
     assert!(stderr.contains("Loading index"));
-    assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A (1-hop) not found");
-    assert!(stdout.contains("C\t0\t0\t100\t+\tA"), "C (2-hop) not found");
+    assert!(
+        stdout.contains("A\t100\t0\t100\t+\tB"),
+        "A (1-hop) not found"
+    );
+    assert!(
+        stdout.contains("C\t100\t0\t100\t+\tA"),
+        "C (2-hop) not found"
+    );
 }
 
 // ── -o overwrite protection (data safety) ────────────────────────

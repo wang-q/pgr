@@ -192,7 +192,8 @@ src/
 |----------|----------|-------------------------------------------------------|
 | `fa`     | 18       | FASTA 全能操作：统计、筛选、切分、转换、mask、索引    |
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
-| `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
+| `fq`     | 14       | FASTQ 处理：合并/纠错/延伸/清洗/过滤/归一化/质量修剪等 |
+| `asm`    | 3        | 组装相关：contig（tadpole 兼容种子组装）、unitig（BCALM 式最大 unitig + --links/--gfa 图输出）、map（完美匹配 reads 回贴，bbwrap perfectmode 替代） |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
 | `pbit`   | 7        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa） |
 | `gff`    | 2        | GFF 注释：rg (提取 feature 区间为 range 列表)、runlist (GFF → runlist JSON) |
@@ -441,8 +442,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `axt`/`psl`/`lav`/`maf` 六个模块中完整且纯 Rust 实现（不依赖 kent-tools），并与 UCSC
   **字节级一致**（主流程 + `--syn` + medium + SE11 多染色体反向，验证固化于
   `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
-- **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) +
-  `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
+- **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(14) +
+  `twobit`(5) + `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
+- **组装（`pgr asm`，2026-08-11）**：`contig`（tadpole 兼容，含 `--no-bubbles`）、
+  `unitig`（BCALM 式最大 unitig：顺序无关、无气泡、`--min-count-seed`/`--links`/`--gfa`/
+  circular 标记）、`map`（完美匹配回贴：anchors 流程 bbwrap `perfectmode` 替代，
+  SAM + basecov 输出）。性能：contig 全流程 Lambda 20k 576→157 ms（~3.7×，并行计数 +
+  排序快照）；基准 `benches/fq_assemble_benchmark.rs` / `asm_map_benchmark.rs`。
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
   syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
   精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→tube 链→mid-line wave 扩展→PSL；

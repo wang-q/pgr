@@ -1,4 +1,4 @@
-# `pgr fq assemble`：tadpole contigMode 迁移（设计）
+# `pgr asm contig`：tadpole contigMode 迁移（设计）
 
 > 2026-08-11。目标：替代 anchr 中 tadpole 的**组装用途**（contigMode）：
 > 2_insert_size 流程（硬依赖）与 unitigs 流程（`--unitigger tadpole` 可选
@@ -93,7 +93,7 @@ Tadpole1（k≤31）路径同构，junction 方向判定按
 ## 3. 命令形状
 
 ```
-pgr fq assemble [OPTIONS] <infiles>...
+pgr asm contig [OPTIONS] <infiles>...
   -k, --kmer <int>        默认 31（2_insert_size 用；unitigs 由模板按 k 循环调用）
   -o, --outfile <file>    输出 FASTA（默认 stdout）
   -p, --parallel <int|auto>  兼容参数，校验但不启用（确定性单线程，同 ecc/extend）
@@ -120,7 +120,7 @@ pgr fq assemble [OPTIONS] <infiles>...
 
 ## 6. 实现状态与已知偏差（2026-08-11 定案）
 
-`pgr fq assemble` 已实现：contig 构建（多轮种子/行走/认领）+ contig 图 +
+`pgr asm contig` 已实现：contig 构建（多轮种子/行走/认领）+ contig 图 +
 BubblePopper + 排序重编号 + 输出，全部确定性与单线程等价。
 
 **气泡开关（2026-08-11 定案）**：默认 `pop_bubbles=true`（tadpole
@@ -178,6 +178,51 @@ unitigs 组装）影响可忽略。
 - **基准**（`benches/fq_assemble_benchmark.rs`，Lambda 20k reads，k=31，
   release）：assemble 全流程 576 ms →（sorted_entries）313 ms →
   （+并行 build）157 ms，~3.7×；build 247 ms → ~100 ms。
-- **下一步（未做）**：k>64（如 unitigs k=81）时把 Myers radix sort
-  （`libs/ds/radix_sort.rs`，当前 u128 特化）泛化到多 word，替换
-  sorted_entries 的比较排序；查询侧二分 vs HashMap 需先基准。
+- **radix 化评估（2026-08-11，实测不做）**：曾尝试把 sorted_entries
+  的排序换成 Myers radix（k≤64 用 u128 投影 + `radix_sort_u128`），
+  Lambda 20k 实测反而更慢（比较排序 157 ms → radix 193 ms；用
+  `mem::take` 消除占位分配后 164 ms，仍略慢）。结论：几十万唯一
+  k-mer 规模下 `cmp_bases` 比较排序更优（缓存局部好、无投影/索引
+  构建开销）；radix 的价值需数百万级 k-mer 才可能显现，届时再评估。
+  k>64 的多 word radix 泛化同步搁置。
+
+## 8. `pgr asm unitig` 命令（2026-08-11，借鉴 BCALM graph3）
+
+新增独立命令 `pgr asm unitig`（**不从 assemble 加开关**）：不做种子
+扩展/气泡，改为**最大 unitig 压缩**（`ograph.cpp` `graph3` 语义）。拆分
+原因：`--no-bubbles`（tadpole 兼容参数）与 unitig 压缩语义不同但名字
+相似，放在同一命令下造成困惑；独立命令让每个命令只有一种组装哲学
+（assemble = tadpole 兼容 contig，unitigs = 严格图压缩）：
+
+- solid 定义 = count ≥ `min_count_seed`（默认 3）；每个 solid k-mer 沿
+  "唯一后继（out==1）且下一 k-mer 唯一前驱（in==1）" 双向延伸，分支/汇合/
+  死端/环（`visited` 检测）处断开。
+- **顺序无关**：unitig 集合由（k-mer 集 + solid 阈值）唯一确定，无认领/
+  种子顺序依赖（对比 contig 模式的确定性排序只是"复刻"扫描顺序）。
+- **无气泡**：平行路径各自成 unitig（测试
+  `command_fq_unitig_keeps_branches` 验证 ≥4 条、不横跨）。
+- 输出头沿用 contig 字段（len/cov/gc/min/max/hh/caga，无 left/right
+  分支码），`>unitig_<id>`。
+- 基准（Lambda 20k，release）：160 ms，与 contig 模式持平（计数占大头）；
+  价值在语义不在速度。
+- **适用**：高覆盖/已纠错输入（anchr unitigs 的 `pe.cor.fa`）；低覆盖
+  原始 reads 上 unitig 会比 contig 碎（实测 2k Lambda：110 条/44823 bp
+  vs contigs 77 条/48059 bp）。
+- **环状处理（简化）**：纯环 k-mer 链由 `visited` 检测断开，输出近似环
+  的路径而非闭合环（bcalm 用 expect_circular 兜底，未移植）。
+- **待验证**：真实 `pe.cor.fa` 上 unitigs 与 bcalm 输出的对照（todo §5）。
+
+### 8.1 `--links` / `--gfa`：unitig 间边输出（2026-08-11）
+
+对齐 bcalm LinkTigs 语义：两条 unitig 共享端点 (k-1)-mer 即相连。
+`--links` 在 FASTA 头追加 `L:<from±>:<to>:<to±>`（bcalm 格式）；
+`--gfa` 输出 `H`/`S`/`L` 行（overlap `(k-1)M`）。方向规则（实际序列
+匹配，简化自 LinkTigs 的 `beginInSameOrientation` 判定）：
+
+- 源右端 `r` == 目标左端 `a` → `+`/`+`（3'→5' 正向出边）；
+- `r` == rc(`a`)（目标左端）→ `+`/`-`；
+- 3'-3' / 5'-5' 相遇 → 反链表示（`-`/`-` 或 `-`/`+`）。
+
+边集合由（unitig 端点 (k-1)-mer + 阈值）唯一确定，输出排序去重后
+确定性。单测 `links_directions_branch_and_rc` 锚定三种方向组合；
+与 bcalm 真实输出对照待 todo §5。

@@ -48,6 +48,10 @@ pub struct AssembleOptions {
     pub contig_pass_mult: f64,
     /// Merge parallel paths in the contig graph (Tadpole popbubbles).
     pub pop_bubbles: bool,
+    /// Append `L:` links to unitig FASTA headers (BCALM format).
+    pub emit_links: bool,
+    /// Emit a GFA graph instead of FASTA.
+    pub emit_gfa: bool,
 }
 
 impl Default for AssembleOptions {
@@ -66,6 +70,8 @@ impl Default for AssembleOptions {
             contig_passes: 16,
             contig_pass_mult: 1.7,
             pop_bubbles: true,
+            emit_links: false,
+            emit_gfa: false,
         }
     }
 }
@@ -165,34 +171,7 @@ pub fn assemble<W: Write>(
         opts.k
     );
 
-    // Pass 1: read all records, canonicalizing qualities like BBTools.
-    let mut records: Vec<SeqRecord> = Vec::new();
-    let mut reader1 = SeqReader::new(&infiles[0])?;
-    let mut reader2 = if infiles.len() > 1 {
-        Some(SeqReader::new(&infiles[1])?)
-    } else {
-        None
-    };
-    let mut rec = SeqRecord::new();
-    loop {
-        if !reader1.read_record(&mut rec)? {
-            break;
-        }
-        canonicalize_quality(&mut rec);
-        records.push(rec.clone());
-        if let Some(r) = reader2.as_mut() {
-            if !r.read_record(&mut rec)? {
-                anyhow::bail!("unpaired trailing read in {}", infiles[0]);
-            }
-            canonicalize_quality(&mut rec);
-            records.push(rec.clone());
-        } else if !reader1.read_record(&mut rec)? {
-            anyhow::bail!("unpaired trailing read in {}", infiles[0]);
-        } else {
-            canonicalize_quality(&mut rec);
-            records.push(rec.clone());
-        }
-    }
+    let records = read_records(infiles)?;
 
     // Pass 2: count k-mers from the canonicalized (phred) qualities.
     let reads: Vec<(Vec<u8>, Vec<u8>)> = records
@@ -256,6 +235,370 @@ pub fn assemble<W: Write>(
         }
     }
     Ok(stats)
+}
+
+/// Reads all records from 1 interleaved or 2 paired files, canonicalizing
+/// qualities like BBTools (shared by the contig and unitig modes).
+fn read_records(infiles: &[String]) -> Result<Vec<SeqRecord>> {
+    let mut records: Vec<SeqRecord> = Vec::new();
+    let mut reader1 = SeqReader::new(&infiles[0])?;
+    let mut reader2 = if infiles.len() > 1 {
+        Some(SeqReader::new(&infiles[1])?)
+    } else {
+        None
+    };
+    let mut rec = SeqRecord::new();
+    loop {
+        if !reader1.read_record(&mut rec)? {
+            break;
+        }
+        canonicalize_quality(&mut rec);
+        records.push(rec.clone());
+        if let Some(r) = reader2.as_mut() {
+            if !r.read_record(&mut rec)? {
+                anyhow::bail!("unpaired trailing read in {}", infiles[0]);
+            }
+            canonicalize_quality(&mut rec);
+            records.push(rec.clone());
+        } else if !reader1.read_record(&mut rec)? {
+            anyhow::bail!("unpaired trailing read in {}", infiles[0]);
+        } else {
+            canonicalize_quality(&mut rec);
+            records.push(rec.clone());
+        }
+    }
+    Ok(records)
+}
+
+/// One maximal unitig (non-branching path; BCALM `graph3` semantics).
+#[derive(Clone)]
+struct Unitig {
+    bases: Vec<u8>,
+    id: usize,
+    coverage: f32,
+    min_cov: usize,
+    max_cov: usize,
+    /// The k-mer path closes back on itself (a circular contig).
+    circular: bool,
+}
+
+/// Assembles reads into maximal unitigs instead of seeded contigs.
+///
+/// BCALM-style compaction (`ograph.cpp` `graph3`): every solid k-mer
+/// (count >= `min_count_seed`) compresses into its unique non-branching
+/// path. A k-mer extends only while it has exactly one solid successor
+/// whose own predecessor is also unique; parallel paths stay separate
+/// (no bubble popping), and the result is independent of scan order.
+pub fn assemble_unitigs<W: Write>(
+    infiles: &[String],
+    out: &mut W,
+    opts: &AssembleOptions,
+) -> Result<AssembleStats> {
+    anyhow::ensure!(
+        opts.k >= 1,
+        "k-mer length must be at least 1, got {}",
+        opts.k
+    );
+    let records = read_records(infiles)?;
+    let reads: Vec<(Vec<u8>, Vec<u8>)> = records
+        .iter()
+        .map(|r| {
+            (
+                r.sequence().to_vec(),
+                to_phred(r.sequence(), r.quality_scores()),
+            )
+        })
+        .collect();
+    let table = TadpoleTable::build(&reads, opts.k, opts.min_prob);
+    let bases_in: u64 = reads.iter().map(|(s, _)| s.len() as u64).sum();
+
+    let mut unitigs = build_unitigs(&table, opts);
+    unitigs.sort_by(unitig_cmp);
+    let links = if opts.emit_links || opts.emit_gfa {
+        compute_links(&unitigs, opts.k)
+    } else {
+        vec![Vec::new(); unitigs.len()]
+    };
+    let mut stats = AssembleStats {
+        reads_in: records.len() as u64,
+        bases_in,
+        ..AssembleStats::default()
+    };
+    if opts.emit_gfa {
+        writeln!(out, "H\tVN:Z:1.0\tks:i:{}", opts.k)?;
+    }
+    let min_len = opts.resolved_min_contig_len();
+    for (i, u) in unitigs.iter_mut().enumerate() {
+        u.id = i;
+        if u.bases.len() >= min_len {
+            if opts.emit_gfa {
+                writeln!(out, "S\t{}\t{}", u.id, String::from_utf8_lossy(&u.bases))?;
+                for l in &links[i] {
+                    writeln!(
+                        out,
+                        "L\t{}\t{}\t{}\t{}\t{}M",
+                        u.id,
+                        if l.from_rc { '-' } else { '+' },
+                        l.to,
+                        if l.to_rc { '-' } else { '+' },
+                        opts.k.saturating_sub(1),
+                    )?;
+                }
+            } else {
+                write_unitig(
+                    out,
+                    u,
+                    if opts.emit_links {
+                        Some(&links[i])
+                    } else {
+                        None
+                    },
+                )?;
+            }
+            stats.contigs_built += 1;
+            stats.bases_built += u.bases.len() as u64;
+            stats.longest_contig = stats.longest_contig.max(u.bases.len());
+        }
+    }
+    Ok(stats)
+}
+
+/// One directed unitig link, starting at the owning unitig's right end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Link {
+    to: usize,
+    from_rc: bool,
+    to_rc: bool,
+}
+
+/// Computes links between unitigs sharing an endpoint (k-1)-mer (BCALM
+/// LinkTigs semantics, simplified to actual-sequence matching).
+///
+/// Direction rule for the source's right-end (k-1)-mer `r` meeting the
+/// target's end `a` (all in actual sequence):
+/// * `a == r` on the target's left end -> `+`/`+` (3' -> 5');
+/// * `a == rc(r)` on the target's left end -> `+`/`-`;
+/// * 3'-3' or 5'-5' meetings are expressed on the reverse strand (`-`).
+fn compute_links(unitigs: &[Unitig], k: usize) -> Vec<Vec<Link>> {
+    if k < 2 || unitigs.is_empty() {
+        return vec![Vec::new(); unitigs.len()];
+    }
+    // Endpoint (k-1)-mers indexed by canonical form; bool = right end.
+    let mut idx: HashMap<Kmer, Vec<(usize, bool)>> = HashMap::new();
+    for (i, u) in unitigs.iter().enumerate() {
+        for right in [false, true] {
+            let km = end_kmer1(&u.bases, k, right);
+            idx.entry(km.canonical()).or_default().push((i, right));
+        }
+    }
+    let mut links = vec![Vec::new(); unitigs.len()];
+    for (i, u) in unitigs.iter().enumerate() {
+        let r = end_kmer1(&u.bases, k, true);
+        let rc_r = r.rc();
+        let Some(candidates) = idx.get(&r.canonical()) else {
+            continue;
+        };
+        for &(j, j_right) in candidates {
+            if j == i {
+                continue;
+            }
+            let actual = end_kmer1(&unitigs[j].bases, k, j_right);
+            let (from_rc, to_rc) = if !j_right {
+                if actual.cmp_bases(&r) == std::cmp::Ordering::Equal {
+                    (false, false)
+                } else if actual.cmp_bases(&rc_r) == std::cmp::Ordering::Equal {
+                    (false, true)
+                } else {
+                    continue;
+                }
+            } else if actual.cmp_bases(&r) == std::cmp::Ordering::Equal {
+                (true, true)
+            } else if actual.cmp_bases(&rc_r) == std::cmp::Ordering::Equal {
+                (true, false)
+            } else {
+                continue;
+            };
+            links[i].push(Link {
+                to: j,
+                from_rc,
+                to_rc,
+            });
+        }
+    }
+    for l in &mut links {
+        l.sort_unstable();
+        l.dedup();
+    }
+    links
+}
+
+/// The (k-1)-mer at a unitig end as a `Kmer` (actual sequence).
+fn end_kmer1(bases: &[u8], k: usize, right: bool) -> Kmer {
+    let mut km = Kmer::new(k - 1);
+    if right {
+        for &b in &bases[bases.len() - (k - 1)..] {
+            km.push_right(base_code(b));
+        }
+    } else {
+        for &b in &bases[..k - 1] {
+            km.push_right(base_code(b));
+        }
+    }
+    km
+}
+
+/// Compresses every solid k-mer into its maximal unitig (order-independent).
+fn build_unitigs(table: &TadpoleTable, opts: &AssembleOptions) -> Vec<Unitig> {
+    let k = opts.k;
+    let threshold = opts.min_count_seed as u32;
+    let mut visited: HashSet<Kmer> = HashSet::new();
+    let mut unitigs = Vec::new();
+    for (seed, count) in table.sorted_entries().iter() {
+        if *count < threshold || visited.contains(seed) {
+            continue;
+        }
+        // `base_at(0)` is the 3' end (last base pushed); rebuild 5'->3'.
+        let mut bb: Vec<u8> = (0..k)
+            .map(|i| number_to_base(seed.base_at(k - 1 - i)))
+            .collect();
+        visited.insert(seed.clone());
+        // Extend right while the path stays non-branching.
+        let mut circular = false;
+        let mut kmer = rightmost_kmer(&bb, k);
+        while let Some(b) = unique_solid_out(&kmer, table, threshold) {
+            let mut next = kmer.clone();
+            next.push_right(b);
+            let canon = next.canonical();
+            if unique_solid_in(&next, table, threshold) != 1 {
+                break;
+            }
+            if visited.contains(&canon) {
+                circular = true;
+                break;
+            }
+            bb.push(number_to_base(b));
+            visited.insert(canon);
+            kmer = next;
+        }
+        // Extend left by reverse-complementing and extending right.
+        let mut rc: Vec<u8> = rev_comp(&bb).collect();
+        let mut rkmer = rightmost_kmer(&rc, k);
+        while let Some(b) = unique_solid_out(&rkmer, table, threshold) {
+            let mut next = rkmer.clone();
+            next.push_right(b);
+            let canon = next.canonical();
+            if unique_solid_in(&next, table, threshold) != 1 {
+                break;
+            }
+            if visited.contains(&canon) {
+                circular = true;
+                break;
+            }
+            rc.push(number_to_base(b));
+            visited.insert(canon);
+            rkmer = next;
+        }
+        bb = rev_comp(&rc).collect();
+        // Canonical orientation, like the contig mode.
+        if !canonical(&bb) {
+            bb = rev_comp(&bb).collect();
+        }
+        let (coverage, min_cov, max_cov) = calc_coverage(&bb, table, k);
+        unitigs.push(Unitig {
+            bases: bb,
+            id: 0,
+            coverage,
+            min_cov,
+            max_cov,
+            circular,
+        });
+    }
+    unitigs
+}
+
+/// The rightmost k-mer of `bb` (5'->3' order, pushed right).
+fn rightmost_kmer(bb: &[u8], k: usize) -> Kmer {
+    let mut kmer = Kmer::new(k);
+    for &b in &bb[bb.len() - k..] {
+        kmer.push_right(base_code(b));
+    }
+    kmer
+}
+
+/// The single solid successor of `kmer`, or None at a branch or dead end.
+fn unique_solid_out(kmer: &Kmer, table: &TadpoleTable, threshold: u32) -> Option<u8> {
+    let counts = table.fill_right_counts(kmer);
+    let mut out = None;
+    for b in 0..4u8 {
+        if counts[b as usize] >= threshold {
+            if out.is_some() {
+                return None;
+            }
+            out = Some(b);
+        }
+    }
+    out
+}
+
+/// Number of solid predecessors of `kmer`.
+fn unique_solid_in(kmer: &Kmer, table: &TadpoleTable, threshold: u32) -> usize {
+    let counts = table.fill_left_counts(kmer);
+    (0..4).filter(|&b| counts[b] >= threshold).count()
+}
+
+/// Descending length / coverage / sequence / id order (shared shape with
+/// `contig_cmp`, without the branch-code fields).
+fn unitig_cmp(a: &Unitig, b: &Unitig) -> std::cmp::Ordering {
+    match a.bases.len().cmp(&b.bases.len()).reverse() {
+        std::cmp::Ordering::Equal => {}
+        x => return x,
+    }
+    if a.coverage != b.coverage {
+        return a.coverage.partial_cmp(&b.coverage).unwrap().reverse();
+    }
+    match a.bases.cmp(&b.bases).reverse() {
+        std::cmp::Ordering::Equal => {}
+        x => return x,
+    }
+    a.id.cmp(&b.id).reverse()
+}
+
+/// Writes one unitig in FASTA with the contig-mode header fields (no
+/// left/right branch codes: unitigs have none).
+fn write_unitig<W: Write>(w: &mut W, u: &Unitig, links: Option<&[Link]>) -> Result<()> {
+    let (gc, hh, caga) = calc_scalars(&u.bases);
+    write!(
+        w,
+        ">unitig_{},len={},cov={},gc={},min={},max={},hh={},caga={}",
+        u.id,
+        u.bases.len(),
+        fmt_fixed(u.coverage as f64, 1),
+        fmt_fixed(gc as f64, 3),
+        u.min_cov,
+        u.max_cov,
+        fmt_fixed(hh as f64, 3),
+        fmt_fixed(caga as f64, 3),
+    )?;
+    if let Some(links) = links {
+        for l in links {
+            write!(
+                w,
+                " L:{}:{}:{}",
+                if l.from_rc { '-' } else { '+' },
+                l.to,
+                if l.to_rc { '-' } else { '+' },
+            )?;
+        }
+    }
+    if u.circular {
+        write!(w, ",circular")?;
+    }
+    writeln!(w)?;
+    for chunk in u.bases.chunks(70) {
+        w.write_all(chunk)?;
+        w.write_all(b"\n")?;
+    }
+    Ok(())
 }
 
 /// Seeding threshold for pass `i` (Java `minCountSeedCurrent` formula).
@@ -1672,5 +2015,73 @@ fn finalize_contigs(contigs: &mut [Contig]) {
     contigs.sort_by(contig_cmp);
     for (new_id, c) in contigs.iter_mut().enumerate() {
         c.renumber(new_id, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unitig(bases: &[u8]) -> Unitig {
+        Unitig {
+            bases: bases.to_vec(),
+            id: 0,
+            coverage: 0.0,
+            min_cov: 0,
+            max_cov: 0,
+            circular: false,
+        }
+    }
+
+    fn assert_link(links: &[Link], to: usize, from_rc: bool, to_rc: bool) {
+        assert!(
+            links
+                .iter()
+                .any(|l| l.to == to && l.from_rc == from_rc && l.to_rc == to_rc),
+            "missing link to {to} ({from_rc},{to_rc}): {links:?}"
+        );
+    }
+
+    /// Branching (3'->5' on the forward strand) and reverse-strand
+    /// directions of shared endpoint (k-1)-mers.
+    #[test]
+    fn links_directions_branch_and_rc() {
+        // S is a 30 bp random fragment (k = 31 -> k-1 = 30).
+        let s: Vec<u8> = b"GCTAAAGACAATTACATAACATACACGTCAG"[..30].to_vec();
+        assert_eq!(s.len(), 30);
+        let poly_a: Vec<u8> = b"A".repeat(50);
+        // Random filler fragments (poly-C/poly-G would share a canonical
+        // (k-1)-mer: each is the other's reverse complement).
+        let x1: Vec<u8> = b"TTTCCTCATGCAATTCAAAACCATGTCCGTAATGTAGGCGAAATAGTAAA".to_vec();
+        let x2: Vec<u8> = b"CCATTTTACGGAGGATACCAAATTCCTCCTTATTCAGGACCTAACCTGAG".to_vec();
+        let s_rc: Vec<u8> = rev_comp(&s).collect();
+
+        // Branch: U0's right end and U1/U2's left ends all share S.
+        let uts = vec![
+            unitig(&[&poly_a[..], &s[..]].concat()),
+            unitig(&[&s[..], &x1[..]].concat()),
+            unitig(&[&s[..], &x2[..]].concat()),
+        ];
+        let links = compute_links(&uts, 31);
+        assert_eq!(links[0].len(), 2);
+        assert_link(&links[0], 1, false, false);
+        assert_link(&links[0], 2, false, false);
+        assert!(links[1].is_empty() && links[2].is_empty());
+
+        // Reverse: U0's right end is rc(S), U1's left end is S.
+        let uts = vec![
+            unitig(&[&poly_a[..], &s_rc[..]].concat()),
+            unitig(&[&s[..], &x1[..]].concat()),
+        ];
+        let links = compute_links(&uts, 31);
+        assert_link(&links[0], 1, false, true);
+
+        // 3'-3': both right ends are S -> reverse-strand representation.
+        let uts = vec![
+            unitig(&[&poly_a[..], &s[..]].concat()),
+            unitig(&[&x2[..], &s[..]].concat()),
+        ];
+        let links = compute_links(&uts, 31);
+        assert_link(&links[0], 1, true, true);
     }
 }

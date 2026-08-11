@@ -2,6 +2,7 @@
 
 pub mod align;
 pub mod args;
+pub mod asm;
 pub mod axt;
 pub mod chain;
 pub mod dist;

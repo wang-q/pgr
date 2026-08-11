@@ -18,11 +18,13 @@
 - `--merge-distance > 0` 时强制要求 `--fasta-tsv`（`anyhow::bail!`），与
   `docs/paf.md` 一致。
 
-## 记录项（未改，低风险 / 待决策）
+## 记录项（已改 / 未改）
 
-- `output_paf`/`to-bed` 输出的 `query_length`/`target_length`（PAF 第 2/7 列）
-  恒为 `0`，因 `PafIndex` 不保留每序列总长。若要填充需改索引格式持久化
-  `src_size`，属跨格式变更。
+- **`output_paf` 的 `query_length`/`target_length`（PAF 第 2/7 列）已修复**
+  （2026-08-11）：`PafIndex` 新增 `seq_lens`（建索引时从 PAF 列 2/7 收集，
+  first-wins），持久化格式 v4 → v5（旧 `.paf.idx` 报"请重建"）；输出列
+  填充真实长度。测试：libs roundtrip + output_paf 长度断言；cli_paf 断言
+  从 `A\t0\t` 更新为 `A\t100\t`。
 - `to-vcf` 的部分删除样本回退为 best-effort 等位基因且不做完全左对齐
   （`docs/paf.md` 与 `after_help` 已声明）。
 - `query --transitive --merge-distance` 依赖 `--fasta-tsv` 重算 CIGAR；若用户未

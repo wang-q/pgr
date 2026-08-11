@@ -20,7 +20,7 @@ fn command_paf_query_bidirectional_mirror_finds_target() {
         .stdin(paf)
         .run();
     assert!(
-        stdout.contains("B\t0\t0\t100\t+\tA"),
+        stdout.contains("B\t100\t0\t100\t+\tA"),
         "B should be found via mirror index when querying from A"
     );
 }
@@ -37,7 +37,7 @@ fn command_paf_query_bidirectional_mirror_minus_strand() {
         .stdin(paf)
         .run();
     assert!(
-        stdout.contains("B\t0\t70\t90\t-\tA\t0\t10\t30"),
+        stdout.contains("B\t100\t70\t90\t-\tA\t100\t10\t30"),
         "B should be found via '-' mirror with RC-corrected coordinates, got: {stdout}"
     );
 }
@@ -54,11 +54,11 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
         .stdin(paf)
         .run();
     assert!(
-        stdout.contains("B\t0\t0\t100\t-\tA"),
+        stdout.contains("B\t100\t0\t100\t-\tA"),
         "B should be found via '-' mirror, got: {stdout}"
     );
     assert!(
-        stdout.contains("C\t0\t0\t100\t+\tB"),
+        stdout.contains("C\t100\t0\t100\t+\tB"),
         "C should be found via trees[B] after the '-' mirror hop, got: {stdout}"
     );
 }
@@ -72,7 +72,7 @@ fn command_paf_query_short_flag_transitive() {
         .stdin(paf)
         .run();
     assert!(
-        stdout.contains("B\t0\t0\t100\t+\tA"),
+        stdout.contains("B\t100\t0\t100\t+\tA"),
         "B should be found via mirror index when using -t short flag"
     );
 }
@@ -106,7 +106,7 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         .stdin(paf)
         .run();
     assert!(
-        stdout.contains("B\t0\t0\t100\t+\tA"),
+        stdout.contains("B\t100\t0\t100\t+\tA"),
         "B should be found via mirror (1-hop)"
     );
     assert!(
@@ -161,7 +161,7 @@ fn command_paf_query_bidirectional_persists_across_save_load() {
         ])
         .run();
     assert!(
-        stdout.contains("B\t0\t0\t100\t+\tA"),
+        stdout.contains("B\t100\t0\t100\t+\tA"),
         "bidirectional index should persist across save/load"
     );
 }

@@ -3,9 +3,9 @@ use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fq::assemble::{assemble, AssembleOptions};
 use std::io::Write;
 
-/// Build the clap subcommand for assemble.
+/// Build the clap subcommand for contig.
 pub fn make_subcommand() -> Command {
-    Command::new("assemble")
+    Command::new("contig")
         .about("Assembles reads into contigs via k-mer graph traversal (tadpole-compatible)")
         .after_help(
             r###"
@@ -33,13 +33,19 @@ Notes:
 
 Examples:
 1. Assemble contigs from corrected reads (anchr unitigs step):
-   pgr fq assemble pe.cor.fa -o unitigs_K31.fasta --kmer 31
+   pgr asm contig pe.cor.fa -o unitigs_K31.fasta --kmer 31
 
 2. Assemble from paired-end reads (anchr 2_insert_size step):
-   pgr fq assemble R1.fq.gz R2.fq.gz -o contigs.fasta
+   pgr asm contig R1.fq.gz R2.fq.gz -o contigs.fasta
 
 3. Raise the minimum contig length:
-   pgr fq assemble in.fq -o out.fasta --min-contig-len 500
+   pgr asm contig in.fq -o out.fasta --min-contig-len 500
+
+4. Raise the seeding depth threshold (tadpole `mincountseed`):
+   pgr asm contig in.fq -o out.fasta --min-count-seed 5
+
+5. Drop low-coverage contigs (tadpole `mincoverage`):
+   pgr asm contig in.fq -o out.fasta --min-coverage 5
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
@@ -64,6 +70,22 @@ Examples:
                 .help("Minimum contig length (default: max(124, 2*k))"),
         )
         .arg(
+            Arg::new("min_count_seed")
+                .long("min-count-seed")
+                .num_args(1)
+                .value_parser(value_parser!(usize))
+                .help("Minimum k-mer depth to seed a contig (tadpole mincountseed, default 3)"),
+        )
+        .arg(
+            Arg::new("min_coverage")
+                .long("min-coverage")
+                .num_args(1)
+                .value_parser(value_parser!(f32))
+                .help(
+                    "Minimum mean k-mer coverage for a contig (tadpole mincoverage, default 1.0)",
+                ),
+        )
+        .arg(
             Arg::new("no_bubbles")
                 .long("no-bubbles")
                 .action(ArgAction::SetTrue)
@@ -79,7 +101,7 @@ Examples:
         )
 }
 
-/// Execute the assemble command.
+/// Execute the contig command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
@@ -96,6 +118,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .get_one::<usize>("min_contig_len")
             .copied()
             .unwrap_or(0),
+        min_count_seed: args
+            .get_one::<usize>("min_count_seed")
+            .copied()
+            .unwrap_or(3),
+        min_coverage: args.get_one::<f32>("min_coverage").copied().unwrap_or(1.0),
         pop_bubbles: !args.get_flag("no_bubbles"),
         ..AssembleOptions::default()
     };

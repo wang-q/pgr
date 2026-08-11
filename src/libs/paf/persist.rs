@@ -14,9 +14,10 @@ const MAGIC: [u8; 4] = *b"PGRI";
 /// Format version (incremented on breaking changes).
 /// v3: bidirectional index — adds `reverse_intervals` and `LazyReversed`.
 /// v4: per-record strand — `FlatMeta.strand` for minus-strand MAF output.
-const VERSION: u32 = 4;
+/// v5: per-sequence lengths — `seq_lens` for PAF columns 2/7.
+const VERSION: u32 = 5;
 /// Supported format versions for deserialization.
-const SUPPORTED_VERSIONS: &[u32] = &[4];
+const SUPPORTED_VERSIONS: &[u32] = &[5];
 
 // ── Serializable types ───────────────────────────────────────────
 
@@ -48,6 +49,8 @@ pub type FlatTree = Vec<(u32, Vec<(i32, i32, FlatMeta)>)>;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PafIndexData {
     pub names: Vec<(String, u32)>,
+    /// `(name, total length)` for emitting PAF columns 2/7.
+    pub seq_lens: Vec<(String, u32)>,
     /// Per-target forward intervals.
     pub intervals: FlatTree,
     /// Mirror index (reverse_trees): per-query intervals for bidirectional BFS.
@@ -171,10 +174,16 @@ fn deserialize_trees(flat: &FlatTree) -> HashMap<u32, Arc<BasicCOITree<PafMetada
 /// Export index to serializable form.
 pub fn to_data(idx: &PafIndex) -> PafIndexData {
     let names: Vec<(String, u32)> = idx.names.iter().map(|(n, id)| (n.clone(), *id)).collect();
+    let seq_lens: Vec<(String, u32)> = idx
+        .seq_lens
+        .iter()
+        .map(|(n, len)| (n.clone(), *len))
+        .collect();
     let intervals = serialize_trees(&idx.trees);
     let reverse_intervals = serialize_trees(&idx.reverse_trees);
     PafIndexData {
         names,
+        seq_lens,
         intervals,
         reverse_intervals,
         lazy_source_path: idx.lazy_source_path.clone(),
@@ -189,12 +198,17 @@ pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
     for (name, id) in &data.names {
         names.insert(name.clone(), *id);
     }
+    let mut seq_lens = IndexMap::new();
+    for (name, len) in &data.seq_lens {
+        seq_lens.insert(name.clone(), *len);
+    }
 
     let trees = deserialize_trees(&data.intervals);
     let reverse_trees = deserialize_trees(&data.reverse_intervals);
 
     let mut idx = PafIndex {
         names,
+        seq_lens,
         trees,
         reverse_trees,
         lazy_source: None,
@@ -322,6 +336,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     fn test_from_data_empty() {
         let data = PafIndexData {
             names: vec![],
+            seq_lens: vec![],
             intervals: vec![],
             reverse_intervals: vec![],
             lazy_source_path: None,
@@ -341,6 +356,32 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let t1 = restored.name_to_id("t1").unwrap();
         let res = restored.query(t1, 0, 50, 0.0, 0);
         assert_eq!(res.len(), 2);
+    }
+
+    #[test]
+    fn test_roundtrip_seq_lens() {
+        let idx = build_simple();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("rt_lens.paf.idx");
+        idx.save(&tmp).unwrap();
+        let loaded = PafIndex::load(&tmp).unwrap();
+        assert_eq!(loaded.seq_lens.get("q1"), Some(&100));
+        assert_eq!(loaded.seq_lens.get("q2"), Some(&300));
+        assert_eq!(loaded.seq_lens.get("t1"), Some(&200));
+    }
+
+    #[test]
+    fn test_output_paf_lengths() {
+        let idx = build_simple();
+        let t1 = idx.name_to_id("t1").unwrap();
+        let results = idx.query(t1, 0, 50, 0.0, 0);
+        let mut buf = Vec::new();
+        crate::libs::paf::query::output_paf(&mut buf, &idx, &results).unwrap();
+        let line = String::from_utf8(buf).unwrap();
+        let cols: Vec<&str> = line.lines().next().unwrap().split('\t').collect();
+        // Columns 2 and 7 (1-based) carry the sequence total lengths.
+        assert_eq!(cols[1], "100", "query_length");
+        assert_eq!(cols[6], "200", "target_length");
     }
 
     #[test]
