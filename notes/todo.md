@@ -6,32 +6,37 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
-## 0. 会话交接（2026-08-12，OLC 调研 + 长 k-mer 计划）
+## 0. 会话交接（2026-08-12，长 k 落地 + 性能 + pgi 真实验证）
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1690 测试通过，fmt/clippy 干净（本会话仅文档改动，无代码）。
-**未提交变更（用户自行提交）**：本文件（重组 + 待实现 #1 更新）、
-`design/kmer.md`（§12 长 k 计划）、`bcalm/`（参考目录，gitignore 不提交）。
-最近提交：`69d2e0d`（references 修正）、`0c7d5d4`（celera.md）、
-`34bb4b4`（canu.md）、`ecca84e`（metaMDBG.md）。
+**当前状态**：1701 测试通过，fmt/clippy 干净。
+**未提交变更（用户自行提交）**：`src/libs/pgi/build.rs`（分组去重 +
+阶段计时日志）、`src/libs/pgi/mod.rs`（pack_kmer 大端拷贝）、
+`notes/benchmarks/bench-pgi-vs-gixmake.md`、
+`notes/benchmarks/bench-pgi-align-vs-fastga.md`、本文件。
+最近提交：`0e62692`（pgi 并行收集）、`5eaaecf`（kmer 性能）、
+`d2c422a`（k-mer 统一 FastK 字节格式 + 长 k）。
 
 **本会话成果**：
-- `references/canu.md`：Canu 2.3 OLC 三件套源码分析（overlap/layout/consensus）
-- `references/celera.md`：wgs-8.3rc2（r4627）原版 OLC 源码分析，与 Canu 对照
-- `references/metaMDBG.md`：metaMDBG 1.4 源码分析（minimizer-space DBG、
-  渐进丰度过滤）
-- `design/kmer.md` §12：长 k-mer 落地计划（统一到 FastK 表示，见待实现 #1）
+- `design/kmer.md` §12：长 k-mer 统一到 FastK 表示，M1–M5 全部落地
+- 性能优化：count_mg1655 297 → 158 ms（双窗口滚动、收集直落字节、
+  append 移动缓冲、emit 传引用）；单线程快 FastK 28%、8 线程快 16%
+- pgi 真实数据验证 + 优化：E. coli 4 基因组（20 Mb）build 817 ms
+  （vs GIXmake 505 ms，1.62×）、内存 145 MB（-19%）、并行收集 +
+  组内排序去重 + pack_kmer 大端拷贝；align mg1655×sakai 738 PSL
+  与迁移前逐条一致
 
 **关键裁定（必须遵守）**：
 - k-mer 只保留一套，以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做
-  定长对象键）；u128 键族 + tadpole Kmer 全部迁移，存储 = FastK 式连续
-  打包（k≤64 内存更小，k=81 才 25 B/条，不翻倍）→ 待实现 #1
+  定长对象键）——**已落地（M1–M5 完成）**；存储 = FastK 式连续打包；
+  u128 仅剩算法中间量（pgi 构建滚动、qcheck 判定、FastGA 移植位运算）
 - OLC 不急，挂起；多 k unitig OLC 挂账待决（见 §3，等真实宏基因组数据）
 - 气泡处理不做（明确不做区）
 
-**下一步（按优先级）**：1) 提交未提交变更；2) 长 k 计划 M1（Kmer 编码 +
-打包存储 + radix 泛化 + FastK 字节序对照单测）；3) OLC/多 k unitig 挂账。
+**下一步（按优先级）**：1) 提交未提交变更（pgi 分组/pack + 笔记）；
+2) pgi build 剩余差距（collect/sort，1.62× vs GIXmake）或转向
+repeat masking 标定（等真核数据）/ paf 查询层扩展；3) OLC 挂账。
 
 **参考源码（本地，gitignore 参考目录）**：`FASTK-master/`（长 k 第一参考）、
 `FASTGA-main/`（pgi 参考，k-mer 与 FastK 同套）、`canu-2.3/`、`wgs-8.3rc2/`、
@@ -86,13 +91,21 @@
   pgi/tadpole 全部迁移到打包字节（无 per-key 对象头），qcheck 查询侧
   转 Kmer；`.pkt`/`.pgi` 格式不变（字节与 FastK 一致，旧缓存直接兼容、
   不 bump）；k=81 table/hist/profile 端到端（2939 条与 FastK 一致）；
-  count_mg1655 219 ms（4.6 Mb）→ `design/kmer.md` §12。
+  → `design/kmer.md` §12。
+- **kmer 计数性能修复**（2026-08-12）：count_mg1655 297 → 158 ms
+  （双窗口滚动 + canonical 半长比较 + 收集直落字节 + `append` 移动
+  缓冲 + emit 传引用）；单线程 347 ms vs FastK 481 ms（-28%）、
+  8 线程 158 vs 188 ms（-16%）；基准拆解（radix 45 ms / 分组 13 ms）
+  保留在 kmer_benchmark → `design/kmer.md` §12 基准段。
+- **pgi 真实数据验证 + 优化**（2026-08-12）：E. coli 4 基因组
+  （~20 Mb）build 817 ms（vs GIXmake 505 ms，1.62×）、峰值内存
+  145 MB（迁移前 ~180 MB，-19%）；并行收集（+17%）、分组
+  HashSet → 组内排序去重（-30%）、pack_kmer 大端拷贝（-47%）；
+  align mg1655×sakai 738 PSL 与迁移前逐条一致（`.pgi` 兼容确认）
+  → `benchmarks/bench-pgi-vs-gixmake.md`、`bench-pgi-align-vs-fastga.md`。
 
 ## 2. 待实现
 
-- [ ] **k-mer 表示统一到 FastK + 长 k（k=81）落地**（2026-08-12 计划
-      修改，`design/kmer.md` §12）：**已完成（2026-08-12，见 §1）**——
-      M1–M5 全部落地，测试 1701 全绿。anchr `2_fastk` 用 `-k<21|51|81>`。
 - [ ] **repeat masking：pgi 参数标定 + 真核验证**：CLI 透传已实现（`align
       pgi` 的 `-f/--min-shared/-k/--smer/--window`），但默认值未按 §2.5 调整
       （`--freq` 10 → 100、`--min-shared` 12 → 16 待验证）；真核（拟南芥/
@@ -136,7 +149,8 @@
 - [ ] 4 万 E. coli cohort 端到端：核心步骤就绪，等真实 cohort 数据
       （来源：`ecoli-cohort.md`）。
 - [ ] 人类规模（GRCh38/CHM13）验证：`.pgi` 字段上限、内存/耗时与 FastGA
-      对照（来源：`design/pgi-align.md` §7.2）。
+      对照（来源：`design/pgi-align.md` §7.2）；E. coli 多基因组
+      （~20 Mb，8 contig）已实测（见 §1），人类规模仍待。
 - [ ] pbit 自动路由：等多样性 cohort 数据证明收益（来源：`design/pbit.md`）。
 - [ ] `--sym` 场景开关：先量化方向偏差再实现（来源：`design/pgi-align.md` §7.4.1）。
 - [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项
