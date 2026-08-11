@@ -610,3 +610,131 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
   没问题）。若将来替代 2_fastk 需要 k=81，得给 `libs/kmer` 扩表示
   （参考 FastK 字节打包，或 u128 双字），当前未做。
 * `pgr asm map`/`pgr pgi`：默认 31/40，均 ≤64，anchors/GIX 场景无缺口。
+
+## 12. 长 k-mer 落地计划：统一到 FastK 表示（2026-08-12 修改版）
+
+> 承接 §11.2 的 k=81 缺口。目标：`pgr kmer table`（及同族
+> profile/hist/gc/extract）支持 k=81，替代 anchr `2_fastk.tera.sh`
+> 的 `FastK -k<21|51|81>`。**2026-08-12 用户裁定：项目只保留一套
+> k-mer 实现，且以 FASTK-master 的表示为准**——不用 tadpole 的
+> `Vec<u64>` 方案，也不新增独立 KmerKey；u128 键族与 tadpole Kmer
+> 全部迁移到 FastK 风格字节键，最终项目里只有一个 k-mer 键类型。
+
+### 12.1 关键事实（源码核实，2026-08-12）
+
+* **FastK 编码**（`FASTK-master/`）：
+  * 2-bit/碱基字节打包，`KMER_BYTES=(k+3)>>2`（`count.c`
+    `kmer_list_thread`），**k 无硬上限**（`ARG_POSITIVE` 仅 >0）；
+  * **字节序**：字节间 5'→3'（`Fetch_Kmer`/`Current_Kmer` 先输出
+    最高字节），**字节内 5' 端碱基在低 2 位**（`setup_fmer_table`：
+    `fmer[i]` 的 l0 低 2 位 = 输出第一个碱基）——即"字节内小端"；
+  * **canonical**：正链 f 与反链 r 逐字节比较取小（`count.c:495-530`，
+    `Comp` 互补表），k%4 余位用 `KCLIP` 裁剪；
+  * 表：`Kmer_Table` = 前缀字节索引（`ibyte`/`inver`/`index`，
+    `ixlen=1<<(8*ibyte)`）+ 后缀 + u16 count（32767 cap）；
+  * 排序：Myers 风格 MSD/LSD radix（`MSDsort.c`/`LSDsort.c`）——
+    与 pgr `ds/radix_sort.rs`（FastGA MSDsort 移植）同源。
+* **pgr `.pkt` 磁盘格式已经是"打包字节 + count"**（`libs/kmer/count.rs`）：
+  header（`PKTT`/v1/k/n_entries/key_bytes）+ 每条目 `ceil(2k/8)` 字节 key
+  + u32 count。**key_bytes 由 k 决定，格式与 k 无关**——k=81 → 21 字节/条，
+  结构天然支持长 k。**但现有 `pgi::pack_kmer` 是字节内大端（base 0 在
+  字节高位），与 FastK 字节内小端方向相反**——迁移时条目字节语义翻转，
+  旧缓存需重建（缓存性质，重建便宜），`PKT_VERSION` bump 或旧表判定
+  stale（M2 定稿）。
+* **内存表示是唯一瓶颈**：`KmerTable.keys: Vec<u128>`（`count.rs:35`
+  `ensure!(1..=64)`）；同样 u128 的还有 `libs/pgi`（PgiEntry）、
+  `libs/map`（MapIndex）、`libs/kmer/quality.rs`。
+* **`kmer::n` 是唯一窗口发射函数**（`libs/kmer/mod.rs`），被
+  count/profile/norm/map 共用——统一后全部发射 FastK 字节键。
+* **tadpole Kmer**（`libs/fq/tadpole.rs:227`，`Vec<u64>` 小端窗口）：
+  **不采用**（用户裁定，不信赖该实现），组装侧一并迁移到 FastK 字节键。
+* **FASTGA（pgi 参考项目）的 k-mer = FastK 同一套**（2026-08-12 确认）：
+  `FASTGA-main/` 自带 `libfastk.c`/`ONElib.c`/`gene_core.c`（与
+  FASTK-master 同作者共享库）；`GIXmake.c` 建 GIX 索引用 2-bit 压缩
+  （`KBYTES=KMER/4`，KMER 默认 40）+ `Comp` 互补表 + canonical 取小
+  （`TMap[y] < TMap[z]`）；`FastKS.c`/`FastGA.c` 的 seed 匹配直接读
+  `libfastk.h` 的 `Kmer_Stream`（merge 两个基因组的排序 k-mer 表 →
+  adaptamer 变长种子）。pgr 的 `align pgi` 是 FastGA 移植/对照方向——
+  **统一到 FastK 表示与 pgi 方向一致**；pgr `radix_sort_u128` 本就移植自
+  FastGA `MSDsort.c`。
+
+### 12.2 方案（唯一 k-mer 键 = FastK 字节编码 + 打包存储）
+
+**唯一 k-mer 表示 = FastK 字节编码**（2-bit/碱基，字节间 5'→3'、
+**字节内 5' 端碱基在低 2 位**，canonical = 正/反链逐字节取小
+（`Comp` 互补表），k%4 余位 KCLIP 裁剪，`key_bytes=(k+3)>>2`），
+放 `libs/kmer/key.rs`：
+
+* 操作（一套实现）：`push_right`/`push_left`（字节滚动，组装侧延长）、
+  `rc`、`canonical`、`base_at(i)`、`byte_at(i)`（radix 用）、
+  `to_bytes`/`from_bytes`（`.pkt`/`.pgi` 直接承载）；
+* `Ord` 按字节序（= FastK 表序 = radix 升序 = `partition_point` 二分
+  一致）；canonical 语义与现有 u128 版一致（字典序取小），k≤64 结果
+  逐 k-mer 相同（编码方向不同，比较结果不变）。
+
+**存储形态 = FastK 式连续打包**（关键：参考项目实测，**无 per-key
+对象头**）：
+
+* `KmerTable`：`keys: Vec<u8>`（连续打包区，每条 `key_bytes` 字节）+
+  `counts: Vec<u32>`——与 FastK 表条目（`tbyte=kbyte+2`，
+  `libfastk.c:419-420`）同一形态；
+* 组装侧 HashMap（tadpole 迁移）：`Vec<u8>` 值键（kbyte 字节），同一套
+  编码与操作；
+* pgi/map 索引：同为排序表，同样打包存储（默认 k=31/40，打包后比现状
+  u128 更小）。
+
+**内存核算**（每条键，2026-08-12 对照参考项目实测）：
+
+| k | 现状 u128（16+4 B） | ~~定长 [u8;32]（32+4 B）~~ | FastK 打包（key_bytes+4 B） | FastK 原版（tbyte=kbyte+2） |
+|---|---|---|---|---|
+| 21 | 20 | 36 | 10 | 8 |
+| 31 | 20 | 36 | 12 | 10 |
+| 51 | 20 | 36 | 17 | 15 |
+| 81 | 20 | 36 | 25 | 23 |
+
+> 定长对象键（32 B）会让内存翻倍——**用户顾虑，已否决**；打包存储下
+> k≤64 比现状**更小**，k=81 仅 1.25 倍（能力扩展的必要成本）。FastK/
+> FASTGA 均为变长打包（无 per-key 对象头），本方案与其一致。
+
+**radix 泛化**：`radix_sort_u128` → 按打包条目排序（每条 `key_bytes`
+字节，counts 并行交换），k≤64 排 8-16 字节，k=81 排 21 字节。
+
+**窗口发射统一**：`kmer::n` 直接发射 Kmer 字节键（u128 快路径与 n_long
+分叉都不要），count/profile/norm/map 全部随之适配。
+
+**消费方全部迁移**（消灭 u128 键族 + tadpole Kmer）：
+
+| 消费方 | 现状 | 迁移 |
+|---|---|---|
+| `libs/kmer`（KmerTable 系列） | u128 | 换 Kmer（本计划主体） |
+| `libs/kmer/quality.rs` | u128 | 换 Kmer |
+| `libs/pgi`（PgiEntry / build） | u128 | 换 Kmer；`.pgi` 格式 bump |
+| `libs/map`（MapIndex） | u128 | 换 Kmer |
+| `libs/fq/norm.rs` | `kmer::n`（u128） | 跟随 n 自动适配 |
+| `libs/fq/tadpole.rs` | `Vec<u64>` Kmer | **替换为 Kmer**（用户裁定） |
+| `libs/nt.rs`（rc_key 等） | u128 辅助 | 随迁移收敛/删除 |
+
+### 12.3 里程碑与验证
+
+| 里程碑 | 内容 | 验证 |
+|---|---|---|
+| M1 | `key.rs`（Kmer 字节编码 + 打包存储，FastK 字节序）+ radix 泛化 | 现有测试绿；**与 FastK 二进制对照的 canonical 字节序列单测**（k=21/51/81，本地可编译 FASTK-master） |
+| M2 | kmer 族换 Kmer（count/profile/hist/gc/extract/quality） | k≤64 与 u128 语义逐 k-mer 一致（golden 回归）；`.pkt` 新旧缓存判定（bump/stale 定稿） |
+| M3 | `kmer::n` 统一发射 Kmer + norm/map 适配 | map/norm 现有测试绿；k=81 表可建可读 |
+| M4 | pgi 换 Kmer（`.pgi` bump） | pgi 测试绿；旧 `.pgi` 报错重建 |
+| M5 | tadpole 组装侧迁移 + 收尾 | asm contig/unitig k=31/81 与迁移前对照；FastK `-p` 端到端对照（-k 21/51/81）；radix/哈希基准；全项目 grep 无 u128 键/`Vec<u64>` Kmer 残留；更新本文档 + todo |
+
+### 12.4 风险与决策点
+
+* **tadpole 迁移是最大工程量**：组装热路径（asm contig/unitig、fq
+  extend/ec-kmer/merge）换键类型，`push_right`/`push_left` 从 u64 位移
+  改字节位移——M5 基准保性能（字节滚动预期不劣于 u64 版，需实测）。
+* **字节序必须与 FastK 精确一致**：字节内小端 vs 现有 pack_kmer 大端，
+  方向相反——M1 用 FastK 二进制对照锁定，M2 处理旧 `.pkt` 缓存判定。
+* **存储形态统一**：排序表打包（FastK 式，`Vec<u8>` 连续区）与组装侧
+  HashMap 值键（`Vec<u8>`）共用同一套字节编码/操作；**不做定长对象键**
+  （32 B 内存翻倍，用户否决）。k 无上限由 `key_bytes` 参数决定。
+* **k≤64 性能与内存**：radix 有效字节数不变；打包存储下 pgi/map
+  （k=31/40）内存**下降**（10-12 B vs 16 B）；M5 基准确认（预期 ≤10%）。
+* **canonical 语义**：FastK 逐字节取小与现有 u128 `min(fwd,rc)` 都是
+  字典序取小，k≤64 集合不变——M2 用 golden 回归锁定。

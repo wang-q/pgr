@@ -6,6 +6,37 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
+## 0. 会话交接（2026-08-12，OLC 调研 + 长 k-mer 计划）
+
+> 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
+
+**当前状态**：1690 测试通过，fmt/clippy 干净（本会话仅文档改动，无代码）。
+**未提交变更（用户自行提交）**：本文件（重组 + 待实现 #1 更新）、
+`design/kmer.md`（§12 长 k 计划）、`bcalm/`（参考目录，gitignore 不提交）。
+最近提交：`69d2e0d`（references 修正）、`0c7d5d4`（celera.md）、
+`34bb4b4`（canu.md）、`ecca84e`（metaMDBG.md）。
+
+**本会话成果**：
+- `references/canu.md`：Canu 2.3 OLC 三件套源码分析（overlap/layout/consensus）
+- `references/celera.md`：wgs-8.3rc2（r4627）原版 OLC 源码分析，与 Canu 对照
+- `references/metaMDBG.md`：metaMDBG 1.4 源码分析（minimizer-space DBG、
+  渐进丰度过滤）
+- `design/kmer.md` §12：长 k-mer 落地计划（统一到 FastK 表示，见待实现 #1）
+
+**关键裁定（必须遵守）**：
+- k-mer 只保留一套，以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做
+  定长对象键）；u128 键族 + tadpole Kmer 全部迁移，存储 = FastK 式连续
+  打包（k≤64 内存更小，k=81 才 25 B/条，不翻倍）→ 待实现 #1
+- OLC 不急，挂起；多 k unitig OLC 挂账待决（见 §3，等真实宏基因组数据）
+- 气泡处理不做（明确不做区）
+
+**下一步（按优先级）**：1) 提交未提交变更；2) 长 k 计划 M1（Kmer 编码 +
+打包存储 + radix 泛化 + FastK 字节序对照单测）；3) OLC/多 k unitig 挂账。
+
+**参考源码（本地，gitignore 参考目录）**：`FASTK-master/`（长 k 第一参考）、
+`FASTGA-main/`（pgi 参考，k-mer 与 FastK 同套）、`canu-2.3/`、`wgs-8.3rc2/`、
+`metaMDBG-metaMDBG-1.4/`、`bcalm/`。
+
 ## 1. 已完成（一行结论，细节见链接）
 
 - **asm 命令族 + SAM 工具**（2026-08-11/12 提交）：`pgr asm`
@@ -52,11 +83,19 @@
 
 ## 2. 待实现
 
-- [ ] **kmer table 的 k 上限 64 vs anchr 2_fastk 的 k=81**（`design/kmer.md`
-      §11）：anchr `2_fastk.tera.sh` 用 `FastK -t1 -k<21|51|81>`，k=81 超出
-      `pgr kmer table` 当前 u128 上限 64，属已知缺口。若替代 2_fastk 需要
-      k=81，给 `libs/kmer` 扩表示（参考 FastK 字节打包或 u128 双字）；`asm
-      contig`/`unitig` 走 tadpole 多字 Kmer，k=81 已可用，不受影响。
+- [ ] **k-mer 表示统一到 FastK + 长 k（k=81）落地**（2026-08-12 计划
+      修改，`design/kmer.md` §12）：用户裁定项目只保留**一套** k-mer 实现，
+      以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做定长对象键）。
+      唯一表示 = FastK 字节编码（字节内小端、canonical 逐字节取小），
+      **存储 = FastK 式连续打包**（`keys: Vec<u8>` 每条 key_bytes 字节 +
+      counts；无 per-key 对象头）；u128 键族（KmerTable/quality/pgi/map）
+      与 tadpole Kmer 全部迁移；`.pkt` 结构不变（字节语义翻转，旧缓存
+      重建）、`.pgi` bump。**内存核算**（对照 FastK tbyte 实测）：k≤64
+      打包后比现状 u128（20 B/条）更小（k=31 → 12 B），k=81 才 25 B
+      （1.25 倍），不翻倍。执行 M1（Kmer 编码 + 打包存储 + FastK 字节序
+      对照）→ M2（kmer 族迁移，k≤64 golden 不变）→ M3（`n` 统一 +
+      norm/map）→ M4（pgi）→ M5（tadpole 迁移 + FastK `-p` 对照 + 基准
+      + 收尾）。anchr `2_fastk` 用 `-k<21|51|81>`。
 - [ ] **repeat masking：pgi 参数标定 + 真核验证**：CLI 透传已实现（`align
       pgi` 的 `-f/--min-shared/-k/--smer/--window`），但默认值未按 §2.5 调整
       （`--freq` 10 → 100、`--min-shared` 12 → 16 待验证）；真核（拟南芥/
