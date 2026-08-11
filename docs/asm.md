@@ -150,6 +150,11 @@ mapped SAM with `pgr sam to-rg` and `pgr rg coverage` (see examples), which
 is cheaper when the reference is large and keeps the mapping command
 single-purpose.
 
+With `--paired`, the two read files are interleaved as R1/R2 pairs: a pair
+is mapped only when both ends match perfectly, and the SAM carries pair
+flags (0x1/0x2/0x40/0x80), mate coordinates and signed TLEN. This supports
+insert-size estimation with `pgr sam ihist` (anchr `2_insert_size` step).
+
 ```bash
 pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
 ```
@@ -159,6 +164,10 @@ pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
 *   `-k, --kmer <int>`: Seed k-mer length (default 31, range 1..=64).
 *   `--outm <file>`: SAM output of perfectly matched reads.
 *   `--outu <file>`: SAM output of unmapped reads.
+*   `--paired`: Map reads as R1/R2 pairs (exactly 2 read files; pairs with
+    an unmapped end go to `--outu`).
+*   `--max-reads <int>`: Stop after processing this many read records
+    (pairs count as two).
 *   `-p, --parallel <int|auto>`: Worker threads (real parallelism via
     rayon; output stays deterministic and in input order).
 
@@ -175,7 +184,15 @@ pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
     pgr sam to-rg mapped.sam | pgr rg coverage stdin -m 2 -o cov.json
     ```
 
-3.  **Use a longer seed k-mer**:
+3.  **Map paired reads and estimate the insert size (anchr 2_insert_size
+    step)**:
+    ```bash
+    pgr asm map UT.fasta R1.fq.gz R2.fq.gz --paired \
+        --outm mapped.sam --outu unmapped.sam --max-reads 1000000
+    pgr sam ihist mapped.sam -o insert_size.ihist.txt
+    ```
+
+4.  **Use a longer seed k-mer**:
     ```bash
     pgr asm map ref.fa reads.fq.gz -k 41 --outm mapped.sam
     ```

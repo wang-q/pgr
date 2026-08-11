@@ -30,6 +30,17 @@ pub struct MapOptions {
     pub k: usize,
     pub outm: Option<String>,
     pub outu: Option<String>,
+    /// Interleave the two read files as R1/R2 pairs and emit paired SAM
+    /// (FLAG 0x1/0x2/0x40/0x80, RNEXT/PNEXT, TLEN) for mapped pairs.
+    pub paired: bool,
+    /// Stop after processing this many read records (pairs count as two).
+    pub max_reads: Option<u64>,
+}
+
+/// The two SAM outputs (mapped / unmapped).
+struct SamOutputs {
+    outm: Option<Box<dyn Write + Send>>,
+    outu: Option<Box<dyn Write + Send>>,
 }
 
 /// Mapping statistics.
@@ -84,39 +95,127 @@ pub fn map_files(refs: &[RefRecord], read_paths: &[String], opts: &MapOptions) -
     let index = build_index(refs, opts.k)?;
 
     let mut stats = MapStats::default();
-    let mut outm = opts.outm.as_ref().map(|p| pgr_writer(p)).transpose()?;
-    let mut outu = opts.outu.as_ref().map(|p| pgr_writer(p)).transpose()?;
+    let mut outputs = SamOutputs {
+        outm: opts.outm.as_ref().map(|p| pgr_writer(p)).transpose()?,
+        outu: opts.outu.as_ref().map(|p| pgr_writer(p)).transpose()?,
+    };
     // Both SAM outputs carry the same header (bbmap writes outm/outu with
     // the shared header), so line-count ratios stay symmetric.
-    for w in [outm.as_mut(), outu.as_mut()].into_iter().flatten() {
+    for w in [outputs.outm.as_mut(), outputs.outu.as_mut()]
+        .into_iter()
+        .flatten()
+    {
         write_sam_header(w, refs)?;
     }
 
-    // Stream reads in blocks (bounded memory) and process each block in
-    // parallel; results are written in input order.
     let block_size = 100_000usize;
+    if opts.paired {
+        map_paired(
+            refs,
+            read_paths,
+            opts,
+            &index,
+            &mut outputs,
+            &mut stats,
+            block_size,
+        )?;
+    } else {
+        map_single(
+            refs,
+            read_paths,
+            opts,
+            &index,
+            &mut outputs,
+            &mut stats,
+            block_size,
+        )?;
+    }
+    drop(outputs);
+    Ok(stats)
+}
+
+/// Single-end path: stream reads in blocks (bounded memory), map each block
+/// in parallel, and write results in input order.
+fn map_single(
+    refs: &[RefRecord],
+    read_paths: &[String],
+    opts: &MapOptions,
+    index: &MapIndex,
+    outputs: &mut SamOutputs,
+    stats: &mut MapStats,
+    block_size: usize,
+) -> Result<()> {
     let mut block: Vec<SeqRecord> = Vec::with_capacity(block_size);
+    let mut processed = 0u64;
     for path in read_paths {
         let mut reader = SeqReader::new(path)?;
         let mut rec = SeqRecord::new();
         while reader.read_record(&mut rec)? {
+            if opts.max_reads.is_some_and(|m| processed >= m) {
+                break;
+            }
+            processed += 1;
             block.push(rec.clone());
             if block.len() >= block_size {
-                write_block(
-                    &block, opts.k, refs, &index, &mut outm, &mut outu, &mut stats,
-                )?;
+                write_block(&block, opts.k, refs, index, outputs, stats)?;
                 block.clear();
             }
         }
     }
     if !block.is_empty() {
-        write_block(
-            &block, opts.k, refs, &index, &mut outm, &mut outu, &mut stats,
-        )?;
+        write_block(&block, opts.k, refs, index, outputs, stats)?;
     }
-    drop(outm);
-    drop(outu);
-    Ok(stats)
+    Ok(())
+}
+
+/// Paired path: interleave the two read files (same length) into R1/R2
+/// pairs, map both ends, and write paired SAM records in input order.
+fn map_paired(
+    refs: &[RefRecord],
+    read_paths: &[String],
+    opts: &MapOptions,
+    index: &MapIndex,
+    outputs: &mut SamOutputs,
+    stats: &mut MapStats,
+    block_size: usize,
+) -> Result<()> {
+    anyhow::ensure!(
+        read_paths.len() == 2,
+        "paired mode requires exactly 2 read files (R1, R2), got {}",
+        read_paths.len()
+    );
+    let mut r1_reader = SeqReader::new(&read_paths[0])?;
+    let mut r2_reader = SeqReader::new(&read_paths[1])?;
+    let mut block: Vec<(SeqRecord, SeqRecord)> = Vec::with_capacity(block_size / 2);
+    let mut processed = 0u64;
+    loop {
+        if opts.max_reads.is_some_and(|m| processed >= m) {
+            break;
+        }
+        let mut a = SeqRecord::new();
+        let mut b = SeqRecord::new();
+        let a_ok = r1_reader.read_record(&mut a)?;
+        let b_ok = r2_reader.read_record(&mut b)?;
+        if !a_ok && !b_ok {
+            break;
+        }
+        anyhow::ensure!(
+            a_ok == b_ok,
+            "paired files have different read counts: {} vs {}",
+            read_paths[0],
+            read_paths[1]
+        );
+        processed += 2;
+        block.push((a, b));
+        if block.len() >= block_size / 2 {
+            write_pair_block(&block, opts.k, refs, index, outputs, stats)?;
+            block.clear();
+        }
+    }
+    if !block.is_empty() {
+        write_pair_block(&block, opts.k, refs, index, outputs, stats)?;
+    }
+    Ok(())
 }
 
 /// Maps one block of reads (parallel) and writes the SAM records in input
@@ -126,34 +225,24 @@ fn write_block(
     k: usize,
     refs: &[RefRecord],
     index: &MapIndex,
-    outm: &mut Option<Box<dyn Write + Send>>,
-    outu: &mut Option<Box<dyn Write + Send>>,
+    outputs: &mut SamOutputs,
     stats: &mut MapStats,
 ) -> Result<()> {
     let results: Vec<ReadResult> = block
         .par_iter()
-        .map(|rec| {
-            let read = rec.sequence();
-            let hits = map_read(read, k, index, refs);
-            ReadResult {
-                name: String::from_utf8_lossy(rec.name()).into_owned(),
-                seq: read.to_vec(),
-                qual: rec.quality_scores().to_vec(),
-                hits,
-            }
-        })
+        .map(|rec| map_one(rec, k, index, refs))
         .collect();
     stats.reads_in += results.len() as u64;
     for r in &results {
         if r.hits.is_empty() {
             stats.unmapped += 1;
-            if let Some(w) = outu.as_mut() {
+            if let Some(w) = outputs.outu.as_mut() {
                 write_unmapped(w, r)?;
             }
         } else {
             stats.mapped += 1;
             stats.hits += r.hits.len() as u64;
-            if let Some(w) = outm.as_mut() {
+            if let Some(w) = outputs.outm.as_mut() {
                 for &(cid, pos, rc) in &r.hits {
                     write_mapped(w, r, &refs[cid as usize].name, pos, rc)?;
                 }
@@ -161,6 +250,53 @@ fn write_block(
         }
     }
     Ok(())
+}
+
+/// Maps one block of R1/R2 pairs (parallel) and writes paired SAM records in
+/// input order.
+fn write_pair_block(
+    block: &[(SeqRecord, SeqRecord)],
+    k: usize,
+    refs: &[RefRecord],
+    index: &MapIndex,
+    outputs: &mut SamOutputs,
+    stats: &mut MapStats,
+) -> Result<()> {
+    let results: Vec<(ReadResult, ReadResult)> = block
+        .par_iter()
+        .map(|(a, b)| (map_one(a, k, index, refs), map_one(b, k, index, refs)))
+        .collect();
+    stats.reads_in += (results.len() * 2) as u64;
+    for (r1, r2) in &results {
+        match (r1.hits.first(), r2.hits.first()) {
+            (Some(&h1), Some(&h2)) => {
+                stats.mapped += 2;
+                stats.hits += 2;
+                if let Some(w) = outputs.outm.as_mut() {
+                    write_pair_mapped(w, r1, h1, r2, h2, refs)?;
+                }
+            }
+            _ => {
+                stats.unmapped += 2;
+                if let Some(w) = outputs.outu.as_mut() {
+                    write_pair_unmapped(w, r1, r2)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Maps one read into a [`ReadResult`] (name, sequence, qualities, hits).
+fn map_one(rec: &SeqRecord, k: usize, index: &MapIndex, refs: &[RefRecord]) -> ReadResult {
+    let read = rec.sequence();
+    let hits = map_read(read, k, index, refs);
+    ReadResult {
+        name: String::from_utf8_lossy(rec.name()).into_owned(),
+        seq: read.to_vec(),
+        qual: rec.quality_scores().to_vec(),
+        hits,
+    }
 }
 
 /// One read's mapping outcome (all exact-match positions).
@@ -274,6 +410,104 @@ fn write_unmapped<W: Write>(w: &mut W, r: &ReadResult) -> Result<()> {
         qual_string(&r.qual),
     )?;
     Ok(())
+}
+
+/// A mapped R1/R2 pair: FLAG 0x1 + 0x40/0x80 (+ 0x2 when the pair is a
+/// proper FR pair), RNEXT/PNEXT mate coordinates, and signed TLEN.
+fn write_pair_mapped<W: Write>(
+    w: &mut W,
+    r1: &ReadResult,
+    h1: (u32, u32, bool),
+    r2: &ReadResult,
+    h2: (u32, u32, bool),
+    refs: &[RefRecord],
+) -> Result<()> {
+    let (c1, p1, rc1) = h1;
+    let (c2, p2, rc2) = h2;
+    let (flag1, flag2, tlen1, tlen2) = match proper_pair_insert(h1, h2, r1.seq.len(), r2.seq.len())
+    {
+        Some((insert, left_is_r1)) => {
+            let t1 = if left_is_r1 {
+                insert as i64
+            } else {
+                -(insert as i64)
+            };
+            (0x2, 0x2, t1, -t1)
+        }
+        None => (0, 0, 0, 0),
+    };
+    let flag1 = 0x1 | 0x40 | flag1 | (rc1 as u16 * 0x10) | (rc2 as u16 * 0x20);
+    let flag2 = 0x1 | 0x80 | flag2 | (rc2 as u16 * 0x10) | (rc1 as u16 * 0x20);
+    let same = c1 == c2;
+    let rnext1: &str = if same { "=" } else { &refs[c2 as usize].name };
+    let rnext2: &str = if same { "=" } else { &refs[c1 as usize].name };
+    writeln!(
+        w,
+        "{}\t{}\t{}\t{}\t255\t{}M\t{}\t{}\t{}\t{}\t{}",
+        r1.name,
+        flag1,
+        refs[c1 as usize].name,
+        p1 + 1,
+        r1.seq.len(),
+        rnext1,
+        p2 + 1,
+        tlen1,
+        String::from_utf8_lossy(&r1.seq),
+        qual_string(&r1.qual),
+    )?;
+    writeln!(
+        w,
+        "{}\t{}\t{}\t{}\t255\t{}M\t{}\t{}\t{}\t{}\t{}",
+        r2.name,
+        flag2,
+        refs[c2 as usize].name,
+        p2 + 1,
+        r2.seq.len(),
+        rnext2,
+        p1 + 1,
+        tlen2,
+        String::from_utf8_lossy(&r2.seq),
+        qual_string(&r2.qual),
+    )?;
+    Ok(())
+}
+
+/// An unmapped pair: both records FLAG 0x4 (segmented, mate unmapped).
+fn write_pair_unmapped<W: Write>(w: &mut W, r1: &ReadResult, r2: &ReadResult) -> Result<()> {
+    for (flag, r) in [(0x1 | 0x4 | 0x8 | 0x40, r1), (0x1 | 0x4 | 0x8 | 0x80, r2)] {
+        writeln!(
+            w,
+            "{}\t{}\t*\t0\t0\t*\t*\t0\t0\t{}\t{}",
+            r.name,
+            flag,
+            String::from_utf8_lossy(&r.seq),
+            qual_string(&r.qual),
+        )?;
+    }
+    Ok(())
+}
+
+/// Insert size and leftmost read of a proper FR pair (`None` otherwise):
+/// same contig, opposite strands, reads pointing inward.
+fn proper_pair_insert(
+    h1: (u32, u32, bool),
+    h2: (u32, u32, bool),
+    len1: usize,
+    len2: usize,
+) -> Option<(usize, bool)> {
+    let (c1, p1, rc1) = h1;
+    let (c2, p2, rc2) = h2;
+    if c1 != c2 || rc1 == rc2 {
+        return None;
+    }
+    let (left, right, left_is_r1, right_len) = if !rc1 && rc2 && p1 < p2 {
+        (p1, p2, true, len2)
+    } else if rc1 && !rc2 && p2 < p1 {
+        (p2, p1, false, len1)
+    } else {
+        return None; // outward orientation
+    };
+    Some((right as usize + right_len - left as usize, left_is_r1))
 }
 
 fn pgr_writer(path: &str) -> Result<Box<dyn Write + Send>> {

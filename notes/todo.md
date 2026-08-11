@@ -7,7 +7,7 @@
 ## 0. 会话交接（2026-08-11：pgr asm 命令族就绪，待提交）
 
 **当前交接**：组装相关整合为 `pgr asm` 命令族（contig/unitig/map），
-全量 1675 测试绿、fmt/clippy clean。设计：
+全量 1690 测试绿、fmt/clippy clean。设计：
 `design/fq-assemble.md`（contig/unitig）、`design/asm-map.md`（map）。
 **下一步**：
 1. **anchr 模板替换**（用户自己处理）：`tadpole.sh` →
@@ -15,6 +15,10 @@
    文件名同步）；`bbwrap.sh perfectmode` → `pgr asm map`（anchors，
    `--outm/--outu` 输出名与模板对齐；覆盖度不再由 map 输出，改走
    `pgr sam to-rg` + `pgr rg coverage` 组合管道，见 `asm-map.md`）。
+   2_insert_size 的 bbmap ×2 → `pgr asm map --paired --max-reads
+   {{opt.reads}}` + `pgr sam ihist`（reformat ihist 替代；Picard 保留
+   外部）；tadpole 分支的"完整比对器"缺口取消——完美匹配对足以估计
+   插入长度分布（见 `asm-map.md` §2.6）。
    已知偏差：contig 的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），
    已接受确定性输出。
 2. **真实数据验证**（待数据）：unitigs/map 与 bcalm/bbmap 黑盒对照。
@@ -30,6 +34,10 @@
 - `sam to-rg`：SAM → `.rg` 行（1-based 含端点，M/D/N/=/X 计跨度，
   跳过头与 unmapped），衔接 `asm map` 与 `rg coverage`；basecov 内存累计
   已整体移出 map（4 B/bp 数组删除，覆盖度从 SAM 派生，语义等价）。
+- `asm map --paired`/`--max-reads`：配对模式（R1/R2 双端都完美才算
+  mapped，SAM 写配对位/RNEXT/PNEXT/TLEN；一端的 pair 整对进 outu）；
+  `--max-reads` 对齐 bbmap `reads=`。`sam ihist`：插入片段直方图
+  （reformat ihist 文本格式，proper FR 计数，noodles 解析）。
 - 性能：contig 计数并行 + 排序快照（576→157 ms，~3.7×，`5c92439` 已提交
   perf 部分）；radix 化实测不划算（回退，见 `fq-assemble.md` §7）。
 - **端到端演练（Lambda 20k，release）**：contig 20 条/0.2 s → unitig
@@ -44,9 +52,10 @@
    `cli_asm_*` + 删除 `cli_fq_assemble.rs`+`cli_fq_unitig.rs`、
    `docs/asm.md`、`docs/sam.md`、`docs/fq.md`、`notes/design/asm-map.md`、
    `src/cmd_pgr/sam/`、`src/libs/fmt/sam.rs`。
-2. `test+perf(asm map): streaming blocks, symmetric SAM headers, no in-memory basecov`：
+2. `test+perf(asm map): streaming blocks, symmetric SAM headers, paired mode, sam ihist`：
    `libs/map.rs` 流式/头对称/basecov 移除、`benches/asm_map_benchmark.rs`、
-   `Cargo.toml`、`benches/fq_assemble_benchmark.rs`（unitigs 条目）。
+   `Cargo.toml`（noodles-sam/noodles-core）、`benches/fq_assemble_benchmark.rs`
+   （unitigs 条目）、`asm/map.rs`（--paired/--max-reads）、`sam/ihist.rs`。
 3. `docs: assembly handover notes and command index`：`CHANGELOG.md`、
    `notes/todo.md`、`notes/design/fq-assemble.md`、`notes/project-understanding.md`。
 
@@ -70,8 +79,8 @@
    --minlen <len>`；trim.era.sh 的 bbduk 两次调用 → `pgr fq clean`（trim）
    + `pgr fq filter`（filter）；**新增**：2_insert_size/unitigs 的
    `tadpole.sh` → `pgr asm contig`（含 0_cleanup 文件名同步）。
-3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
-   直方图，pgr 无 SAM 命令，用户决定放着。
+3. **ihist（已完成 2026-08-12）**：`pgr sam ihist`（noodles 解析配对
+   SAM，reformat ihist 文本格式；`asm map --paired` 提供输入）。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。
 5. **kmer table 的 k 上限 64 vs anchr 2_fastk 的 k=81**（2026-08-11 记录，
    `design/kmer.md` §11）：anchr `2_fastk.tera.sh` 用 `FastK -t1

@@ -164,6 +164,153 @@ fn command_asm_map_short_read_unmapped() {
     assert_eq!(sam_lines(&outu).len(), 1);
 }
 
+/// Paired mode writes proper FR pairs with pair flags, mate coordinates,
+/// and signed TLEN; same-strand pairs stay mapped without FLAG 0x2; pairs
+/// with an unmapped end go to outu.
+#[test]
+fn command_asm_map_paired() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let ref_file = out_dir.path().join("ut.fa");
+    let r1_file = out_dir.path().join("R1.fq");
+    let r2_file = out_dir.path().join("R2.fq");
+    let outm = out_dir.path().join("mapped.sam");
+    let outu = out_dir.path().join("unmapped.sam");
+    std::fs::write(&ref_file, format!(">ut\n{REF}\n")).unwrap();
+    // Pair a: proper FR (R1 forward at 10, R2 reverse at 30, insert 70).
+    // Pair b: same-strand (both forward) -> mapped but not properly paired.
+    // Pair c: R1 maps, R2 does not -> both unmapped.
+    write_fastq(
+        &r1_file,
+        &[
+            ("a", &REF[10..60]),
+            ("b", &REF[20..70]),
+            ("c", &REF[40..90]),
+        ],
+    );
+    write_fastq(
+        &r2_file,
+        &[
+            ("a", &rev_comp(&REF[30..80])),
+            ("b", &REF[50..100]),
+            ("c", "AACCGGTTAACCGGTTAACCGGTTAACCGGTTAACCGGTTAACCGGTTAA"),
+        ],
+    );
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "map",
+            ref_file.to_str().unwrap(),
+            r1_file.to_str().unwrap(),
+            r2_file.to_str().unwrap(),
+            "--paired",
+            "--outm",
+            outm.to_str().unwrap(),
+            "--outu",
+            outu.to_str().unwrap(),
+            "-k",
+            "31",
+        ])
+        .assert()
+        .success();
+    let mapped = sam_lines(&outm);
+    let unmapped = sam_lines(&outu);
+    assert_eq!(mapped.len(), 4, "mapped: {mapped:?}");
+    // Pair a: FLAG 0x1|0x2|0x40|0x20 (mate rc) = 99 /
+    // 0x1|0x2|0x80|0x10 = 147.
+    assert_eq!(mapped[0][0], "a");
+    assert_eq!(mapped[0][1], "99");
+    assert_eq!(mapped[0][3], "11");
+    assert_eq!(mapped[0][6], "=");
+    assert_eq!(mapped[0][7], "31");
+    assert_eq!(mapped[0][8], "70");
+    assert_eq!(mapped[1][0], "a");
+    assert_eq!(mapped[1][1], "147");
+    assert_eq!(mapped[1][3], "31");
+    assert_eq!(mapped[1][8], "-70");
+    // Pair b: mapped, no FLAG 0x2, TLEN 0.
+    assert_eq!(mapped[2][0], "b");
+    assert_eq!(mapped[2][1], "65");
+    assert_eq!(mapped[2][8], "0");
+    assert_eq!(mapped[3][0], "b");
+    assert_eq!(mapped[3][1], "129");
+    assert_eq!(mapped[3][8], "0");
+    // Pair c: both ends unmapped in outu.
+    assert_eq!(unmapped.len(), 2);
+    assert_eq!(unmapped[0][0], "c");
+    assert_eq!(unmapped[0][1], "77");
+    assert_eq!(unmapped[1][1], "141");
+}
+
+/// `--max-reads` stops after the given number of read records.
+#[test]
+fn command_asm_map_paired_max_reads() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let ref_file = out_dir.path().join("ut.fa");
+    let r1_file = out_dir.path().join("R1.fq");
+    let r2_file = out_dir.path().join("R2.fq");
+    let outm = out_dir.path().join("mapped.sam");
+    std::fs::write(&ref_file, format!(">ut\n{REF}\n")).unwrap();
+    write_fastq(
+        &r1_file,
+        &[
+            ("r0", &REF[10..60]),
+            ("r1", &REF[10..60]),
+            ("r2", &REF[10..60]),
+        ],
+    );
+    write_fastq(
+        &r2_file,
+        &[
+            ("r0", &REF[10..60]),
+            ("r1", &REF[10..60]),
+            ("r2", &REF[10..60]),
+        ],
+    );
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "map",
+            ref_file.to_str().unwrap(),
+            r1_file.to_str().unwrap(),
+            r2_file.to_str().unwrap(),
+            "--paired",
+            "--max-reads",
+            "4",
+            "--outm",
+            outm.to_str().unwrap(),
+            "-k",
+            "31",
+        ])
+        .assert()
+        .success();
+    // Two pairs processed (4 records) -> 4 mapped lines; the third pair is
+    // not reached.
+    assert_eq!(sam_lines(&outm).len(), 4);
+}
+
+/// Paired mode requires exactly two read files.
+#[test]
+fn command_asm_map_paired_requires_two_files() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let ref_file = out_dir.path().join("ut.fa");
+    let r1_file = out_dir.path().join("R1.fq");
+    std::fs::write(&ref_file, format!(">ut\n{REF}\n")).unwrap();
+    write_fastq(&r1_file, &[("a", &REF[10..60])]);
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "map",
+            ref_file.to_str().unwrap(),
+            r1_file.to_str().unwrap(),
+            "--paired",
+            "-k",
+            "31",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("requires exactly 2 read files"));
+}
+
 /// Per-base coverage is derived from the mapped SAM via `pgr sam to-rg` and
 /// `pgr rg coverage` (the compositional anchors pipeline).
 #[test]

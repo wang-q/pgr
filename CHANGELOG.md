@@ -104,6 +104,18 @@
   span the range, header and unmapped records are skipped). Bridges the
   mapped SAM of `pgr asm map` to `pgr rg coverage` for the anchr `anchors`
   coverage step.
+* **`asm map --paired` / `--max-reads`** - paired mapping mode: the two
+  read files are interleaved as R1/R2 pairs, a pair is mapped only when
+  both ends match perfectly, and the SAM carries pair flags
+  (0x1/0x2/0x40/0x80), mate coordinates and signed TLEN. `--max-reads`
+  stops after N read records (bbmap `reads=` equivalent), matching the
+  anchr `2_insert_size` bbmap calls for insert-size estimation.
+* **`pgr sam ihist`** - new command computing the insert-size histogram
+  from a paired SAM in the BBTools `reformat.sh ihist` text format
+  (`#Mean/#Median/#Mode/#STDev/#PercentOfPairs` + `#InsertSize Count`
+  rows), replacing the `reformat.sh ihist` call of the anchr
+  `2_insert_size` step. Pairs are grouped by normalized read name; only
+  proper FR pairs contribute.
 * **`pgr paf` query output lengths** - PAF columns 2/7
   (`query_length`/`target_length`) are now populated from per-sequence
   total lengths retained in the index (format v5; old `.paf.idx` files

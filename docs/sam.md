@@ -4,7 +4,49 @@
 
 ## Subcommands
 
+*   `ihist`: Compute an insert-size histogram from a paired SAM.
 *   `to-rg`: Extract alignment coordinates as ranges (.rg).
+
+---
+
+## ihist
+
+Reads a paired SAM (e.g. the `--paired` output of `pgr asm map`) and writes
+the insert-size histogram in the BBTools `reformat.sh ihist` text format:
+`#Mean`/`#Median`/`#Mode`/`#STDev`/`#PercentOfPairs` lines followed by
+`#InsertSize  Count` rows. This replaces the `reformat.sh ihist` call of
+the anchr `2_insert_size` step.
+
+```bash
+pgr sam ihist [OPTIONS] <infile>
+```
+
+### Options
+
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
+
+### Notes
+
+*   Pairs are grouped by read name (first whitespace token, trailing
+    `/1`/`/2` stripped).
+*   Only proper FR pairs — both ends mapped, same reference, opposite
+    strands, pointing inward — contribute an insert size.
+*   `#PercentOfPairs` is the fraction of pairs contributing to the
+    histogram.
+*   The median is the lower median; the mode is the most frequent size
+    (ties -> the smallest); the standard deviation is population.
+*   Supports both plain text and gzipped (.gz) files.
+*   Reads from stdin if input file is `stdin`.
+
+### Examples
+
+1.  **Insert-size histogram from a paired mapping (anchr 2_insert_size
+    step)**:
+    ```bash
+    pgr asm map UT.fasta R1.fq.gz R2.fq.gz --paired \
+        --outm mapped.sam --outu unmapped.sam --max-reads 1000000
+    pgr sam ihist mapped.sam -o insert_size.ihist.txt
+    ```
 
 ---
 

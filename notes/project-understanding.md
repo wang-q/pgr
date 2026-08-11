@@ -463,10 +463,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - **组装（`pgr asm`，2026-08-11）**：`contig`（tadpole 兼容，含 `--no-bubbles`）、
   `unitig`（BCALM 式最大 unitig：顺序无关、无气泡、`--min-count-seed`/`--links`/`--gfa`/
   circular 标记）、`map`（完美匹配回贴：anchors 流程 bbwrap `perfectmode` 替代，
-  SAM 输出；覆盖度由 `pgr sam to-rg` + `pgr rg coverage` 派生）、
-  `sam`（to-rg 转换）。性能：contig 全流程 Lambda 20k 576→157 ms（~3.7×，
-  并行计数 + 排序快照）；基准 `benches/fq_assemble_benchmark.rs` /
-  `asm_map_benchmark.rs`。
+  SAM 输出；覆盖度由 `pgr sam to-rg` + `pgr rg coverage` 派生；`--paired`
+  + `pgr sam ihist` 覆盖 2_insert_size 的 bbmap + reformat ihist）、
+  `sam`（ihist 插入片段直方图 / to-rg 转换，noodles-sam 解析）。
+  性能：contig 全流程 Lambda 20k 576→157 ms（~3.7×，并行计数 + 排序
+  快照）；基准 `benches/fq_assemble_benchmark.rs` / `asm_map_benchmark.rs`。
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
   syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
   精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→tube 链→mid-line wave 扩展→PSL；

@@ -79,6 +79,17 @@ pgr rg coverage mapped.rg -m 2 -o cov.json  # 逐位深度（runlist JSON）
 - `sam to-rg`：跳过 `@` 头与 unmapped（FLAG 0x4 / RNAME `*` / POS 0）；
   CIGAR 的 M/D/N/=/X 计入跨度，I/S/H/P 不计（本命令只产出 `L M`，
   解析器按通用 SAM 写）。
+- **读取基于 noodles-sam 0.81**（2026-08-11）：`libs/fmt/sam.rs` 改用
+  noodles 流式 Reader/Record，`to_ranges` 签名与输出契约不变（strict
+  报错信息改为 `malformed SAM record: ...`）。版本配套：sam 0.81 ↔
+  noodles-core 0.18 ↔ gff 0.54（同一发行列车）。
+- **写出仍手写**（2026-08-11 记录）：试过把 map 的 SAM 写出换成 noodles
+  Writer，合成名字逐字节一致，但 **noodles 的 `@SQ`/RNAME 写入器强制比
+  SAM 规范更严的字符集**（拒绝 `,` 等），而我们刻意保留 bbmap 兼容的
+  "整行头字段当 refname"（`contig_0,len=4258,...`）。若 sanitize 名字，
+  下游 `ut.chr.sizes` 等按 RefName 匹配的环节会断。**结论：写出保持
+  手写**；将来做配对模式（TLEN/配对位）时需先定 refname 策略
+  （要么全链路 sanitize，要么继续原始写出），再决定是否迁移 Writer。
 - `rg coverage -d`（detailed）输出"每深度一层"的 runlist JSON；模板的
   median/MAD 按层加权（run 长度 × 深度），covered 区域 = 层名在
   [lower, upper] 的层 `runlist some` + `runlist combine --op union`。
@@ -86,6 +97,33 @@ pgr rg coverage mapped.rg -m 2 -o cov.json  # 逐位深度（runlist JSON）
   无关（与原来的 4 B/bp 恰好相反，锚定场景两者都只是几十~几百 MB）。
 - 代价：mapped SAM 必须保留并重读一遍（模板本来就要 cat 一次数行数，
   可合并）。百万级 reads 时是秒级 I/O，可接受。
+
+### 2.6 配对模式与插入片段直方图（2026-08-12，anchr 2_insert_size）
+
+`2_insert_size.tera.sh` 的两个 bbmap 调用（tadpole/ genome 参考）都只是
+为了插入片段直方图（reformat ihist + Picard 交叉验证）。结论：**完美匹配
+对足够估计插入长度分布**（测序错误与插入长度独立，完美子集无偏；Lambda
+40k reads 双端完美率 ~75%，样本量充足），不需要完整比对器。
+
+- `asm map --paired`：R1/R2 成对处理（要求恰好 2 个 reads 文件），双端
+  都完美匹配才算 mapped pair；SAM 写配对位（0x1/0x2/0x40/0x80 + 链向）、
+  RNEXT/PNEXT、signed TLEN（proper FR = 同参考 + 异链 + 相向，insert =
+  右端 - 左端 + 1）。**一端的 hit 取第一个**（(cid,pos) 序，确定性）。
+  对含一个 unmapped 端的 pair，整对写 outu（mapped pair 才进 outm，保证
+  outm 里每对都完整，Picard/iHist 可直接消费）。`--max-reads` = bbmap
+  `reads=`（按记录数计，pair 算 2），模板 `reads={{opt.reads}}` 直接映射。
+- `pgr sam ihist`（`libs/fmt/sam.rs`，noodles 解析）：按规范化名字
+  （首个空白 token，去尾部 `/1` `/2`）分组配对，proper FR pair 计插入
+  长度；输出 reformat ihist 文本格式（`#Mean/#Median/#Mode/#STDev/
+  #PercentOfPairs` + `#InsertSize\tCount`，golden `merge.ihist*.txt`
+  同款）。中位数 = 下中位（`sorted[(n-1)/2]`，golden 10 值取第 5 个
+  一致）；众数 = 最高频、并列取最小（golden 全 1 时取 158 为 BBTools 特例，
+  本命令不模拟）；STDev = 总体标准差（golden 34.218 验证一致）。
+  `#PercentOfPairs` = 贡献 pair / 输入 SAM 内 pair 总数（喂 outm 时为
+  "mapped pair 中 proper 的比例"，口径与 bbmap 不同但仅作报告）。
+- **统计口径提醒**：tadpole 分支 bbmap 是默认模式（允许错配），完美匹配
+  下的 `PercentOfPairs` 会低；均值/中位数/STDev 不受影响（无偏子样本）。
+  `statInsertSize.tsv` 仅报告用途（全仓库无下游消费者，已核实）。
 
 ## 3. 命令形状
 

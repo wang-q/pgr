@@ -1,3 +1,4 @@
+pub mod ihist;
 pub mod to_rg;
 
 use clap::{ArgMatches, Command};
@@ -6,12 +7,14 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("sam")
         .about("Manipulates SAM alignment files")
+        .subcommand(ihist::make_subcommand())
         .subcommand(to_rg::make_subcommand())
 }
 
 /// Execute the sam command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
+        Some(("ihist", sub_matches)) => ihist::execute(sub_matches),
         Some(("to-rg", sub_matches)) => to_rg::execute(sub_matches),
         _ => Ok(()),
     }

@@ -39,6 +39,8 @@ sysinfo = "0.30.13"
 
 coitrees = "0.4"
 noodles-gff = "0.54.0"
+noodles-core = "0.18.0"
+noodles-sam = "0.81.0"
 memchr = "2.8.3"
 bstr = "1.13.0"
 

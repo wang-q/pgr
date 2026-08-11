@@ -63,7 +63,7 @@ fn main() -> anyhow::Result<()> {
     * maf   - Convert to Block FA
     * paf   - PAF indexing and querying
     * psl   - PSL statistics, manipulation, and conversion
-    * sam   - SAM conversion: to-rg
+    * sam   - SAM tools: ihist, to-rg
 
 * Distance:
     * dist  - Metrics: mini / mash / frac / hv / pgi
