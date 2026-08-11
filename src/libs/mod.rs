@@ -1,4 +1,5 @@
 pub mod alignment;
+pub mod asm;
 pub mod bgzf;
 pub mod chain;
 pub mod ds;

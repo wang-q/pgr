@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
-use pgr::libs::fq::tadpole::{run, TadpoleOptions};
+use pgr::libs::asm::tadpole::{run, TadpoleOptions};
 use std::io::Write;
 
 /// Build the clap subcommand for ec-kmer.

@@ -585,7 +585,7 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
 | 表示 | 上限 | 使用方 | 校验点 |
 |---|---|---|---|
 | u128 单字（2 bit/碱基） | **k ≤ 64** | `libs/kmer`（`KmerTable.keys: Vec<u128>`）、`libs/pgi`（`PgiEntry` u128）、`libs/map`（`MapIndex.keys`） | `count::build_table`、`pgi::build_from_seqs`、`map::build_index` 均 `ensure!(1..=64)`；`.pkt`/`.pgi` 读时另有 header 校验 |
-| tadpole 多字 `Kmer`（`libs/fq/tadpole.rs`，`Vec<u64>` 共 2k 位，镜像 BBTools long array） | **无上限（k≥1）** | `asm contig`/`asm unitig`、`fq extend`/`fq ec-kmer`、`fq merge` extend2（硬编码 k=81） | CLI 仅 `range(1..)`；排序用 `cmp_bases` 比较排序，与 k 无关 |
+| tadpole 多字 `Kmer`（`libs/asm/tadpole.rs`，`Vec<u64>` 共 2k 位，镜像 BBTools long array） | **无上限（k≥1）** | `asm contig`/`asm unitig`、`fq extend`/`fq ec-kmer`、`fq merge` extend2（硬编码 k=81） | CLI 仅 `range(1..)`；排序用 `cmp_bases` 比较排序，与 k 无关 |
 | FastK 参考实现（`FASTK-master/`） | **无硬上限** | 参考实现本身 | `ARG_POSITIVE` 只要求 k>0 |
 
 要点：
@@ -652,7 +652,7 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
   `libs/map`（MapIndex）、`libs/kmer/quality.rs`。
 * **`kmer::n` 是唯一窗口发射函数**（`libs/kmer/mod.rs`），被
   count/profile/norm/map 共用——统一后全部发射 FastK 字节键。
-* **tadpole Kmer**（`libs/fq/tadpole.rs:227`，`Vec<u64>` 小端窗口）：
+* **tadpole Kmer**（`libs/asm/tadpole.rs:227`，`Vec<u64>` 小端窗口）：
   **不采用**（用户裁定，不信赖该实现），组装侧一并迁移到 FastK 字节键。
 * **FASTGA（pgi 参考项目）的 k-mer = FastK 同一套**（2026-08-12 确认）：
   `FASTGA-main/` 自带 `libfastk.c`/`ONElib.c`/`gene_core.c`（与
@@ -717,7 +717,7 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
 | `libs/pgi`（PgiEntry / build） | u128 | 换 Kmer；`.pgi` 字节布局已一致，格式不变（不 bump） |
 | `libs/map`（MapIndex） | u128 | 换 Kmer |
 | `libs/fq/norm.rs` | `kmer::n`（u128） | 跟随 n 自动适配 |
-| `libs/fq/tadpole.rs` | `Vec<u64>` Kmer | **替换为 Kmer**（用户裁定） |
+| `libs/asm/tadpole.rs` | `Vec<u64>` Kmer | **替换为 Kmer**（用户裁定） |
 | `libs/nt.rs`（rc_key 等） | u128 辅助 | 随迁移收敛/删除 |
 
 ### 12.3 里程碑与验证

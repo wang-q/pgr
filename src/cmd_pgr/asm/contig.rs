@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::fq::assemble::{assemble, AssembleOptions};
+use pgr::libs::asm::assemble::{assemble, AssembleOptions};
 use std::io::Write;
 
 /// Build the clap subcommand for contig.

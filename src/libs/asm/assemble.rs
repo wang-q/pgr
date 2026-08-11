@@ -1,10 +1,10 @@
 //! Tadpole-compatible contig assembly (contigMode).
 
-use crate::libs::fmt::seq::{SeqReader, SeqRecord};
-use crate::libs::fq::qual::{from_phred, to_phred};
-use crate::libs::fq::tadpole::{
+use crate::libs::asm::tadpole::{
     argmax2, base_code, base_defined, number_to_base, second_highest_position, Kmer, TadpoleTable,
 };
+use crate::libs::fmt::seq::{SeqReader, SeqRecord};
+use crate::libs::fq::qual::{from_phred, to_phred};
 use crate::libs::nt::rev_comp;
 use anyhow::Result;
 use std::collections::HashSet;

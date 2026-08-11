@@ -4,8 +4,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pgr::libs::fmt::seq::{SeqReader, SeqRecord};
-use pgr::libs::fq::assemble::{assemble, assemble_unitigs, AssembleOptions};
-use pgr::libs::fq::tadpole::TadpoleTable;
+use pgr::libs::asm::assemble::{assemble, assemble_unitigs, AssembleOptions};
+use pgr::libs::asm::tadpole::TadpoleTable;
 use std::sync::OnceLock;
 
 const R1: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bbtools/Lambda/R1.fq.gz");

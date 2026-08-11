@@ -1,11 +1,11 @@
 //! Paired-read overlap merging and overlap-based error correction
 //! (BBMerge-compatible).
 
+use crate::libs::asm::tadpole::{extend_read_right, TadpoleOptions, TadpoleTable};
 use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use crate::libs::fq::bbnet::CellNet;
 use crate::libs::fq::overlap;
 use crate::libs::fq::qual::{base_to_number, from_phred, to_phred};
-use crate::libs::fq::tadpole::{extend_read_right, TadpoleOptions, TadpoleTable};
 use crate::libs::nt::rev_comp;
 use anyhow::Result;
 use std::io::Write;

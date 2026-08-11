@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::fq::assemble::{assemble_unitigs, AssembleOptions};
+use pgr::libs::asm::assemble::{assemble_unitigs, AssembleOptions};
 use std::io::Write;
 
 /// Build the clap subcommand for unitig.
