@@ -7,6 +7,7 @@
 
 use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use crate::libs::fq::qual::{from_phred, to_phred};
+use crate::libs::kmer::key;
 use crate::libs::nt::rev_comp;
 use anyhow::Result;
 use rayon::prelude::*;
@@ -192,7 +193,7 @@ impl TadpoleTable {
     /// computed once and cached for the multi-pass assemble scans.
     pub(crate) fn sorted_entries(&self) -> &[(Kmer, u32)] {
         self.sorted.get_or_init(|| {
-            let mut v: Vec<(Kmer, u32)> = self.map.iter().map(|(k, &c)| (k.clone(), c)).collect();
+            let mut v: Vec<(Kmer, u32)> = self.map.iter().map(|(k, &c)| (*k, c)).collect();
             v.sort_by(|a, b| a.0.cmp_bases(&b.0));
             v
         })
@@ -202,7 +203,7 @@ impl TadpoleTable {
     pub(crate) fn fill_right_counts(&self, kmer: &Kmer) -> [u32; 4] {
         let mut out = [0u32; 4];
         for (i, c) in out.iter_mut().enumerate() {
-            let mut x = kmer.clone();
+            let mut x = *kmer;
             x.push_right(i as u8);
             *c = self.get_count(&x);
         }
@@ -213,7 +214,7 @@ impl TadpoleTable {
     pub(crate) fn fill_left_counts(&self, kmer: &Kmer) -> [u32; 4] {
         let mut out = [0u32; 4];
         for (i, c) in out.iter_mut().enumerate() {
-            let mut x = kmer.clone();
+            let mut x = *kmer;
             x.push_left(i as u8);
             *c = self.get_count(&x);
         }
@@ -221,117 +222,51 @@ impl TadpoleTable {
     }
 }
 
-/// Multi-word k-mer key (2 bits per base, base 0 in the low bits, up to
-/// `2k` bits), mirroring BBTools `Kmer` long arrays for k > 64.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct Kmer {
-    k: usize,
-    words: Vec<u64>,
-}
+/// FastK byte k-mer key (2 bits/base, bytes 5'->3') used by the assembly
+/// hot paths; a thin wrapper over `key::Kmer` kept for call-site brevity.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) struct Kmer(key::Kmer);
 
 impl Kmer {
+    /// Empty window of length `k` (`k <= key::Kmer::MAX_K`, caller-validated).
     pub(crate) fn new(k: usize) -> Self {
-        let n = (2 * k).div_ceil(64);
-        Self {
-            k,
-            words: vec![0; n],
-        }
+        Self(key::Kmer::new(k).expect("assembly k in 1..=MAX_K"))
     }
 
+    /// Reset the window to all-zero bases.
     pub(crate) fn reset(&mut self) {
-        for w in &mut self.words {
-            *w = 0;
-        }
+        *self = Self::new(self.0.k());
     }
 
-    /// Bit index of base `i` (0-based from the 5' end).
-    fn bit_pos(i: usize) -> (usize, u32) {
-        let bit = 2 * i;
-        (bit / 64, (bit % 64) as u32)
-    }
-
+    /// Base `i` as a 2-bit code (0 = 3' end, matching the legacy tadpole
+    /// indexing; the underlying FastK key is indexed from the 5' end).
     pub(crate) fn base_at(&self, i: usize) -> u8 {
-        debug_assert!(i < self.k);
-        let (w, b) = Self::bit_pos(i);
-        ((self.words[w] >> b) & 3) as u8
+        self.0.base_at(self.0.k() - 1 - i)
     }
 
-    fn set_base(&mut self, i: usize, x: u8) {
-        debug_assert!(i < self.k);
-        let (w, b) = Self::bit_pos(i);
-        self.words[w] = (self.words[w] & !(3u64 << b)) | ((x as u64) << b);
-    }
-
-    /// Shift left by one base (2 bits) and append `x` at the 3' end.
+    /// Advance the window by one base: drop the 5' base, append `x`.
     pub(crate) fn push_right(&mut self, x: u8) {
-        // Shift the whole 2k-bit window left by 2; only the highest word is
-        // masked so bits beyond the window are dropped.
-        let n = self.words.len();
-        // Number of valid bits in the highest word: 2k mod 64 (64 when the
-        // window exactly fills whole words).
-        let top_bits = (2 * self.k) % 64;
-        let top_mask = if top_bits == 0 {
-            u64::MAX
-        } else {
-            (1u64 << top_bits) - 1
-        };
-        let mut carry = 0u64;
-        for (i, w) in self.words.iter_mut().enumerate() {
-            let old = *w;
-            let shifted = (old << 2) | carry;
-            *w = if i == n - 1 {
-                shifted & top_mask
-            } else {
-                shifted
-            };
-            carry = old >> 62;
-        }
-        self.words[0] |= (x as u64) & 3;
+        self.0.push_right(x);
     }
 
-    /// Shift right by one base (2 bits) and prepend `x` at the 5' end.
+    /// Prepend `x` at the 5' end, dropping the 3' base.
     pub(crate) fn push_left(&mut self, x: u8) {
-        // Shift the whole 2k-bit window right by 2: the low 2 bits of word
-        // i+1 become the top 2 bits of word i, and the low 2 bits of word 0
-        // are discarded. Then the new base is placed at the window top.
-        let n = self.words.len();
-        for i in 0..n - 1 {
-            self.words[i] = (self.words[i] >> 2) | (self.words[i + 1] << 62);
-        }
-        self.words[n - 1] >>= 2;
-        let (w, b) = Self::bit_pos(self.k - 1);
-        self.words[w] = (self.words[w] & !(3u64 << b)) | (((x as u64) & 3) << b);
+        self.0.push_left(x);
     }
 
-    /// Reverse complement, mirroring `rc_kmer` over the base sequence.
+    /// Reverse complement.
     pub(crate) fn rc(&self) -> Self {
-        let mut r = Self::new(self.k);
-        for i in 0..self.k {
-            let x = self.base_at(i);
-            r.set_base(self.k - 1 - i, 3 - x);
-        }
-        r
-    }
-
-    /// Lexicographic comparison of the base sequences (5' to 3').
-    pub(crate) fn cmp_bases(&self, other: &Self) -> std::cmp::Ordering {
-        for i in (0..self.k).rev() {
-            match self.base_at(i).cmp(&other.base_at(i)) {
-                std::cmp::Ordering::Equal => {}
-                o => return o,
-            }
-        }
-        std::cmp::Ordering::Equal
+        Self(self.0.rc())
     }
 
     /// Canonical key (lexicographically smaller of forward / reverse-complement).
     pub(crate) fn canonical(&self) -> Self {
-        let r = self.rc();
-        if r.cmp_bases(self).is_lt() {
-            r
-        } else {
-            self.clone()
-        }
+        Self(self.0.canonical())
+    }
+
+    /// Lexicographic comparison of the base sequences (5' to 3').
+    pub(crate) fn cmp_bases(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
@@ -452,7 +387,7 @@ fn fill_kmers(bases: &[u8], k: usize) -> Vec<Option<Kmer>> {
         }
         if i >= min {
             if len >= k {
-                out.push(Some(kmer.clone()));
+                out.push(Some(kmer));
             } else {
                 out.push(None);
             }
@@ -1664,16 +1599,10 @@ mod tests {
     #[test]
     fn canonical_rc_is_identity() {
         // ACGT (0,1,2,3) RC is ACGT itself.
-        let mut k = Kmer::new(4);
-        for (i, &b) in b"ACGT".iter().enumerate() {
-            k.set_base(i, base_code(b));
-        }
+        let k = Kmer(key::Kmer::from_bases(b"ACGT", 4).unwrap());
         assert_eq!(k.rc().cmp_bases(&k), std::cmp::Ordering::Equal);
         // The canonical key is the lexicographically smaller orientation.
-        let mut r = Kmer::new(4);
-        for (i, &b) in b"GTCA".iter().enumerate() {
-            r.set_base(i, base_code(b));
-        }
+        let r = Kmer(key::Kmer::from_bases(b"GTCA", 4).unwrap());
         // RC(GTCA) = TGAC > GTCA, so canonical(r) must equal r itself.
         assert_eq!(r.canonical().cmp_bases(&r), std::cmp::Ordering::Equal);
         assert_eq!(r.canonical().cmp_bases(&r.rc()), std::cmp::Ordering::Less);
@@ -1686,15 +1615,11 @@ mod tests {
             // and by set_base in the same orientation (base i of the window
             // occupies the low 2 bits after the window is full).
             let seq: Vec<u8> = (0..k).map(|i| b"ACGT"[i % 4]).collect();
-            let mut direct = Kmer::new(k);
-            for (i, &b) in seq.iter().rev().enumerate() {
-                direct.set_base(i, base_code(b));
-            }
+            let direct = Kmer(key::Kmer::from_bases(&seq, k).unwrap());
             let mut rolled = Kmer::new(k);
             for &b in &seq {
                 rolled.push_right(base_code(b));
             }
-            eprintln!("k={k} rolled={:?} direct={:?}", rolled.words, direct.words);
             assert_eq!(
                 rolled.cmp_bases(&direct),
                 std::cmp::Ordering::Equal,
@@ -1727,7 +1652,7 @@ mod tests {
 
             // One rolling push_left (window full) must drop the oldest base
             // and prepend the new one.
-            let mut rl = rolled_rc.clone();
+            let mut rl = rolled_rc;
             rl.push_left(1);
             assert_eq!(rl.base_at(k - 1), 1, "push_left top k={k}");
             for i in 0..k - 1 {
@@ -1738,7 +1663,7 @@ mod tests {
                 );
             }
 
-            let mut rr = rolled.clone();
+            let mut rr = rolled;
             rr.push_right(2);
             assert_eq!(rr.base_at(0), 2, "push_right bottom k={k}");
             for i in 1..k {
@@ -1885,8 +1810,8 @@ fn seed_kmer_count_symmetric() {
         eprintln!(
             "{label} tail kmer count={} words={:?} canonical={:?}",
             table.get_count(&kmer),
-            kmer.words,
-            kmer.canonical().words
+            kmer,
+            kmer.canonical()
         );
     }
     // Directly compare the two canonical forms.
@@ -1900,9 +1825,9 @@ fn seed_kmer_count_symmetric() {
     }
     eprintln!(
         "f.canonical={:?} r.canonical={:?} rc_of_f={:?}",
-        f.canonical().words,
-        r.canonical().words,
-        f.rc().words
+        f.canonical(),
+        r.canonical(),
+        f.rc()
     );
     // Canonical must be orientation-invariant: canonical(f) == canonical(rc(f)).
     let f_rc = f.rc();

@@ -28,8 +28,6 @@ pub const PGI_VERSION: u32 = 2;
 /// starting at `pos_start` and spanning `freq` records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PgiEntry {
-    /// 2-bit encoded k-mer (high bits first), `2*k` significant bits.
-    pub kmer: u128,
     /// Start index into `PgiIndex::positions`.
     pub pos_start: u32,
     /// Number of positions for this k-mer.
@@ -43,7 +41,10 @@ pub struct PgiIndex {
     pub smer: usize,
     pub window: usize,
     pub contigs: Vec<(String, u64)>,
-    /// Sorted ascending by `kmer`.
+    /// Packed canonical 2-bit k-mers (FastK bytes, big-endian), `key_bytes`
+    /// each, sorted ascending.
+    pub keys: Vec<u8>,
+    /// `(pos_start, freq)` per key, parallel to `keys`.
     pub entries: Vec<PgiEntry>,
     /// Per-key grouped, in entry order: packed `(contig_id, pos, strand)`
     /// records (see `pack_position`).
@@ -101,6 +102,22 @@ const MAX_SEQ_SCAN: usize = 64;
 /// against the actual bytes, but the streaming read must not allocate on it
 /// first).
 const MAX_CONTIG_NAME: usize = 1 << 20;
+
+/// First packed-key index whose unpacked key is `>= key`.
+fn lower_bound_u128(keys: &[u8], key_bytes: usize, k: usize, key: u128) -> usize {
+    let n = keys.len() / key_bytes;
+    let mut lo = 0usize;
+    let mut hi = n;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if unpack_kmer(&keys[mid * key_bytes..(mid + 1) * key_bytes], k) < key {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
+}
 
 /// Parse and validate the header (magic/version/params/contigs) plus the
 /// per-record layout from a byte slice; returns the header, the number of
@@ -372,30 +389,31 @@ impl PgiQuery for PgiIndex {
     }
 
     fn entry_range(&self, lo: u128, hi: u128) -> (usize, usize) {
-        let i0 = self.entries.partition_point(|e| e.kmer < lo);
-        let i1 = self.entries.partition_point(|e| e.kmer < hi);
+        let i0 = lower_bound_u128(&self.keys, self.key_bytes(), self.k, lo);
+        let i1 = lower_bound_u128(&self.keys, self.key_bytes(), self.k, hi);
         (i0, i1)
     }
 
     fn entry_lower_bound_ge(&self, key: u128, from: usize) -> usize {
         let n = self.entries.len();
         let from = from.min(n);
-        if from < n && self.entries[from].kmer < key {
+        let kb = self.key_bytes();
+        if from < n && self.key_at_u128(from) < key {
             // `from` is at or below the answer: scan forward (entries are
             // index-contiguous), falling back to a binary search on a large
             // jump.
             let mut i = from;
             let mut steps = 0usize;
-            while i < n && self.entries[i].kmer < key {
+            while i < n && self.key_at_u128(i) < key {
                 i += 1;
                 steps += 1;
                 if steps >= MAX_SEQ_SCAN {
-                    return self.entries.partition_point(|e| e.kmer < key);
+                    return lower_bound_u128(&self.keys, kb, self.k, key);
                 }
             }
             i
         } else {
-            self.entries.partition_point(|e| e.kmer < key)
+            lower_bound_u128(&self.keys, kb, self.k, key)
         }
     }
 
@@ -404,7 +422,7 @@ impl PgiQuery for PgiIndex {
     }
 
     fn entry_kmer(&self, i: usize) -> u128 {
-        self.entries[i].kmer
+        self.key_at_u128(i)
     }
 
     fn entry_freq(&self, i: usize) -> u32 {
@@ -420,6 +438,17 @@ impl PgiQuery for PgiIndex {
 }
 
 impl PgiIndex {
+    /// Packed bytes per k-mer key (`ceil(k/4)`).
+    pub fn key_bytes(&self) -> usize {
+        self.k.div_ceil(4)
+    }
+
+    /// K-mer key at entry `i` as a u128 (2-bit, high bits first).
+    pub fn key_at_u128(&self, i: usize) -> u128 {
+        let kb = self.key_bytes();
+        unpack_kmer(&self.keys[i * kb..(i + 1) * kb], self.k)
+    }
+
     /// Number of unique k-mers.
     pub fn n_unique(&self) -> u64 {
         self.entries.len() as u64
@@ -468,11 +497,11 @@ impl PgiIndex {
             w.write_all(&len.to_le_bytes())?;
         }
         let mut rec = vec![0u8; kmer_bytes + pos_bytes + cont_bytes];
-        for e in &self.entries {
+        for (i, e) in self.entries.iter().enumerate() {
             let end = (e.pos_start + e.freq) as usize;
             for &prec in &self.positions[e.pos_start as usize..end] {
                 let (cid, pos, strand) = unpack_position(prec);
-                pack_kmer(e.kmer, self.k, &mut rec[..kmer_bytes]);
+                rec[..kmer_bytes].copy_from_slice(&self.keys[i * kmer_bytes..(i + 1) * kmer_bytes]);
                 let pb = &mut rec[kmer_bytes..kmer_bytes + pos_bytes];
                 pb.fill(0);
                 for (i, byte) in pb.iter_mut().enumerate() {
@@ -501,6 +530,7 @@ impl PgiIndex {
             contigs,
         } = header;
         let rec_size = layout.size();
+        let mut keys: Vec<u8> = Vec::new();
         let mut entries: Vec<PgiEntry> = Vec::new();
         let mut positions: Vec<u64> = Vec::new();
         positions
@@ -528,11 +558,8 @@ impl PgiIndex {
                 if last_kmer == Some(kmer) {
                     entries.last_mut().unwrap().freq += 1;
                 } else {
-                    entries.push(PgiEntry {
-                        kmer,
-                        pos_start,
-                        freq: 1,
-                    });
+                    keys.extend_from_slice(&rec[..layout.kmer_bytes]);
+                    entries.push(PgiEntry { pos_start, freq: 1 });
                     last_kmer = Some(kmer);
                 }
                 recs_left -= 1;
@@ -544,6 +571,7 @@ impl PgiIndex {
             smer,
             window,
             contigs,
+            keys,
             entries,
             positions,
         })
@@ -563,11 +591,14 @@ pub struct PgiStream<R: Read> {
     buf: Vec<u8>,
     buf_off: usize,
     buf_end: usize,
-    pending: Option<(PgiEntry, Vec<u64>)>,
+    pending: Option<(PgiEntry, Vec<u64>, Vec<u8>)>,
 }
 
 /// Stream read buffer size (1 MiB of records).
 const STREAM_BUF: usize = 1 << 20;
+
+/// One streamed batch item: entry, its positions, and packed key bytes.
+pub type StreamEntry = (PgiEntry, Vec<u64>, Vec<u8>);
 
 impl<R: Read> PgiStream<R> {
     /// Open a stream over a .pgi reader, validating the header.
@@ -592,10 +623,10 @@ impl<R: Read> PgiStream<R> {
 
     /// Next batch of up to `max_entries` complete entries (with positions),
     /// or an empty vec at end of stream. Entries are never split across
-    /// batches.
-    pub fn next_batch(&mut self, max_entries: usize) -> anyhow::Result<Vec<(PgiEntry, Vec<u64>)>> {
-        let mut out: Vec<(PgiEntry, Vec<u64>)> = Vec::new();
-        let mut cur: Option<(PgiEntry, Vec<u64>)> = self.pending.take();
+    /// batches; each carries its packed key bytes.
+    pub fn next_batch(&mut self, max_entries: usize) -> anyhow::Result<Vec<StreamEntry>> {
+        let mut out: Vec<StreamEntry> = Vec::new();
+        let mut cur: Option<StreamEntry> = self.pending.take();
         while self.recs_left > 0 && out.len() < max_entries {
             if self.buf_off == self.buf_end {
                 let want = (self.recs_left * self.layout.size()).min(STREAM_BUF)
@@ -612,31 +643,32 @@ impl<R: Read> PgiStream<R> {
             let rec = &self.buf[self.buf_off..self.buf_off + self.layout.size()];
             self.buf_off += self.layout.size();
             self.recs_left -= 1;
-            let (kmer, cid, pos, strand) = parse_record(rec, self.header.k, self.layout);
+            let key = &rec[..self.layout.kmer_bytes];
+            let (_kmer, cid, pos, strand) = parse_record(rec, self.header.k, self.layout);
             validate_record(cid, pos, self.header.k, &self.header.contigs)?;
-            if let Some((e, poss)) = &mut cur {
-                if e.kmer == kmer {
+            if let Some((_e, poss, key0)) = &mut cur {
+                if key0[..] == key[..] {
                     poss.push(pack_position(cid, pos, strand));
                     continue;
                 }
-                let (mut e, poss) = cur.take().expect("cur is Some");
+                let (mut e, poss, k) = cur.take().expect("cur is Some");
                 e.freq = poss.len() as u32;
-                out.push((e, poss));
+                out.push((e, poss, k));
             }
             cur = Some((
                 PgiEntry {
-                    kmer,
                     pos_start: 0,
                     freq: 0,
                 },
                 vec![pack_position(cid, pos, strand)],
+                key.to_vec(),
             ));
         }
         if self.recs_left == 0 {
             // End of stream: the carried entry is complete, yield it.
-            if let Some((mut e, poss)) = cur {
+            if let Some((mut e, poss, key)) = cur {
                 e.freq = poss.len() as u32;
-                out.push((e, poss));
+                out.push((e, poss, key));
             }
         } else {
             self.pending = cur;
@@ -846,7 +878,7 @@ mod tests {
             if batch.is_empty() {
                 break;
             }
-            for (e, poss) in batch {
+            for (e, poss, _key) in batch {
                 let start = positions.len() as u32;
                 entries.push(PgiEntry {
                     pos_start: start,

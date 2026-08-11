@@ -27,7 +27,7 @@ fn bench_build_and_profiles(c: &mut Criterion) {
     group.bench_function("count_mg1655", |b| {
         b.iter(|| {
             let table = kmer::count::build_table(&seqs, k).unwrap();
-            black_box(table.keys.len())
+            black_box(table.counts.len())
         })
     });
     group.bench_function("self_profiles_mg1655", |b| {
@@ -62,20 +62,18 @@ fn bench_build_and_profiles(c: &mut Criterion) {
 // number of comparisons. The production path switched to sort+merge instead
 // (see notes/benchmarks/bench-profile-hotspots.md).
 struct BenchPrefixIndex {
-    shift: u32,
+    key_bytes: usize,
     offsets: Vec<u32>,
 }
 
 impl BenchPrefixIndex {
-    fn new(keys: &[u128], k: usize) -> Self {
-        let bucket_bits = (16usize).min(2 * k);
-        let shift = (128 - bucket_bits) as u32;
-        let n_buckets = 1usize << bucket_bits;
+    fn new(keys: &[u8], key_bytes: usize) -> Self {
+        let n_buckets = 1usize << 16;
         let mut offsets = vec![0u32; n_buckets + 1];
-        let n = keys.len();
+        let n = keys.len() / key_bytes;
         let mut prev = 0usize;
-        for (i, &key) in keys.iter().enumerate() {
-            let bucket = (key >> shift) as usize;
+        for i in 0..n {
+            let bucket = prefix_bytes(keys, key_bytes, i);
             while prev < bucket {
                 offsets[prev + 1] = i as u32;
                 prev += 1;
@@ -84,18 +82,40 @@ impl BenchPrefixIndex {
         for b in prev..n_buckets {
             offsets[b + 1] = n as u32;
         }
-        Self { shift, offsets }
+        Self { key_bytes, offsets }
     }
 
-    fn lookup(&self, keys: &[u128], counts: &[u32], key: u128) -> Option<u32> {
-        let bucket = (key >> self.shift) as usize;
+    fn lookup(&self, keys: &[u8], counts: &[u32], key: &pgr::libs::kmer::key::Kmer) -> Option<u32> {
+        let kb = self.key_bytes;
+        let bucket = prefix_bytes(key.to_bytes(), kb, 0);
         let start = self.offsets[bucket] as usize;
         let end = self.offsets[bucket + 1] as usize;
-        match keys[start..end].binary_search(&key) {
-            Ok(i) => Some(counts[start + i]),
-            Err(_) => None,
+        let mut lo = start;
+        let mut hi = end;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if &keys[mid * kb..(mid + 1) * kb] < key.to_bytes() {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo < end && &keys[lo * kb..(lo + 1) * kb] == key.to_bytes() {
+            Some(counts[lo])
+        } else {
+            None
         }
     }
+}
+
+/// 16-bit prefix of packed record `i` (high bytes, zero padded on the left
+/// when `key_bytes < 2`).
+fn prefix_bytes(keys: &[u8], key_bytes: usize, i: usize) -> usize {
+    let mut b = 0usize;
+    for j in 0..key_bytes.min(2) {
+        b = (b << 8) | keys[i * key_bytes + j] as usize;
+    }
+    b << ((2 - key_bytes.min(2)) * 8)
 }
 
 fn bench_lookups(c: &mut Criterion) {
@@ -106,18 +126,30 @@ fn bench_lookups(c: &mut Criterion) {
         .map(|(_, s)| s)
         .collect();
     let table = kmer::count::build_table(&seqs, k).unwrap();
-    let mut windows: Vec<u128> = Vec::new();
+    let key_bytes = table.key_bytes();
+    let mut windows: Vec<pgr::libs::kmer::key::Kmer> = Vec::new();
     for seq in &seqs {
         kmer::canonical_keys(seq, k, |_, key| windows.push(key));
     }
-    let index = BenchPrefixIndex::new(&table.keys, k);
+    let index = BenchPrefixIndex::new(&table.keys, key_bytes);
     let mut group = c.benchmark_group("kmer_lookup");
     group.bench_function("global_partition_point", |b| {
         b.iter(|| {
             let mut hits = 0usize;
-            for &key in &windows {
-                let idx = table.keys.partition_point(|&x| x < key);
-                if idx < table.keys.len() && table.keys[idx] == key {
+            for key in &windows {
+                let mut lo = 0usize;
+                let mut hi = table.counts.len();
+                while lo < hi {
+                    let mid = (lo + hi) / 2;
+                    if &table.keys[mid * key_bytes..(mid + 1) * key_bytes] < key.to_bytes() {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                if lo < table.counts.len()
+                    && &table.keys[lo * key_bytes..(lo + 1) * key_bytes] == key.to_bytes()
+                {
                     hits += 1;
                 }
             }
@@ -127,7 +159,7 @@ fn bench_lookups(c: &mut Criterion) {
     group.bench_function("prefix_index", |b| {
         b.iter(|| {
             let mut hits = 0usize;
-            for &key in &windows {
+            for key in &windows {
                 if index.lookup(&table.keys, &table.counts, key).is_some() {
                     hits += 1;
                 }

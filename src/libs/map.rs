@@ -4,9 +4,10 @@
 //! read by verifying full-length exact matches (no mismatches, no gaps) at
 //! all candidate positions. Design: `notes/design/asm-map.md`.
 
-use crate::libs::ds::radix_sort::radix_sort_u128;
+use crate::libs::ds::radix_sort::radix_sort_bytes;
 use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use crate::libs::kmer::canonical_keys;
+use crate::libs::kmer::key::Kmer;
 use crate::libs::nt::rev_comp;
 use anyhow::Result;
 use rayon::prelude::*;
@@ -21,7 +22,8 @@ pub struct RefRecord {
 /// Canonical k-mer position index over the reference: sorted keys with
 /// packed `(contig_id, pos)` payloads, binary-searched per seed.
 pub struct MapIndex {
-    keys: Vec<u128>,
+    /// Packed canonical k-mer keys (FastK bytes), `key_bytes` each.
+    keys: Vec<u8>,
     payloads: Vec<u64>,
 }
 
@@ -68,23 +70,55 @@ pub fn read_fasta(paths: &[String]) -> Result<Vec<RefRecord>> {
     Ok(refs)
 }
 
-/// Builds the canonical k-mer index (`k` in 1..=64, u128 key).
+/// Builds the canonical k-mer index (`k` up to `Kmer::MAX_K`).
 pub fn build_index(refs: &[RefRecord], k: usize) -> Result<MapIndex> {
     anyhow::ensure!(
-        (1..=64).contains(&k),
-        "k-mer length must be in 1..=64, got {k}"
+        k > 0 && k <= Kmer::MAX_K,
+        "k-mer length must be in 1..={}, got {k}",
+        Kmer::MAX_K
     );
+    let key_bytes = k.div_ceil(4);
     let mut keys = Vec::new();
     let mut payloads = Vec::new();
     for (cid, r) in refs.iter().enumerate() {
         let cid = cid as u64;
         canonical_keys(&r.seq, k, |pos, key| {
-            keys.push(key);
+            keys.extend_from_slice(key.to_bytes());
             payloads.push((cid << 32) | pos as u64);
         });
     }
-    radix_sort_u128(&mut keys, &mut payloads, 2 * k as u32);
+    radix_sort_bytes(&mut keys, key_bytes, &mut payloads);
     Ok(MapIndex { keys, payloads })
+}
+
+/// First index whose packed key is `>= key`.
+fn lower_bound(keys: &[u8], key_bytes: usize, key: &Kmer) -> usize {
+    let mut lo = 0usize;
+    let mut hi = keys.len() / key_bytes;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if &keys[mid * key_bytes..(mid + 1) * key_bytes] < key.to_bytes() {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
+}
+
+/// First index whose packed key is `> key`.
+fn upper_bound(keys: &[u8], key_bytes: usize, key: &Kmer) -> usize {
+    let mut lo = 0usize;
+    let mut hi = keys.len() / key_bytes;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if &keys[mid * key_bytes..(mid + 1) * key_bytes] <= key.to_bytes() {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
 }
 
 /// Maps all reads from `read_paths` and writes the SAM outputs.
@@ -313,11 +347,13 @@ fn map_read(read: &[u8], k: usize, index: &MapIndex, refs: &[RefRecord]) -> Vec<
     if read.len() < k {
         return Vec::new();
     }
-    let Some(seed) = kmer_canonical(&read[..k], k) else {
+    let Some(seed) = Kmer::from_bases(&read[..k], k) else {
         return Vec::new();
     };
-    let lo = index.keys.partition_point(|&x| x < seed);
-    let hi = index.keys.partition_point(|&x| x <= seed);
+    let seed = seed.canonical();
+    let key_bytes = k.div_ceil(4);
+    let lo = lower_bound(&index.keys, key_bytes, &seed);
+    let hi = upper_bound(&index.keys, key_bytes, &seed);
     if lo == hi {
         return Vec::new();
     }
@@ -342,25 +378,6 @@ fn map_read(read: &[u8], k: usize, index: &MapIndex, refs: &[RefRecord]) -> Vec<
     // promise a stable order among equal keys).
     hits.sort_unstable();
     hits
-}
-
-/// Canonical (2-bit, strand-minimized) key of a k-mer window; `None` when
-/// the window contains an undefined base (N or ambiguity).
-fn kmer_canonical(seq: &[u8], k: usize) -> Option<u128> {
-    let codes = crate::libs::kmer::base_codes();
-    let kmask = (1u128 << (2 * k)) - 1;
-    let rc_top = (2 * k - 2) as u32;
-    let mut fwd = 0u128;
-    let mut rev = 0u128;
-    for &b in seq {
-        let c = codes[b as usize] as u128;
-        if c == 4 {
-            return None;
-        }
-        fwd = ((fwd << 2) | c) & kmask;
-        rev = (rev >> 2) | ((3 - c) << rc_top);
-    }
-    Some(fwd.min(rev))
 }
 
 fn write_sam_header<W: Write>(w: &mut W, refs: &[RefRecord]) -> Result<()> {

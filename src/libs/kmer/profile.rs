@@ -1,7 +1,8 @@
 //! Per-sequence k-mer profiles (FastK `-p` / `-p:<table>` equivalents).
 
 use super::KmerTable;
-use crate::libs::ds::radix_sort::radix_sort_u128_par;
+use crate::libs::ds::radix_sort::radix_sort_bytes_par;
+use crate::libs::kmer::key::Kmer;
 use anyhow::Context;
 use rayon::prelude::*;
 use std::io::Write;
@@ -44,7 +45,8 @@ fn table_profiles(seqs: &[Vec<u8>], k: usize, table: &KmerTable) -> Vec<Vec<u16>
     }
     // Collect every valid window as (key, location); per-sequence vectors so
     // the collection itself can run in parallel, then flatten for sorting.
-    let per_seq: Vec<Vec<(u128, Loc)>> = seqs
+    let key_bytes = k.div_ceil(4);
+    let per_seq: Vec<Vec<(Kmer, Loc)>> = seqs
         .par_iter()
         .enumerate()
         .map(|(si, seq)| {
@@ -54,15 +56,15 @@ fn table_profiles(seqs: &[Vec<u8>], k: usize, table: &KmerTable) -> Vec<Vec<u16>
         })
         .collect();
     let n_windows: usize = per_seq.iter().map(Vec::len).sum();
-    let mut keys: Vec<u128> = Vec::with_capacity(n_windows);
+    let mut keys: Vec<u8> = Vec::with_capacity(n_windows * key_bytes);
     let mut locs: Vec<Loc> = Vec::with_capacity(n_windows);
     for v in per_seq {
         for (key, loc) in v {
-            keys.push(key);
+            keys.extend_from_slice(key.to_bytes());
             locs.push(loc);
         }
     }
-    radix_sort_u128_par(&mut keys, &mut locs, 2 * k as u32);
+    radix_sort_bytes_par(&mut keys, key_bytes, &mut locs);
     // Merge sorted windows against the (sorted, deduplicated) table: equal
     // keys receive the table count; everything else stays 0 (N windows were
     // never collected).
@@ -72,21 +74,22 @@ fn table_profiles(seqs: &[Vec<u8>], k: usize, table: &KmerTable) -> Vec<Vec<u16>
         .collect();
     let mut i = 0usize;
     let mut j = 0usize;
-    while i < keys.len() && j < table.keys.len() {
-        let wk = keys[i];
-        let tk = table.keys[j];
-        if wk < tk {
-            i += 1;
-        } else if wk > tk {
-            j += 1;
-        } else {
-            let count = table.counts[j].min(PROFILE_CAP as u32) as u16;
-            while i < keys.len() && keys[i] == tk {
-                let (si, pos) = locs[i].split();
-                out[si][pos] = count;
-                i += 1;
+    let table_n = table.counts.len();
+    while i < n_windows && j < table_n {
+        let wk = &keys[i * key_bytes..(i + 1) * key_bytes];
+        let tk = &table.keys[j * key_bytes..(j + 1) * key_bytes];
+        match wk.cmp(tk) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => {
+                let count = table.counts[j].min(PROFILE_CAP as u32) as u16;
+                while i < n_windows && keys[i * key_bytes..(i + 1) * key_bytes] == *tk {
+                    let (si, pos) = locs[i].split();
+                    out[si][pos] = count;
+                    i += 1;
+                }
+                j += 1;
             }
-            j += 1;
         }
     }
     out
@@ -207,7 +210,11 @@ mod tests {
         (0..100u64)
             .map(|i| random_block(80, seed0 + i))
             .find(|b| {
-                build_table(std::slice::from_ref(b), k).unwrap().keys.len() == b.len() - k + 1
+                build_table(std::slice::from_ref(b), k)
+                    .unwrap()
+                    .counts
+                    .len()
+                    == b.len() - k + 1
             })
             .expect("a collision-free block must exist")
     }
@@ -289,9 +296,21 @@ mod tests {
                     .map(|seq| {
                         let mut out = vec![0u16; seq.len().saturating_sub(k - 1)];
                         crate::libs::kmer::canonical_keys(seq, k, |p, key| {
-                            let idx = table.keys.partition_point(|&x| x < key);
-                            if idx < table.keys.len() && table.keys[idx] == key {
-                                out[p] = table.counts[idx].min(PROFILE_CAP as u32) as u16;
+                            let kb = table.key_bytes();
+                            let mut lo = 0usize;
+                            let mut hi = table.counts.len();
+                            while lo < hi {
+                                let mid = (lo + hi) / 2;
+                                if &table.keys[mid * kb..(mid + 1) * kb] < key.to_bytes() {
+                                    lo = mid + 1;
+                                } else {
+                                    hi = mid;
+                                }
+                            }
+                            if lo < table.counts.len()
+                                && &table.keys[lo * kb..(lo + 1) * kb] == key.to_bytes()
+                            {
+                                out[p] = table.counts[lo].min(PROFILE_CAP as u32) as u16;
                             }
                         });
                         out

@@ -29,11 +29,14 @@ const PKT_HEADER_LEN: usize = 24;
 /// Build a canonical k-mer count table from `seqs`.
 ///
 /// Every N-free k-mer window contributes its canonical key; counts accumulate
-/// across all sequences (FastK `-p` semantics). `k` must be in `1..=64` so
-/// `2*k` bits fit a `u128` key.
+/// across all sequences (FastK `-p` semantics). `k` must be `<= MAX_K`.
 pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
-    anyhow::ensure!(k > 0 && k <= 64, "k must be in 1..=64, got {k}");
-    let mut per_seq: Vec<Vec<u128>> = seqs
+    anyhow::ensure!(
+        k > 0 && k <= crate::libs::kmer::key::Kmer::MAX_K,
+        "k must be in 1..={}, got {k}",
+        crate::libs::kmer::key::Kmer::MAX_K
+    );
+    let per_seq: Vec<Vec<crate::libs::kmer::key::Kmer>> = seqs
         .par_iter()
         .map(|seq| {
             let mut keys = Vec::new();
@@ -42,18 +45,22 @@ pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
         })
         .collect();
     let n: usize = per_seq.iter().map(Vec::len).sum();
-    let mut keys: Vec<u128> = Vec::with_capacity(n);
-    for v in &mut per_seq {
-        keys.append(v);
+    let mut keys: Vec<u8> = Vec::with_capacity(n * k.div_ceil(4));
+    for v in &per_seq {
+        for km in v {
+            keys.extend_from_slice(km.to_bytes());
+        }
     }
     Ok(count_keys(keys, k))
 }
 
-/// Sorts a raw canonical key list (with duplicates) into a count table.
+/// Sorts a packed raw canonical key list (with duplicates) into a count
+/// table.
 ///
 /// The deduplication tail shared by [`build_table`] and the memory-bounded
-/// bucket path of `fq norm`. `k` must already be validated (`1..=64`).
-pub(crate) fn count_keys(mut keys: Vec<u128>, k: usize) -> KmerTable {
+/// bucket path of `fq norm`. `k` must already be validated.
+pub(crate) fn count_keys(mut keys: Vec<u8>, k: usize) -> KmerTable {
+    let key_bytes = k.div_ceil(4);
     if keys.is_empty() {
         return KmerTable {
             k,
@@ -61,48 +68,45 @@ pub(crate) fn count_keys(mut keys: Vec<u128>, k: usize) -> KmerTable {
             counts: Vec::new(),
         };
     }
-    let n_keys = keys.len();
-    crate::libs::ds::radix_sort::radix_sort_u128_par(
-        &mut keys,
-        &mut vec![0u8; n_keys],
-        2 * k as u32,
-    );
+    let n_keys = keys.len() / key_bytes;
+    crate::libs::ds::radix_sort::radix_sort_bytes_par(&mut keys, key_bytes, &mut vec![(); n_keys]);
     // Group equal keys (now contiguous after the sort) into counts.
-    let mut counts: Vec<u32> = Vec::with_capacity(keys.len());
+    let mut counts: Vec<u32> = Vec::with_capacity(n_keys);
     let mut i = 0usize;
     let mut w = 0usize;
-    while i < keys.len() {
-        let key = keys[i];
+    while i < n_keys {
         let mut j = i + 1;
-        while j < keys.len() && keys[j] == key {
+        while j < n_keys
+            && keys[j * key_bytes..(j + 1) * key_bytes] == keys[i * key_bytes..(i + 1) * key_bytes]
+        {
             j += 1;
         }
-        keys[w] = key;
+        if w != i {
+            keys.copy_within(i * key_bytes..(i + 1) * key_bytes, w * key_bytes);
+        }
         counts.push((j - i).min(u32::MAX as usize) as u32);
         w += 1;
         i = j;
     }
-    keys.truncate(w);
+    keys.truncate(w * key_bytes);
     KmerTable { k, keys, counts }
 }
 
 /// Write `table` to `path` (`.pkt`) atomically: header (bincode) plus one
 /// packed key of `ceil(2k/8)` bytes and a `u32` count per entry.
 pub fn save(table: &KmerTable, path: &Path) -> anyhow::Result<()> {
-    let key_bytes = (2 * table.k).div_ceil(8);
+    let key_bytes = table.key_bytes();
     let header = PktHeader {
         magic: *PKT_MAGIC,
         version: PKT_VERSION,
         k: table.k as u32,
-        n_entries: table.keys.len() as u64,
+        n_entries: table.counts.len() as u64,
         key_bytes: key_bytes as u32,
     };
     let mut buf = bincode::serialize(&header).context("serializing pkt header")?;
-    buf.reserve(table.keys.len() * (key_bytes + 4));
-    let mut packed = vec![0u8; key_bytes];
-    for (key, count) in table.keys.iter().zip(&table.counts) {
-        crate::libs::pgi::pack_kmer(*key, table.k, &mut packed);
-        buf.extend_from_slice(&packed);
+    buf.reserve(table.keys.len() + table.counts.len() * 4);
+    for (i, &count) in table.counts.iter().enumerate() {
+        buf.extend_from_slice(&table.keys[i * key_bytes..(i + 1) * key_bytes]);
         buf.extend_from_slice(&count.to_le_bytes());
     }
     let mut name = path.as_os_str().to_os_string();
@@ -175,17 +179,15 @@ pub fn load(path: &Path, k: usize) -> anyhow::Result<KmerTable> {
         PKT_HEADER_LEN + entry_len
     );
 
-    let mut keys = Vec::with_capacity(n_entries);
+    let mut keys = Vec::with_capacity(n_entries * key_bytes);
     let mut counts = Vec::with_capacity(n_entries);
-    let mut packed = vec![0u8; key_bytes];
     let mut off = PKT_HEADER_LEN;
     for _ in 0..n_entries {
-        packed.copy_from_slice(
+        keys.extend_from_slice(
             bytes
                 .get(off..off + key_bytes)
                 .context("truncated pkt entry")?,
         );
-        keys.push(crate::libs::pgi::unpack_kmer(&packed, k));
         let count_bytes: [u8; 4] = bytes
             .get(off + key_bytes..off + key_bytes + 4)
             .context("truncated pkt count")?
@@ -200,7 +202,6 @@ pub fn load(path: &Path, k: usize) -> anyhow::Result<KmerTable> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::libs::nt::rc_key;
 
     /// Deterministic pseudo-random DNA block (same LCG as pgi tests).
     fn random_block(len: usize, seed: u64) -> Vec<u8> {
@@ -222,27 +223,13 @@ mod tests {
         (0..100u64)
             .map(|i| random_block(80, seed0 + i))
             .find(|b| {
-                build_table(std::slice::from_ref(b), k).unwrap().keys.len() == b.len() - k + 1
+                build_table(std::slice::from_ref(b), k)
+                    .unwrap()
+                    .counts
+                    .len()
+                    == b.len() - k + 1
             })
             .expect("a collision-free block must exist")
-    }
-
-    #[test]
-    fn canonical_keys_match_rc_key() {
-        // Regression for the count/profile canonicalization: every emitted
-        // key must equal min(forward, rc_key) of the window, and N splits
-        // windows (no key emitted for a window containing N).
-        let seq = b"ACGTACGTNNACGTACGTACGTTTTT".to_vec();
-        let mut expect = Vec::new();
-        let windows = crate::libs::nt::rolling_kmer_keys(&seq, 6);
-        for (p, key) in windows.iter().enumerate() {
-            if let Some(key) = key {
-                expect.push((p, (*key).min(rc_key(*key, 6))));
-            }
-        }
-        let mut got = Vec::new();
-        super::super::canonical_keys(&seq, 6, |p, key| got.push((p, key)));
-        assert_eq!(got, expect);
     }
 
     #[test]
@@ -256,11 +243,22 @@ mod tests {
         assert_eq!(table.k, 6);
         assert!(!table.keys.is_empty());
         // The first window's canonical key appears once per copy.
-        let fwd = crate::libs::nt::pack_kmer(&block[..6], 6).unwrap();
-        let canonical = fwd.min(rc_key(fwd, 6));
-        let idx = table.keys.partition_point(|&x| x < canonical);
-        assert_eq!(table.keys[idx], canonical);
-        assert_eq!(table.counts[idx], 2, "duplicated block k-mer must count 2");
+        let canonical = crate::libs::kmer::key::Kmer::from_bases(&block[..6], 6)
+            .unwrap()
+            .canonical();
+        let kb = table.key_bytes();
+        let mut lo = 0usize;
+        let mut hi = table.counts.len();
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if &table.keys[mid * kb..(mid + 1) * kb] < canonical.to_bytes() {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        assert_eq!(&table.keys[lo * kb..(lo + 1) * kb], canonical.to_bytes());
+        assert_eq!(table.counts[lo], 2, "duplicated block k-mer must count 2");
         // Total windows = duplicated sequence length - k + 1, all valid.
         let total: u32 = table.counts.iter().sum();
         assert_eq!(total as usize, 2 * block.len() - 6 + 1);
@@ -273,12 +271,16 @@ mod tests {
         // merged (e.g. AC == GT canonical).
         let table = build_table(&[b"AAAA".to_vec()], 2).unwrap();
         let mut counts = std::collections::BTreeMap::new();
-        for (key, count) in table.keys.iter().zip(&table.counts) {
-            counts.insert(*key, *count);
+        for (i, &count) in table.counts.iter().enumerate() {
+            counts.insert(table.key_at(i).to_bytes().to_vec(), count);
         }
-        let aa = crate::libs::nt::pack_kmer(b"AA", 2).unwrap();
-        assert_eq!(counts.get(&aa), Some(&3), "AA appears at 3 positions");
-        assert_eq!(table.keys.len(), 1, "one unique canonical k-mer");
+        let aa = crate::libs::kmer::key::Kmer::from_bases(b"AA", 2).unwrap();
+        assert_eq!(
+            counts.get(aa.to_bytes()),
+            Some(&3),
+            "AA appears at 3 positions"
+        );
+        assert_eq!(table.counts.len(), 1, "one unique canonical k-mer");
 
         // Case-insensitive: lowercase input merges into the same keys.
         let lower = build_table(&[b"aaaa".to_vec()], 2).unwrap();
@@ -294,6 +296,16 @@ mod tests {
         // 18 bases, 15 windows; the 5 windows covering N positions 8..9
         // (starts 5..9) are invalid, so 15 - 5 = 10 valid windows.
         assert_eq!(total, 10);
+    }
+
+    #[test]
+    fn runs_shorter_than_k_emit_nothing() {
+        // Regression: an N-free run shorter than k must neither emit nor
+        // panic (the old window scan could cross the N gap).
+        let table = build_table(&[b"ACGTNNNNNNNNACGTACGTACGTACGT".to_vec()], 8).unwrap();
+        let total: u32 = table.counts.iter().sum();
+        // Left run "ACGT" (4 < 8): nothing; right run 16 bases: 9 windows.
+        assert_eq!(total, 9);
     }
 
     #[test]

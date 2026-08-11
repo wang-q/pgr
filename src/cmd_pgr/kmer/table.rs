@@ -40,7 +40,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     pgr::libs::kmer::count::save(&table, std::path::Path::new(outfile))?;
     log::info!(
         "==> Wrote {} unique {}-mers to {}",
-        table.keys.len(),
+        table.counts.len(),
         k,
         outfile
     );

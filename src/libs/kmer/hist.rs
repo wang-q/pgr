@@ -46,7 +46,7 @@ pub struct GenomeEstimate {
 /// total_kmers / peak_cov` approximates the haploid length (cheap
 /// pre-GenomeScope estimate; model fitting is a separate step).
 pub fn estimate(table: &KmerTable) -> GenomeEstimate {
-    let total_distinct = table.keys.len() as u64;
+    let total_distinct = table.counts.len() as u64;
     let total_kmers: u128 = table.counts.iter().map(|&c| c as u128).sum();
     let peak_cov = khist::call_peaks(&khist::histogram(table, khist::HIST_MAX))
         .into_iter()
@@ -232,7 +232,7 @@ mod tests {
             "peak coverage {} far from 30x",
             est.peak_cov
         );
-        assert_eq!(est.total_distinct, table.keys.len() as u64);
+        assert_eq!(est.total_distinct, table.counts.len() as u64);
         let ratio = est.genome_size / 1000.0;
         assert!(
             (0.5..=2.0).contains(&ratio),

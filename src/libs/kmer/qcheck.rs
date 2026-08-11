@@ -1,6 +1,14 @@
 //! Quality-aware read error detection (quorum anchor+extend signals).
 
 use super::quality::QualityTable;
+use crate::libs::kmer::key::Kmer;
+
+/// Convert a u128 2-bit key (high bits first) to its FastK byte key.
+fn key_to_kmer(key: u128, k: usize) -> Kmer {
+    let mut packed = [0u8; 16];
+    crate::libs::pgi::pack_kmer(key, k, &mut packed);
+    Kmer::from_bytes(k, &packed[..k.div_ceil(4)])
+}
 
 /// Why a read was flagged as bad (quorum sub/trunc events, no correction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,8 +108,10 @@ fn find_anchor(table: &QualityTable, seq: &[u8], p: &CheckParams) -> Option<(usi
         if valid >= p.k {
             let start = i + 1 - p.k;
             // quorum get_val(): only high-quality k-mers count as anchors.
-            let anchor_ok =
-                matches!(table.get(kx.min(kxr)), Some((c, 1)) if c as usize >= p.anchor_count);
+            let anchor_ok = matches!(
+                table.get(&key_to_kmer(kx.min(kxr), p.k)),
+                Some((c, 1)) if c as usize >= p.anchor_count
+            );
             found = if anchor_ok { found + 1 } else { 0 };
             if found >= p.good {
                 return Some((start, kx, kxr));
@@ -155,7 +165,8 @@ fn extend(
             (kx & 3, (3 - code) as u128)
         };
         let _ = comp;
-        let (counts, ucode, level, count) = best_alternatives(table, kx, kxr, rc_top, backward);
+        let (counts, ucode, level, count) =
+            best_alternatives(table, kx, kxr, rc_top, backward, p.k);
         if count == 0 {
             return Err(ReadError::Truncation);
         }
@@ -193,6 +204,7 @@ fn best_alternatives(
     kxr: u128,
     rc_top: u32,
     backward: bool,
+    k: usize,
 ) -> ([u64; 4], usize, u8, usize) {
     let mut counts = [0u64; 4];
     let mut level = 0u8;
@@ -210,7 +222,7 @@ fn best_alternatives(
                 (kxr & !(3u128 << rc_top)) | ((3 - i) << rc_top),
             )
         };
-        if let Some((c, q)) = table.get(kx2.min(kxr2)) {
+        if let Some((c, q)) = table.get(&key_to_kmer(kx2.min(kxr2), k)) {
             if q >= level {
                 if q > level && count > 0 {
                     counts = [0u64; 4];

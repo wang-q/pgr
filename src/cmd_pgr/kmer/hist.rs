@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         if let Some(f) = peaks {
             let mut w = pgr::writer(f)?;
-            let unique = table.keys.len() as u64;
+            let unique = table.counts.len() as u64;
             let peaks_out = pgr::libs::kmer::khist::call_peaks(&hist);
             pgr::libs::kmer::khist::write_peaks_text(&mut w, &peaks_out, k, unique, &hist)?;
             w.flush()?;
@@ -87,7 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     log::info!(
         "==> Wrote histogram of {} distinct {}-mers to {}",
-        table.keys.len(),
+        table.counts.len(),
         k,
         outfile
     );

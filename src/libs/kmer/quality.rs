@@ -1,6 +1,7 @@
 //! Quality-weighted k-mer histogram (quorum `histo_mer_database` equivalent).
 
-use crate::libs::ds::radix_sort::radix_sort_u128_par;
+use crate::libs::ds::radix_sort::radix_sort_bytes_par;
+use crate::libs::kmer::key::Kmer;
 use rayon::prelude::*;
 use std::io::Write;
 
@@ -20,8 +21,8 @@ pub const QUAL_HLEN: usize = 1001;
 pub struct QualityTable {
     /// K-mer length (bp).
     pub k: usize,
-    /// Sorted canonical 2-bit k-mers.
-    pub keys: Vec<u128>,
+    /// Packed sorted canonical 2-bit k-mers (FastK bytes), `key_bytes` each.
+    pub keys: Vec<u8>,
     /// Quorum-biased counts (capped by the build `count_cap`).
     pub counts: Vec<u32>,
     /// Quality flag: 1 if any high-quality occurrence was seen.
@@ -29,11 +30,26 @@ pub struct QualityTable {
 }
 
 impl QualityTable {
+    /// Packed bytes per key.
+    pub fn key_bytes(&self) -> usize {
+        self.k.div_ceil(4)
+    }
+
     /// Count and quality of `key`, or `None` when absent from the table.
-    pub fn get(&self, key: u128) -> Option<(u32, u8)> {
-        let idx = self.keys.partition_point(|&x| x < key);
-        if idx < self.keys.len() && self.keys[idx] == key {
-            Some((self.counts[idx], self.qualities[idx]))
+    pub fn get(&self, key: &Kmer) -> Option<(u32, u8)> {
+        let kb = self.key_bytes();
+        let mut lo = 0usize;
+        let mut hi = self.counts.len();
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if &self.keys[mid * kb..(mid + 1) * kb] < key.to_bytes() {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo < self.counts.len() && &self.keys[lo * kb..(lo + 1) * kb] == key.to_bytes() {
+            Some((self.counts[lo], self.qualities[lo]))
         } else {
             None
         }
@@ -48,7 +64,8 @@ pub fn build_table(
     thresh: u8,
     count_cap: u64,
 ) -> QualityTable {
-    let per_read: Vec<Vec<(u128, u8)>> = seqs
+    let key_bytes = k.div_ceil(4);
+    let per_read: Vec<Vec<(Kmer, u8)>> = seqs
         .par_iter()
         .zip(quals)
         .map(|(seq, qual)| {
@@ -58,25 +75,25 @@ pub fn build_table(
         })
         .collect();
     let n: usize = per_read.iter().map(Vec::len).sum();
-    let mut keys: Vec<u128> = Vec::with_capacity(n);
+    let mut keys: Vec<u8> = Vec::with_capacity(n * key_bytes);
     let mut flags: Vec<u8> = Vec::with_capacity(n);
     for v in per_read {
         for (key, high) in v {
-            keys.push(key);
+            keys.extend_from_slice(key.to_bytes());
             flags.push(high);
         }
     }
-    radix_sort_u128_par(&mut keys, &mut flags, 2 * k as u32);
+    radix_sort_bytes_par(&mut keys, key_bytes, &mut flags);
 
-    let mut out_keys = Vec::with_capacity(keys.len());
+    let mut out_keys = Vec::with_capacity(n * key_bytes);
     let mut counts = Vec::with_capacity(keys.len());
     let mut qualities = Vec::with_capacity(keys.len());
     let mut i = 0usize;
-    while i < keys.len() {
-        let key = keys[i];
+    while i < n {
+        let key = &keys[i * key_bytes..(i + 1) * key_bytes];
         let mut n_high = 0u64;
         let mut n_low = 0u64;
-        while i < keys.len() && keys[i] == key {
+        while i < n && &keys[i * key_bytes..(i + 1) * key_bytes] == key {
             if flags[i] != 0 {
                 n_high += 1;
             } else {
@@ -89,7 +106,7 @@ pub fn build_table(
         } else {
             (n_low.min(count_cap), 0u8)
         };
-        out_keys.push(key);
+        out_keys.extend_from_slice(key);
         counts.push(count as u32);
         qualities.push(quality);
     }
@@ -116,32 +133,23 @@ pub fn histogram(table: &QualityTable) -> Vec<[u64; 2]> {
 /// low-quality and high-quality stretches, a base below `thresh` resets only
 /// the high-quality stretch, and a window is high quality iff `high_len`
 /// reached `k` at its last base.
-fn quality_keys(seq: &[u8], qual: &[u8], k: usize, thresh: u8, mut emit: impl FnMut(u128, u8)) {
-    if seq.len() < k {
+fn quality_keys(seq: &[u8], qual: &[u8], k: usize, thresh: u8, mut emit: impl FnMut(Kmer, u8)) {
+    if seq.len() < k || k > Kmer::MAX_K {
         return;
     }
     let codes = super::base_codes();
-    let kmask = if 2 * k >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << (2 * k)) - 1
-    };
-    let rc_top = (2 * k - 2) as u32;
-    let mut kx: u128 = 0;
-    let mut kxr: u128 = 0;
+    let mut win = Kmer::new(k).unwrap();
     let mut low_len = 0usize;
     let mut high_len = 0usize;
     for (&b, &q) in seq.iter().zip(qual) {
         let code = codes[b as usize];
         if code == 4 {
-            kx = 0;
-            kxr = 0;
+            win = Kmer::new(k).unwrap();
             low_len = 0;
             high_len = 0;
             continue;
         }
-        kx = ((kx << 2) | code as u128) & kmask;
-        kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
+        win.push_right(code as u8);
         low_len += 1;
         if q >= thresh {
             high_len += 1;
@@ -149,7 +157,7 @@ fn quality_keys(seq: &[u8], qual: &[u8], k: usize, thresh: u8, mut emit: impl Fn
             high_len = 0;
         }
         if low_len >= k {
-            emit(kx.min(kxr), u8::from(high_len >= k));
+            emit(win.canonical(), u8::from(high_len >= k));
         }
     }
 }
@@ -187,8 +195,8 @@ mod tests {
     ///
     /// Applies the nval update rule in event order with a count cap
     /// (`max_val = 2^bits - 1`), mirroring the C implementation line by line.
-    fn quorum_sequential(events: &[(u128, u8)], count_cap: u64) -> HashMap<u128, (u64, u8)> {
-        let mut vals: HashMap<u128, u64> = HashMap::new();
+    fn quorum_sequential(events: &[(Kmer, u8)], count_cap: u64) -> HashMap<Kmer, (u64, u8)> {
+        let mut vals: HashMap<Kmer, u64> = HashMap::new();
         for &(key, quality) in events {
             let nval = vals.entry(key).or_insert(0);
             *nval = if (*nval & 1) < u64::from(quality) {
@@ -272,7 +280,8 @@ mod tests {
         assert_eq!(hist[127][1], 3); // ACGT/CGTA capped, GTAC at 130->127
         assert_eq!(hist[130][1], 0);
         // Direct query agrees with the histogram bins (ACGT key = 0b00011011).
-        assert_eq!(table.get(0b00011011), Some((127, 1)));
+        let acgt = Kmer::from_bases(b"ACGT", 4).unwrap();
+        assert_eq!(table.get(&acgt), Some((127, 1)));
     }
 
     #[test]

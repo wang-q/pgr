@@ -80,22 +80,19 @@
   `--keep-index` 缓存升级单文件 `.pkt` → `design/kmer.md`。
 - **PAF `query_length`/`target_length` 恒 0**（2026-08-11）：已修复，
   `.paf.idx` v5 持久化每序列长度，旧索引报错重建 → `audit/audit-paf.md`。
+- **k-mer 表示统一到 FastK + 长 k（k=81）落地**（2026-08-12）：
+  `libs/kmer/key.rs` Kmer 字节键（FastK 字节序实测锁定）+ radix 泛化 +
+  FastK golden 对照（k=21/51/81 逐条一致）；KmerTable/quality/norm/map/
+  pgi/tadpole 全部迁移到打包字节（无 per-key 对象头），qcheck 查询侧
+  转 Kmer；`.pkt`/`.pgi` 格式不变（字节与 FastK 一致，旧缓存直接兼容、
+  不 bump）；k=81 table/hist/profile 端到端（2939 条与 FastK 一致）；
+  count_mg1655 219 ms（4.6 Mb）→ `design/kmer.md` §12。
 
 ## 2. 待实现
 
 - [ ] **k-mer 表示统一到 FastK + 长 k（k=81）落地**（2026-08-12 计划
-      修改，`design/kmer.md` §12）：用户裁定项目只保留**一套** k-mer 实现，
-      以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做定长对象键）。
-      唯一表示 = FastK 字节编码（字节内小端、canonical 逐字节取小），
-      **存储 = FastK 式连续打包**（`keys: Vec<u8>` 每条 key_bytes 字节 +
-      counts；无 per-key 对象头）；u128 键族（KmerTable/quality/pgi/map）
-      与 tadpole Kmer 全部迁移；`.pkt` 结构不变（字节语义翻转，旧缓存
-      重建）、`.pgi` bump。**内存核算**（对照 FastK tbyte 实测）：k≤64
-      打包后比现状 u128（20 B/条）更小（k=31 → 12 B），k=81 才 25 B
-      （1.25 倍），不翻倍。执行 M1（Kmer 编码 + 打包存储 + FastK 字节序
-      对照）→ M2（kmer 族迁移，k≤64 golden 不变）→ M3（`n` 统一 +
-      norm/map）→ M4（pgi）→ M5（tadpole 迁移 + FastK `-p` 对照 + 基准
-      + 收尾）。anchr `2_fastk` 用 `-k<21|51|81>`。
+      修改，`design/kmer.md` §12）：**已完成（2026-08-12，见 §1）**——
+      M1–M5 全部落地，测试 1701 全绿。anchr `2_fastk` 用 `-k<21|51|81>`。
 - [ ] **repeat masking：pgi 参数标定 + 真核验证**：CLI 透传已实现（`align
       pgi` 的 `-f/--min-shared/-k/--smer/--window`），但默认值未按 §2.5 调整
       （`--freq` 10 → 100、`--min-shared` 12 → 16 待验证）；真核（拟南芥/

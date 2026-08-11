@@ -183,17 +183,24 @@ fn merge_all(
     use_lcp: bool,
     skip_scan: bool,
 ) -> anyhow::Result<Vec<SeedHit>> {
+    let kb = a.key_bytes();
     let hits: Vec<SeedHit> = a
-        .entries
-        .par_chunks(4096)
-        .map(|ents| -> anyhow::Result<Vec<SeedHit>> {
+        .keys
+        .par_chunks(kb * 4096)
+        .zip(a.entries.par_chunks(4096))
+        .map(|(keys_chunk, ents)| -> anyhow::Result<Vec<SeedHit>> {
             let mut hits = Vec::new();
             let mut prev = None;
             let mut probe = Probe::default();
-            for ea in ents {
+            for (ei, ea) in ents.iter().enumerate() {
+                let ea_kmer = pgr::libs::kmer::key::Kmer::from_bytes(
+                    a.k,
+                    &keys_chunk[ei * kb..(ei + 1) * kb],
+                )
+                .to_u128();
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_hits(
-                    ea.kmer,
+                    ea_kmer,
                     ea.freq,
                     ap,
                     b,
@@ -204,7 +211,7 @@ fn merge_all(
                     skip_scan,
                     &mut probe,
                 )?);
-                prev = Some(ea.kmer);
+                prev = Some(ea_kmer);
             }
             let _ = probe;
             Ok(hits)
@@ -223,17 +230,24 @@ fn profile_merge(
     b: &PgiIndex,
     use_lcp: bool,
 ) -> anyhow::Result<(Vec<SeedHit>, Probe)> {
+    let kb = a.key_bytes();
     let probes: Vec<Probe> = a
-        .entries
-        .par_chunks(4096)
-        .map(|ents| -> anyhow::Result<Probe> {
+        .keys
+        .par_chunks(kb * 4096)
+        .zip(a.entries.par_chunks(4096))
+        .map(|(keys_chunk, ents)| -> anyhow::Result<Probe> {
             let mut hits = Vec::new();
             let mut prev = None;
             let mut probe = Probe::default();
-            for ea in ents {
+            for (ei, ea) in ents.iter().enumerate() {
+                let ea_kmer = pgr::libs::kmer::key::Kmer::from_bytes(
+                    a.k,
+                    &keys_chunk[ei * kb..(ei + 1) * kb],
+                )
+                .to_u128();
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_hits(
-                    ea.kmer,
+                    ea_kmer,
                     ea.freq,
                     ap,
                     b,
@@ -244,7 +258,7 @@ fn profile_merge(
                     false,
                     &mut probe,
                 )?);
-                prev = Some(ea.kmer);
+                prev = Some(ea_kmer);
             }
             let _ = hits;
             Ok(probe)

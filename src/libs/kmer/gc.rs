@@ -27,15 +27,13 @@ fn gc_tables(k: usize) -> ([u8; 256], [u8; 256]) {
 }
 
 /// Number of G/C bases in a packed 2-bit k-mer (A/T non-GC, C/G GC).
-fn gc_count(key: u128, k: usize, gc: &[u8; 256], gcr: &[u8; 256]) -> usize {
-    let kbyte = k.div_ceil(4);
-    let mut packed = [0u8; 16];
-    crate::libs::pgi::pack_kmer(key, k, &mut packed);
+fn gc_count(key: &[u8], gc: &[u8; 256], gcr: &[u8; 256]) -> usize {
+    let kbyte = key.len();
     let mut cnt = 0usize;
-    for &b in &packed[..kbyte - 1] {
+    for &b in &key[..kbyte - 1] {
         cnt += gc[b as usize] as usize;
     }
-    cnt + gcr[packed[kbyte - 1] as usize] as usize
+    cnt + gcr[key[kbyte - 1] as usize] as usize
 }
 
 /// GC (0..=k) × count (0..=hmax) matrix: `plot[gc][min(count, hmax)] += 1`.
@@ -44,8 +42,10 @@ fn gc_count(key: u128, k: usize, gc: &[u8; 256], gcr: &[u8; 256]) -> usize {
 pub fn gc_matrix(table: &KmerTable, hmax: usize) -> Vec<Vec<u64>> {
     let (gc, gcr) = gc_tables(table.k);
     let mut plot = vec![vec![0u64; hmax + 1]; table.k + 1];
-    for (key, &count) in table.keys.iter().zip(&table.counts) {
-        let g = gc_count(*key, table.k, &gc, &gcr);
+    let kb = table.key_bytes();
+    for (i, &count) in table.counts.iter().enumerate() {
+        let key = &table.keys[i * kb..(i + 1) * kb];
+        let g = gc_count(key, &gc, &gcr);
         plot[g][(count as usize).min(hmax)] += 1;
     }
     plot
@@ -121,10 +121,11 @@ pub fn write_kgc(
 mod tests {
     use super::*;
 
-    fn gc_naive(key: u128, k: usize) -> usize {
+    fn gc_naive(key: &[u8], k: usize) -> usize {
+        let km = crate::libs::kmer::key::Kmer::from_bytes(k, key);
         let mut n = 0;
         for i in 0..k {
-            let code = ((key >> (2 * (k - 1 - i))) & 3) as u8;
+            let code = km.base_at(i);
             if code == 1 || code == 2 {
                 n += 1;
             }
@@ -144,8 +145,11 @@ mod tests {
                     (1u128 << (2 * k)) - 1
                 };
                 let key = (seed * 0x9e3779b97f4a7c15 + 0xbf58476d1ce4e5b9) & mask;
+                let mut packed = [0u8; 16];
+                crate::libs::pgi::pack_kmer(key, k, &mut packed);
+                let key = &packed[..k.div_ceil(4)];
                 assert_eq!(
-                    gc_count(key, k, &gc, &gcr),
+                    gc_count(key, &gc, &gcr),
                     gc_naive(key, k),
                     "k={k} seed={seed}"
                 );

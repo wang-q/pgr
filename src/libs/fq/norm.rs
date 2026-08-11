@@ -9,6 +9,7 @@ use crate::libs::fmt::fq::write_fq;
 use crate::libs::fmt::seq::SeqRecord;
 use crate::libs::fq::clump::temp_dir_for;
 use crate::libs::fq::pairs::PairReader;
+use crate::libs::kmer::key::Kmer;
 use crate::libs::kmer::{self, count, KmerTable};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
@@ -75,34 +76,25 @@ fn change_quality(seq: &[u8], qual: &mut [u8]) {
 /// `minprob` is not applied by the KmerCount table used for `bits=16`). The
 /// rolling window matches `kmer::canonical_keys`; quality must already be
 /// `changequality`-normalized.
-fn filtered_keys(seq: &[u8], qual: &[u8], k: usize, minq: u8, mut emit: impl FnMut(u128)) {
+fn filtered_keys(seq: &[u8], qual: &[u8], k: usize, minq: u8, mut emit: impl FnMut(Kmer)) {
     let n = seq.len();
-    if n < k {
+    if n < k || k > Kmer::MAX_K {
         return;
     }
-    let kmask = if 2 * k >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << (2 * k)) - 1
-    };
-    let rc_top = (2 * k - 2) as u32;
     let codes = kmer::base_codes();
-    let mut kx: u128 = 0;
-    let mut kxr: u128 = 0;
+    let mut win = Kmer::new(k).unwrap();
     let mut valid = 0usize;
     for (i, &b) in seq.iter().enumerate() {
         let code = codes[b as usize];
         if code == 4 || (i < qual.len() && qual[i] < minq) {
-            kx = 0;
-            kxr = 0;
+            win = Kmer::new(k).unwrap();
             valid = 0;
         } else {
-            kx = ((kx << 2) | code as u128) & kmask;
-            kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
+            win.push_right(code as u8);
             valid += 1;
         }
         if valid >= k {
-            emit(kx.min(kxr));
+            emit(win.canonical());
         }
     }
 }
@@ -163,7 +155,9 @@ fn norm_in_memory<W: Write>(
         }
         let mut keys = Vec::new();
         for (seq, qual) in &seqs {
-            filtered_keys(seq, qual, opts.k, MINQ, |key| keys.push(key));
+            filtered_keys(seq, qual, opts.k, MINQ, |key| {
+                keys.extend_from_slice(key.to_bytes());
+            });
         }
         Arc::new(count::count_keys(keys, opts.k))
     };
@@ -217,15 +211,29 @@ fn pair_tossed(s1: &ReadStats, s2: Option<&ReadStats>, min_depth: usize) -> bool
 fn read_stats(rec: &SeqRecord, table: &KmerTable, opts: &NormOptions) -> ReadStats {
     let mut cov: Vec<u32> = Vec::new();
     crate::libs::kmer::canonical_keys(rec.sequence(), opts.k, |_, key| {
-        let idx = table.keys.partition_point(|&x| x < key);
-        let c = if idx < table.keys.len() && table.keys[idx] == key {
-            table.counts[idx]
-        } else {
-            0
-        };
-        cov.push(c);
+        cov.push(table_count(table, &key));
     });
     score_cov(&cov, opts)
+}
+
+/// Table count of `key`, or 0 when absent (packed byte binary search).
+fn table_count(table: &KmerTable, key: &Kmer) -> u32 {
+    let kb = table.key_bytes();
+    let mut lo = 0usize;
+    let mut hi = table.counts.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if &table.keys[mid * kb..(mid + 1) * kb] < key.to_bytes() {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if lo < table.counts.len() && &table.keys[lo * kb..(lo + 1) * kb] == key.to_bytes() {
+        table.counts[lo]
+    } else {
+        0
+    }
 }
 
 /// Coverage quantiles from a read's k-mer count list (order-independent).
@@ -357,7 +365,7 @@ fn count_buckets(
                     if !path.exists() {
                         return Ok(Vec::new());
                     }
-                    let keys = read_keys(&path)?;
+                    let keys = read_keys(&path, opts.k)?;
                     let table = count::count_keys(keys, opts.k);
                     serialize_table(&table)
                 })();
@@ -415,7 +423,7 @@ fn score_chunk<W: Write>(
     tmp: &Path,
     out: &mut W,
 ) -> Result<()> {
-    let mut bucketed: Vec<Vec<(u32, u64)>> = vec![Vec::new(); buckets];
+    let mut bucketed: Vec<Vec<(u32, Kmer)>> = vec![Vec::new(); buckets];
     for (i, (r1, r2)) in chunk.iter().enumerate() {
         let base = 2 * i as u32;
         collect_bucket_keys(r1.sequence(), opts.k, buckets, base, &mut bucketed);
@@ -428,19 +436,10 @@ fn score_chunk<W: Write>(
         if keys.is_empty() {
             continue;
         }
-        let table = load_table(&tmp.join(format!("table_{b:05}.tbl")))?;
+        let table = load_table(&tmp.join(format!("table_{b:05}.tbl")), opts.k)?;
         let hits: Vec<(u32, u32)> = keys
             .par_iter()
-            .map(|&(ri, key)| {
-                let key = key as u128;
-                let idx = table.keys.partition_point(|&x| x < key);
-                let c = if idx < table.keys.len() && table.keys[idx] == key {
-                    table.counts[idx]
-                } else {
-                    0
-                };
-                (ri, c)
-            })
+            .map(|&(ri, key)| (ri, table_count(&table, &key)))
             .collect();
         for (ri, c) in hits {
             covs[ri as usize].push(c);
@@ -471,18 +470,14 @@ fn write_bucket_keys(
     let mut keys = Vec::new();
     filtered_keys(seq, qual, k, MINQ, |key| keys.push(key));
     for key in keys {
-        let b = bucket_of(key, buckets);
+        let b = bucket_of(&key, buckets);
         if writers[b].is_none() {
             let path = tmp.join(format!("bucket_{b:05}.kmer"));
             let f = File::create(&path)
                 .with_context(|| format!("failed to create {}", path.display()))?;
             writers[b] = Some(BufWriter::new(f));
         }
-        // k <= 31 in norm, so 2*k <= 62 bits: the canonical key fits u64.
-        writers[b]
-            .as_mut()
-            .unwrap()
-            .write_all(&(key as u64).to_le_bytes())?;
+        writers[b].as_mut().unwrap().write_all(key.to_bytes())?;
     }
     Ok(())
 }
@@ -493,17 +488,20 @@ fn collect_bucket_keys(
     k: usize,
     buckets: usize,
     read_idx: u32,
-    bucketed: &mut [Vec<(u32, u64)>],
+    bucketed: &mut [Vec<(u32, Kmer)>],
 ) {
     crate::libs::kmer::canonical_keys(seq, k, |_, key| {
-        // k <= 31 in norm, so 2*k <= 62 bits: the canonical key fits u64.
-        bucketed[bucket_of(key, buckets)].push((read_idx, key as u64));
+        bucketed[bucket_of(&key, buckets)].push((read_idx, key));
     });
 }
 
 /// Deterministic bucket index for a canonical k-mer.
-fn bucket_of(key: u128, buckets: usize) -> usize {
-    (key % buckets as u128) as usize
+fn bucket_of(key: &Kmer, buckets: usize) -> usize {
+    let mut h = 0u64;
+    for &b in key.to_bytes() {
+        h = h.wrapping_mul(131).wrapping_add(b as u64);
+    }
+    (h % buckets as u64) as usize
 }
 
 /// Number of N-free k-mer windows in `seq` (what `canonical_keys` emits).
@@ -526,48 +524,48 @@ fn n_kmers(seq: &[u8], k: usize) -> usize {
     total
 }
 
-/// Reads 8-byte little-endian keys written by `write_bucket_keys`.
-fn read_keys(path: &Path) -> Result<Vec<u128>> {
+/// Reads packed `key_bytes`-byte keys written by `write_bucket_keys`.
+fn read_keys(path: &Path, k: usize) -> Result<Vec<u8>> {
     let bytes = std::fs::read(path)?;
+    let key_bytes = k.div_ceil(4);
     anyhow::ensure!(
-        bytes.len() % 8 == 0,
+        bytes.len() % key_bytes == 0,
         "corrupt bucket file {} ({} bytes)",
         path.display(),
         bytes.len()
     );
-    let mut keys = Vec::with_capacity(bytes.len() / 8);
-    for chunk in bytes.chunks_exact(8) {
-        keys.push(u64::from_le_bytes(chunk.try_into().unwrap()) as u128);
-    }
-    Ok(keys)
+    Ok(bytes)
 }
 
-/// Serializes a count table as interleaved (key u64 LE, count u32 LE).
+/// Serializes a count table as interleaved (packed key, count u32 LE).
 fn serialize_table(table: &KmerTable) -> Result<Vec<u8>> {
-    let mut buf = Vec::with_capacity(table.keys.len() * 12);
-    for (&key, &c) in table.keys.iter().zip(&table.counts) {
-        buf.extend_from_slice(&(key as u64).to_le_bytes());
+    let kb = table.key_bytes();
+    let mut buf = Vec::with_capacity(table.keys.len() + table.counts.len() * 4);
+    for (i, &c) in table.counts.iter().enumerate() {
+        buf.extend_from_slice(&table.keys[i * kb..(i + 1) * kb]);
         buf.extend_from_slice(&c.to_le_bytes());
     }
     Ok(buf)
 }
 
 /// Loads a table written by `serialize_table` (empty for an empty file).
-fn load_table(path: &Path) -> Result<KmerTable> {
+fn load_table(path: &Path, k: usize) -> Result<KmerTable> {
     let bytes = std::fs::read(path)?;
+    let kb = k.div_ceil(4);
     anyhow::ensure!(
-        bytes.len() % 12 == 0,
+        bytes.len() % (kb + 4) == 0,
         "corrupt table file {} ({} bytes)",
         path.display(),
         bytes.len()
     );
-    let mut keys = Vec::with_capacity(bytes.len() / 12);
-    let mut counts = Vec::with_capacity(bytes.len() / 12);
-    for chunk in bytes.chunks_exact(12) {
-        keys.push(u64::from_le_bytes(chunk[..8].try_into().unwrap()) as u128);
-        counts.push(u32::from_le_bytes(chunk[8..].try_into().unwrap()));
+    let n = bytes.len() / (kb + 4);
+    let mut keys = Vec::with_capacity(n * kb);
+    let mut counts = Vec::with_capacity(n);
+    for chunk in bytes.chunks_exact(kb + 4) {
+        keys.extend_from_slice(&chunk[..kb]);
+        counts.push(u32::from_le_bytes(chunk[kb..].try_into().unwrap()));
     }
-    Ok(KmerTable { k: 0, keys, counts })
+    Ok(KmerTable { k, keys, counts })
 }
 
 /// Writes a FASTQ record, preserving the `name comment` header layout.

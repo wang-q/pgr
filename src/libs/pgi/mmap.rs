@@ -289,7 +289,7 @@ mod tests {
         let (_, end) = mapped.entry_range(0, u128::MAX);
         let mut rec = 0usize;
         for (ei, e) in loaded.entries.iter().enumerate() {
-            assert_eq!(mapped.entry_kmer(rec), e.kmer, "entry {ei}");
+            assert_eq!(mapped.entry_kmer(rec), loaded.key_at_u128(ei), "entry {ei}");
             assert_eq!(mapped.entry_freq(rec), e.freq, "entry {ei}");
             let poss: Vec<u64> = mapped.entry_positions(rec).collect();
             let exp = &loaded.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize];
@@ -324,10 +324,7 @@ mod tests {
         assert_eq!(hi, mapped.n_records());
         for &(qlo, qhi) in &[(0u128, 1u128 << 23), (1u128 << 23, 1u128 << 24)] {
             let (m0, m1) = mapped.entry_range(qlo, qhi);
-            let (r0, r1) = (
-                idx.entries.partition_point(|e| e.kmer < qlo),
-                idx.entries.partition_point(|e| e.kmer < qhi),
-            );
+            let (r0, r1) = idx.entry_range(qlo, qhi);
             // Group starts in the mmap are the same k-mers as the resident
             // entries; compare decoded keys, treating an end boundary as
             // "no key".
@@ -338,7 +335,13 @@ mod tests {
                     None
                 }
             };
-            let r_key = |i: usize| idx.entries.get(i).map(|e| e.kmer);
+            let r_key = |i: usize| {
+                if i < idx.entries.len() {
+                    Some(idx.key_at_u128(i))
+                } else {
+                    None
+                }
+            };
             assert_eq!(m_key(m0), r_key(r0));
             assert_eq!(m_key(m1), r_key(r1));
         }

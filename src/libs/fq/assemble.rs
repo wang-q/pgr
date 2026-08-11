@@ -461,12 +461,12 @@ fn build_unitigs(table: &TadpoleTable, opts: &AssembleOptions) -> Vec<Unitig> {
         let mut bb: Vec<u8> = (0..k)
             .map(|i| number_to_base(seed.base_at(k - 1 - i)))
             .collect();
-        visited.insert(seed.clone());
+        visited.insert(*seed);
         // Extend right while the path stays non-branching.
         let mut circular = false;
         let mut kmer = rightmost_kmer(&bb, k);
         while let Some(b) = unique_solid_out(&kmer, table, threshold) {
-            let mut next = kmer.clone();
+            let mut next = kmer;
             next.push_right(b);
             let canon = next.canonical();
             if unique_solid_in(&next, table, threshold) != 1 {
@@ -484,7 +484,7 @@ fn build_unitigs(table: &TadpoleTable, opts: &AssembleOptions) -> Vec<Unitig> {
         let mut rc: Vec<u8> = rev_comp(&bb).collect();
         let mut rkmer = rightmost_kmer(&rc, k);
         while let Some(b) = unique_solid_out(&rkmer, table, threshold) {
-            let mut next = rkmer.clone();
+            let mut next = rkmer;
             next.push_right(b);
             let canon = next.canonical();
             if unique_solid_in(&next, table, threshold) != 1 {
@@ -632,7 +632,7 @@ fn scan_table(
         if claimed.contains(kmer) {
             continue;
         }
-        claimed.insert(kmer.clone());
+        claimed.insert(*kmer);
         if let Some(c) = make_contig(kmer, table, opts, claimed) {
             let mut c = c;
             c.id = *id_counter;
@@ -1269,7 +1269,7 @@ fn process_contig_left(
     for x in 0..4u8 {
         let count = left[x as usize];
         if count > 0 && is_junction(left_max, count, opts) {
-            let mut kmer = kmer0.clone();
+            let mut kmer = kmer0;
             kmer.push_left(x);
             // Tadpole1 (k <= 31) walks the left edge in reverse-complement
             // space (`processContigLeft` swaps kmer/rkmer into `exploreRight`);
@@ -1316,7 +1316,7 @@ fn process_contig_right(
     for x in 0..4u8 {
         let count = right[x as usize];
         if count > 0 && is_junction(right_max, count, opts) {
-            let mut kmer = kmer0.clone();
+            let mut kmer = kmer0;
             kmer.push_right(x);
             let mut bb = vec![number_to_base(x)];
             let (target, last_length, mut last_orientation) =
@@ -1351,7 +1351,7 @@ fn explore_right(
     bb: &mut Vec<u8>,
 ) -> (Option<usize>, usize, u8) {
     let k = opts.k;
-    let mut kmer = kmer0.clone();
+    let mut kmer = *kmer0;
     let mut length = 1usize;
     let mut owner: Option<usize> = None;
     while length < 500 {

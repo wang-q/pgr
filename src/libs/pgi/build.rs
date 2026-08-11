@@ -1,6 +1,6 @@
 //! Build a `.pgi` index from FASTA or 2bit sequences.
 
-use super::{pack_position, PgiEntry, PgiIndex};
+use super::{pack_kmer, pack_position, PgiEntry, PgiIndex};
 use crate::libs::nt::rc_key;
 use crate::libs::syncmer::SyncmerParams;
 use anyhow::Context;
@@ -244,6 +244,8 @@ pub fn build_from_seqs(
         u32::MAX
     );
 
+    let key_bytes = k.div_ceil(4);
+    let mut packed_keys: Vec<u8> = Vec::with_capacity(keys.len() * key_bytes);
     let mut entries: Vec<PgiEntry> = Vec::with_capacity(keys.len());
     let mut positions: Vec<u64> = Vec::with_capacity(keys.len());
     let mut i = 0usize;
@@ -266,8 +268,10 @@ pub fn build_from_seqs(
             }
             j += 1;
         }
+        let mut packed = [0u8; 16];
+        pack_kmer(kmer, k, &mut packed);
+        packed_keys.extend_from_slice(&packed[..key_bytes]);
         entries.push(PgiEntry {
-            kmer,
             pos_start,
             freq: (positions.len() - pos_start as usize) as u32,
         });
@@ -282,6 +286,7 @@ pub fn build_from_seqs(
             .into_iter()
             .map(|(n, s)| (n, s.len() as u64))
             .collect(),
+        keys: packed_keys,
         entries,
         positions,
     })
@@ -416,16 +421,16 @@ mod tests {
                 )
                 .unwrap();
                 let mut seen: std::collections::HashSet<(u128, u32, u8)> = Default::default();
-                for e in &idx.entries {
+                for (ei, e) in idx.entries.iter().enumerate() {
+                    let key = idx.key_at_u128(ei);
                     for &rec in
                         &idx.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize]
                     {
                         let (cid, pos, strand) = crate::libs::pgi::unpack_position(rec);
                         assert!(
-                            seen.insert((e.kmer, pos, strand)),
+                            seen.insert((key, pos, strand)),
                             "duplicate record (k={k}, smer={smer}, window={window}, seed={seed}): \
-                             key={:x} pos={pos} strand={strand} cid={cid}",
-                            e.kmer
+                             key={key:x} pos={pos} strand={strand} cid={cid}"
                         );
                     }
                 }
@@ -484,7 +489,8 @@ mod tests {
             c
         };
         let mut seen: HashSet<(u128, u32, u8)> = HashSet::new();
-        for e in &idx.entries {
+        for (ei, e) in idx.entries.iter().enumerate() {
+            let key = idx.key_at_u128(ei);
             for &rec in &idx.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize] {
                 let (cid, pos, strand) = unpack_position(rec);
                 assert_eq!(cid, 0);
@@ -494,17 +500,13 @@ mod tests {
                 );
                 let kmer = kmer_key_at(&seq, pos as usize, 40, &codes)
                     .expect("indexed position must be N-free");
-                let expected = if strand == 0 {
-                    e.kmer
-                } else {
-                    rc_key(e.kmer, 40)
-                };
+                let expected = if strand == 0 { key } else { rc_key(key, 40) };
                 assert_eq!(
                     kmer, expected,
                     "key mismatch at pos {pos} (strand {strand})"
                 );
                 assert!(
-                    seen.insert((e.kmer, pos, strand)),
+                    seen.insert((key, pos, strand)),
                     "duplicate record at pos {pos}"
                 );
             }
@@ -730,9 +732,11 @@ mod tests {
             masked.n_unique(),
             plain.n_unique()
         );
-        let plain_keys: HashSet<u128> = plain.entries.iter().map(|e| e.kmer).collect();
+        let plain_keys: HashSet<u128> = (0..plain.entries.len())
+            .map(|i| plain.key_at_u128(i))
+            .collect();
         assert!(
-            masked.entries.iter().all(|e| plain_keys.contains(&e.kmer)),
+            (0..masked.entries.len()).all(|i| plain_keys.contains(&masked.key_at_u128(i))),
             "masked k-mers must be a subset of the unmasked ones"
         );
     }
@@ -785,8 +789,11 @@ mod tests {
             .collect();
         let idx = build_from_seqs(vec![(String::from("c"), seq)], 40, 8, 5, false, false).unwrap();
         assert!(idx.entries.len() > 10_000, "too few unique k-mers");
-        for w in idx.entries.windows(2) {
-            assert!(w[0].kmer <= w[1].kmer, "entries not sorted by k-mer");
+        for i in 1..idx.entries.len() {
+            assert!(
+                idx.key_at_u128(i - 1) <= idx.key_at_u128(i),
+                "entries not sorted by k-mer"
+            );
         }
     }
 

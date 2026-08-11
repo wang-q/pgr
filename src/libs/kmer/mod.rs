@@ -9,6 +9,7 @@ pub mod extract;
 pub mod gc;
 pub mod genomescope;
 pub mod hist;
+pub mod key;
 pub mod khist;
 pub mod nbinom;
 pub mod profile;
@@ -20,49 +21,69 @@ pub mod quality;
 pub struct KmerTable {
     /// K-mer length (bp).
     pub k: usize,
-    /// Canonical 2-bit k-mers (forward vs reverse-complement, smaller),
-    /// ascending and duplicate-free.
-    pub keys: Vec<u128>,
+    /// Packed canonical 2-bit k-mers (FastK byte layout), `key_bytes` bytes
+    /// per entry, ascending and duplicate-free.
+    pub keys: Vec<u8>,
     /// Dataset-wide counts, parallel to `keys`.
     pub counts: Vec<u32>,
 }
 
-/// Emit `(position, canonical key)` for every N-free k-mer window of `seq`.
+impl KmerTable {
+    /// Packed bytes per key (`(k+3)>>2`, FastK `kbyte`).
+    pub fn key_bytes(&self) -> usize {
+        self.k.div_ceil(4)
+    }
+
+    /// Key at entry `i`.
+    pub fn key_at(&self, i: usize) -> key::Kmer {
+        let kb = self.key_bytes();
+        key::Kmer::from_bytes(self.k, &self.keys[i * kb..(i + 1) * kb])
+    }
+}
+
+/// Emit `(position, canonical FastK byte key)` for every N-free k-mer
+/// window of `seq`.
 ///
 /// Bases are 2-bit encoded (A=0, C=1, G=2, T=3, case-insensitive); a window
 /// containing N or any other non-ACGT base is skipped (FastK splits on gaps
-/// and its profile has a 0 at such positions). The rolling forward key and
-/// its reverse complement (same rolling scheme as `pgi/build.rs`) select the
-/// lexicographically smaller of the two strands.
-pub fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, u128)) {
+/// and its profile has a 0 at such positions). `k` must be `<= Kmer::MAX_K`
+/// (the caller validates); larger values emit nothing.
+pub fn canonical_keys(seq: &[u8], k: usize, mut emit: impl FnMut(usize, key::Kmer)) {
     let n = seq.len();
-    if n < k {
+    if n < k || k > key::Kmer::MAX_K {
         return;
     }
-    let kmask = if 2 * k >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << (2 * k)) - 1
-    };
-    let rc_top = (2 * k - 2) as u32;
     let codes = base_codes();
-    let mut kx: u128 = 0;
-    let mut kxr: u128 = 0;
-    let mut valid = 0usize;
-    for (i, &b) in seq.iter().enumerate() {
-        let code = codes[b as usize];
-        if code == 4 {
-            kx = 0;
-            kxr = 0;
-            valid = 0;
-        } else {
-            kx = ((kx << 2) | code as u128) & kmask;
-            kxr = (kxr >> 2) | (((3 - code) as u128) << rc_top);
-            valid += 1;
+    let mut start = 0usize;
+    while start + k <= n {
+        while start < n && codes[seq[start] as usize] == 4 {
+            start += 1;
         }
-        if i + 1 >= k && valid >= k {
-            emit(i + 1 - k, kx.min(kxr));
+        if start + k > n {
+            break;
         }
+        let mut end = start;
+        while end < n && codes[seq[end] as usize] != 4 {
+            end += 1;
+        }
+        if end - start < k {
+            start = end;
+            continue;
+        }
+        let mut win = key::Kmer::from_bases(&seq[start..start + k], k).expect("N-free window");
+        // Rolling canonical pair: the forward key advances at the 3' end
+        // while the reverse complement advances at its 5' end (each new
+        // forward base `x` prepends `3-x` to the rc), so the canonical key
+        // costs one byte compare per window instead of a per-window rc.
+        let mut win_rc = win.rc();
+        emit(start, if win <= win_rc { win } else { win_rc });
+        for i in start + 1..=end - k {
+            let x = codes[seq[i + k - 1] as usize] as u8;
+            win.push_right(x);
+            win_rc.push_left(3 - x);
+            emit(i, if win <= win_rc { win } else { win_rc });
+        }
+        start = end;
     }
 }
 

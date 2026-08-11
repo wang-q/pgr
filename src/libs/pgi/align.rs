@@ -100,19 +100,22 @@ pub fn merge_seed_hits(
     // The per-entry prefix query against `b` is independent, so split the
     // `a` entries into chunks and merge them in parallel (the chaining passes
     // re-sort the hits, so the output order is free).
+    let kb = a.key_bytes();
     let hits: Vec<SeedHit> = a
-        .entries
-        .par_chunks(4096)
-        .map(|ents| -> anyhow::Result<Vec<SeedHit>> {
+        .keys
+        .par_chunks(kb * 4096)
+        .zip(a.entries.par_chunks(4096))
+        .map(|(keys_chunk, ents)| -> anyhow::Result<Vec<SeedHit>> {
             let mut hits = Vec::new();
             let mut prev_kmer = None;
             let mut cur = MergeCursor::default();
-            for ea in ents {
+            for (ei, ea) in ents.iter().enumerate() {
+                let ea_kmer = crate::libs::pgi::unpack_kmer(&keys_chunk[ei * kb..(ei + 1) * kb], k);
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_entry_hits(
-                    ea.kmer, ea.freq, ap, b, freq, min_shared, k, prev_kmer, &mut cur,
+                    ea_kmer, ea.freq, ap, b, freq, min_shared, k, prev_kmer, &mut cur,
                 )?);
-                prev_kmer = Some(ea.kmer);
+                prev_kmer = Some(ea_kmer);
             }
             Ok(hits)
         })
@@ -139,6 +142,7 @@ pub fn merge_seed_hits_from_stream<R: Read + Send, B: PgiQuery + Sync>(
             smer: a.header().smer,
             window: a.header().window,
             contigs: Vec::new(),
+            keys: Vec::new(),
             entries: Vec::new(),
             positions: Vec::new(),
         },
@@ -163,11 +167,12 @@ pub fn merge_seed_hits_from_stream<R: Read + Send, B: PgiQuery + Sync>(
             let mut hits = Vec::new();
             let mut prev_kmer = None;
             let mut cur = MergeCursor::default();
-            for (ea, poss) in batch? {
+            for (ea, poss, key) in batch? {
+                let ea_kmer = crate::libs::pgi::unpack_kmer(&key, k);
                 hits.extend(emit_entry_hits(
-                    ea.kmer, ea.freq, &poss, b, freq, min_shared, k, prev_kmer, &mut cur,
+                    ea_kmer, ea.freq, &poss, b, freq, min_shared, k, prev_kmer, &mut cur,
                 )?);
-                prev_kmer = Some(ea.kmer);
+                prev_kmer = Some(ea_kmer);
             }
             Ok(hits)
         })
@@ -863,6 +868,7 @@ pub fn align_to_psl_streaming<R: Read + Send, B: PgiQuery + Sync>(
         smer: a.header().smer,
         window: a.header().window,
         contigs: a.header().contigs.clone(),
+        keys: Vec::new(),
         entries: Vec::new(),
         positions: Vec::new(),
     };
@@ -930,6 +936,7 @@ pub fn align_to_psl_ext_streaming<R: Read + Send, B: PgiQuery + Sync>(
         smer: header.smer,
         window: header.window,
         contigs: header.contigs,
+        keys: Vec::new(),
         entries: Vec::new(),
         positions: Vec::new(),
     };
@@ -1023,6 +1030,35 @@ mod tests {
     use crate::libs::pgi::build::build_from_seqs;
     use crate::libs::pgi::pack_position;
     use crate::libs::pgi::PgiEntry;
+
+    /// Test index from `(kmer u128, pos_start, freq)` triples (packed keys).
+    fn idx(
+        k: usize,
+        smer: usize,
+        window: usize,
+        contigs: Vec<(String, u64)>,
+        triples: Vec<(u128, u32, u32)>,
+        positions: Vec<u64>,
+    ) -> PgiIndex {
+        let kb = k.div_ceil(4);
+        let mut keys = Vec::with_capacity(triples.len() * kb);
+        let mut entries = Vec::with_capacity(triples.len());
+        for (kmer, pos_start, freq) in triples {
+            let mut packed = [0u8; 16];
+            crate::libs::pgi::pack_kmer(kmer, k, &mut packed);
+            keys.extend_from_slice(&packed[..kb]);
+            entries.push(PgiEntry { pos_start, freq });
+        }
+        PgiIndex {
+            k,
+            smer,
+            window,
+            contigs,
+            keys,
+            entries,
+            positions,
+        }
+    }
 
     /// Build an index using GIXmake's match-mer syncmer rule (emit a k-mer at
     /// the window START whenever the window minimum sits at either endpoint),
@@ -1143,6 +1179,8 @@ mod tests {
             }
         }
         crate::libs::ds::radix_sort::radix_sort_u128_par(&mut keys, &mut payloads, 2 * k as u32);
+        let kb = k.div_ceil(4);
+        let mut packed_keys = Vec::new();
         let mut entries = Vec::new();
         let mut positions = Vec::new();
         let mut i = 0usize;
@@ -1157,8 +1195,10 @@ mod tests {
                 }
                 j += 1;
             }
+            let mut packed = [0u8; 16];
+            crate::libs::pgi::pack_kmer(kmer, k, &mut packed);
+            packed_keys.extend_from_slice(&packed[..kb]);
             entries.push(PgiEntry {
-                kmer,
                 pos_start,
                 freq: (positions.len() - pos_start as usize) as u32,
             });
@@ -1172,6 +1212,7 @@ mod tests {
                 .into_iter()
                 .map(|(n, s)| (n, s.len() as u64))
                 .collect(),
+            keys: packed_keys,
             entries,
             positions,
         }
@@ -1539,12 +1580,13 @@ mod tests {
         let k = a.k;
         let mut hits = Vec::new();
         let mut prev = None;
-        for ea in &a.entries {
+        for (i, ea) in a.entries.iter().enumerate() {
+            let ea_kmer = a.key_at_u128(i);
             let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
             hits.extend(
-                emit_entry_hits_ref(ea.kmer, ea.freq, ap, b, freq, min_shared, k, prev).unwrap(),
+                emit_entry_hits_ref(ea_kmer, ea.freq, ap, b, freq, min_shared, k, prev).unwrap(),
             );
-            prev = Some(ea.kmer);
+            prev = Some(ea_kmer);
         }
         hits
     }
@@ -1745,28 +1787,19 @@ mod tests {
         // are T (bits 104..128 set) drove `window(12)` to `hi = lo + r =
         // 2^128`, overflowing `u128` (a debug panic / release wrap). The
         // merge must not panic.
-        let k64 = PgiIndex {
-            k: 64,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries: Vec::new(),
-            positions: Vec::new(),
-        };
         // K = 12×T then 52×A: canonical (K <= rc_key(K), since its RC is
         // 52×T then 12×A), and window(12) gives lo = 0xFFFFFF << 104,
         // hi = lo + 2^104 = 2^128 (the overflow).
         let k = 0xFFFF_FF00_0000_0000_0000_0000_0000_0000u128;
-        let a = PgiIndex {
-            entries: vec![PgiEntry {
-                kmer: k,
-                pos_start: 0,
-                freq: 1,
-            }],
-            positions: vec![crate::libs::pgi::pack_position(0, 0, 0)],
-            ..k64.clone()
-        };
-        let b = k64;
+        let a = idx(
+            64,
+            8,
+            5,
+            vec![(String::from("c"), 1000)],
+            vec![(k, 0, 1)],
+            vec![crate::libs::pgi::pack_position(0, 0, 0)],
+        );
+        let b = idx(64, 8, 5, vec![(String::from("c"), 1000)], vec![], vec![]);
         let hits = merge_seed_hits(&a, &b, 10, 12).unwrap();
         assert!(hits.is_empty(), "no b entries, so no hits: {hits:?}");
     }
@@ -1775,37 +1808,23 @@ mod tests {
     fn merge_keeps_only_maximal_shared_prefix() {
         // k=32, all-A key against a 31-base and a 25-base match: only the
         // longest match is emitted (FastGA adaptamer semantics).
-        let mk = |entries: Vec<PgiEntry>, positions: Vec<u64>| PgiIndex {
-            k: 32,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries,
-            positions,
-        };
-        let a = mk(
-            vec![PgiEntry {
-                kmer: 0,
-                pos_start: 0,
-                freq: 1,
-            }],
+        let contigs = vec![(String::from("c"), 1000)];
+        let a = idx(
+            32,
+            8,
+            5,
+            contigs.clone(),
+            vec![(0, 0, 1)],
             vec![crate::libs::pgi::pack_position(0, 10, 0)],
         );
         // First 31 bases shared (A..AT), then first 25 bases shared (A..AT);
         // entries must stay ascending by k-mer.
-        let b = mk(
-            vec![
-                PgiEntry {
-                    kmer: 3,
-                    pos_start: 0,
-                    freq: 1,
-                },
-                PgiEntry {
-                    kmer: 3 << 12,
-                    pos_start: 1,
-                    freq: 1,
-                },
-            ],
+        let b = idx(
+            32,
+            8,
+            5,
+            contigs,
+            vec![(3, 0, 1), (3 << 12, 1, 1)],
             vec![
                 crate::libs::pgi::pack_position(0, 50, 0),
                 crate::libs::pgi::pack_position(0, 60, 0),
@@ -1823,46 +1842,27 @@ mod tests {
         // more total occurrences of *under-frequency* entries: the whole
         // entry is skipped (FastGA's extended-range filter sums the index
         // counts over the range and drops it at `>= FREQ`).
-        let mk_a = PgiIndex {
-            k: 32,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries: vec![PgiEntry {
-                kmer: 0,
-                pos_start: 0,
-                freq: 1,
-            }],
-            positions: vec![crate::libs::pgi::pack_position(0, 10, 0)],
-        };
+        let contigs = vec![(String::from("c"), 1000)];
+        let mk_a = idx(
+            32,
+            8,
+            5,
+            contigs.clone(),
+            vec![(0, 0, 1)],
+            vec![crate::libs::pgi::pack_position(0, 10, 0)],
+        );
         // Three distinct 25-base-matching k-mers, 4 occurrences each (each
         // entry is under the cutoff, but 12 >= freq=10 in total).
-        let b = PgiIndex {
-            k: 32,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries: vec![
-                PgiEntry {
-                    kmer: 1 << 12,
-                    pos_start: 0,
-                    freq: 4,
-                },
-                PgiEntry {
-                    kmer: 1 << 13,
-                    pos_start: 4,
-                    freq: 4,
-                },
-                PgiEntry {
-                    kmer: 3 << 12,
-                    pos_start: 8,
-                    freq: 4,
-                },
-            ],
-            positions: (0..10)
+        let b = idx(
+            32,
+            8,
+            5,
+            contigs,
+            vec![(1 << 12, 0, 4), (1 << 13, 4, 4), (3 << 12, 8, 4)],
+            (0..10)
                 .map(|i| crate::libs::pgi::pack_position(0, 50 + i, 0))
                 .collect(),
-        };
+        );
         let hits = merge_seed_hits(&mk_a, &b, 10, 20).unwrap();
         assert!(hits.is_empty(), "extended range is too frequent: {hits:?}");
     }
@@ -1873,17 +1873,9 @@ mod tests {
         // (keeping `== freq`) while the query side (and FastGA's GIX build)
         // drop `>= freq`. A k-mer occurring exactly `freq` times on the
         // reference but rarely on the query must not seed either.
-        let mk = |freq: u32, positions: Vec<u64>| PgiIndex {
-            k: 32,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries: vec![PgiEntry {
-                kmer: 0,
-                pos_start: 0,
-                freq,
-            }],
-            positions,
+        let contigs = vec![(String::from("c"), 1000)];
+        let mk = |freq: u32, positions: Vec<u64>| {
+            idx(32, 8, 5, contigs.clone(), vec![(0, 0, freq)], positions)
         };
         let a = mk(
             2,
@@ -1904,41 +1896,27 @@ mod tests {
         // raises the maximal shared prefix nor drops the extended range. A
         // rare (freq 1) 25-base match next to an `== freq` 31-base entry must
         // still seed at the rare entry's prefix length.
-        let mk_a = PgiIndex {
-            k: 32,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries: vec![PgiEntry {
-                kmer: 0,
-                pos_start: 0,
-                freq: 1,
-            }],
-            positions: vec![crate::libs::pgi::pack_position(0, 10, 0)],
-        };
-        let b = PgiIndex {
-            k: 32,
-            smer: 8,
-            window: 5,
-            contigs: vec![(String::from("c"), 1000)],
-            entries: vec![
-                PgiEntry {
-                    kmer: 3,
-                    pos_start: 0,
-                    freq: 2,
-                },
-                PgiEntry {
-                    kmer: 3 << 12,
-                    pos_start: 2,
-                    freq: 1,
-                },
-            ],
-            positions: vec![
+        let contigs = vec![(String::from("c"), 1000)];
+        let mk_a = idx(
+            32,
+            8,
+            5,
+            contigs.clone(),
+            vec![(0, 0, 1)],
+            vec![crate::libs::pgi::pack_position(0, 10, 0)],
+        );
+        let b = idx(
+            32,
+            8,
+            5,
+            contigs,
+            vec![(3, 0, 2), (3 << 12, 2, 1)],
+            vec![
                 crate::libs::pgi::pack_position(0, 50, 0),
                 crate::libs::pgi::pack_position(0, 51, 0),
                 crate::libs::pgi::pack_position(0, 60, 0),
             ],
-        };
+        );
         let hits = merge_seed_hits(&mk_a, &b, 2, 20).unwrap();
         assert_eq!(hits.len(), 1, "rare entry must seed: {hits:?}");
         assert_eq!(hits[0].shared, 25);
@@ -1954,28 +1932,14 @@ mod tests {
         // floor window; pgr keeps them in the index, so the narrowed window
         // looked non-empty and the merge returned no hits, missing an
         // under-frequency seed in the floor window below the lcp.
-        let mk = |entries: Vec<PgiEntry>, positions: Vec<u64>| PgiIndex {
-            k: 8,
-            smer: 4,
-            window: 2,
-            contigs: vec![(String::from("c"), 1000)],
-            entries,
-            positions,
-        };
+        let contigs = vec![(String::from("c"), 1000)];
         // a1 = AAAAAAAA (0x0000), a0 = AAAAAATT (0x000F); lcp(a1, a0) = 6.
-        let a = mk(
-            vec![
-                PgiEntry {
-                    kmer: 0x0000,
-                    pos_start: 0,
-                    freq: 1,
-                },
-                PgiEntry {
-                    kmer: 0x000F,
-                    pos_start: 1,
-                    freq: 1,
-                },
-            ],
+        let a = idx(
+            8,
+            4,
+            2,
+            contigs.clone(),
+            vec![(0x0000, 0, 1), (0x000F, 1, 1)],
             vec![
                 crate::libs::pgi::pack_position(0, 0, 0),
                 crate::libs::pgi::pack_position(0, 10, 0),
@@ -1985,19 +1949,12 @@ mod tests {
         // but is high-frequency (freq 2 == cutoff). b = AAAAACAA (0x0040)
         // shares 4 bases (< lcp 6, >= min-shared 4) -> in the floor window
         // only, under-frequency.
-        let b = mk(
-            vec![
-                PgiEntry {
-                    kmer: 0x0004,
-                    pos_start: 0,
-                    freq: 2,
-                },
-                PgiEntry {
-                    kmer: 0x0040,
-                    pos_start: 1,
-                    freq: 1,
-                },
-            ],
+        let b = idx(
+            8,
+            4,
+            2,
+            contigs,
+            vec![(0x0004, 0, 2), (0x0040, 1, 1)],
             vec![
                 crate::libs::pgi::pack_position(0, 60, 0),
                 crate::libs::pgi::pack_position(0, 50, 0),
