@@ -15,7 +15,7 @@ BBTools 工具依赖如下：
 | 流程 | BBTools 工具 | pgr 状态 |
 |---|---|---|
 | `trim` | bbduk / bbnorm / clumpify / kmercountexact / reformat / repair | ✅ 全迁移 |
-| `merge` | bbduk / clumpify / repair ✅ + **bbmerge / tadpole** ❌ | 部分（本文） |
+| `merge` | bbduk / clumpify / repair ✅ + **bbmerge / tadpole** ✅ | 全迁移（本文） |
 | `2_insert_size` | **tadpole**（组装 contig）/ **bbmap**（比对）/ reformat（ihist） | ❌ 三个新 |
 | `unitigs` | **tadpole**（可选组装器，与 bcalm/bifrost 并列） | ❌ 新 |
 | `anchors` | **bbwrap/bbmap**（reads 比对到参考） | ❌ 新 |
@@ -69,6 +69,52 @@ align2 42,756 + aligner 11,571 + map 9,048 ≈ 6.3 万行整体划出范围，
 剩下与 anchr 相关的核心就是 tadpole + bbmerge。pgr 用 9 万行 Rust 覆盖
 同样功能面是合理的：50 万里大部分是"壳 + 历史版本 + 无关领域 + 变体"。
 
+### 0.2 bcalm / Bifrost（unitigs 流程的 unitigger，2026-08-11）
+
+anchr `unitigs.tera.sh` 支持 4 种 unitigger：tadpole / bcalm / bifrost /
+superreads（MaSuRCA 的 `create_k_unitigs_large_k`），`--unitigger` 选择；
+**template 默认 bcalm**，独立 `anchr unitigs` 命令默认 superreads（两处
+默认不一致，属 anchr 侧问题）。输入均为 merge 流产物 pe.cor.fa。
+
+实际调用（unitigs.tera.sh）：
+
+* bcalm：
+  `bcalm -in pe.cor.fa -kmer-size K -abundance-min 3 -verbose 0 \
+   -nb-cores N -out K{K}`，产物 `K{K}.unitigs.fa` → `unitigs_K{K}.fasta`；
+* Bifrost：
+  `Bifrost build --input-seq-file pe.cor.fa --kmer-length K \
+   --clip-tips --del-isolated --threads N --fasta --no-compress-out \
+   --output-file unitigs_K{K}`；
+* 产出 unitigs 后接 `anchr contained/orient/merge`（anchr 自有命令，
+  无需迁移）。
+
+**两者都不是 BBTools**，anchr 直接调用外部工具（check_dep 必装、
+install_dep 安装；本机已装 bcalm + Bifrost 1.3.5）→ **unitigs 流程本身
+没有 BBTools 依赖**，唯一 BBTools 分支是 `--unitigger tadpole`（可选）。
+pgr 迁移面不含 unitig 组装；merge 流程的 tadpole 只取其 ecc/extend。
+
+**算法对照**：
+
+* **BCALM2**（Chikhi et al., ISMB 2016）：精确 cDBG。先建 solid kmer 集合
+  （`-abundance-min` 阈值），再压实成 unitig（= 最大无分支路径，确定性）；
+  用 minimizer 把 kmer 分区到不同 worker，低内存并行，输出 FASTA 头带
+  `LN`（unitig 长度）/`KC`（kmer 深度）/`km` 和左右边信息。本机版本
+  BCALM2 1.3.1 支持 minimizer/bloom（`neighbor` + cascading debloom）/
+  branching 节点存储等高级选项；kmer 转 canonical。
+* **Bifrost**（Holley & Melsted, 2020）：直接构建压缩 de Bruijn 图，
+  最小完美哈希 + Bloom filter（默认 24 bits/kmer），支持彩色图（可增量
+  update/query）。`--clip-tips` 剪长度 < k 的 tip，`--del-isolated` 删
+  长度 < k 的孤立 unitig；kmer 唯一出现 1 次默认直接丢弃（与 bcalm 的
+  abundance 阈值思路类似）。
+* **Tadpole** 是贪心近似：不建显式图，kmer 表上沿 path 延伸，branch/
+  dead-end 停，深度比可穿强分支；作为 unitigger 结果不确定（ecc/extend
+  场景没问题，unitig 组装不如前两者）。
+
+**结论**：若将来 pgr 要接管 unitigs（`pgr unitigs`），参考实现应是
+BCALM 式 minimizer 分区 + cDBG 压实（确定性 unitig，可并行、内存可控），
+而非 Tadpole 克隆；彩色图（Bifrost 的差异化能力）暂不需要。本次 merge
+迁移不动 unitigs，bcalm/Bifrost 维持外部依赖即可。
+
 ## 1. 流程拆解（merge.tera.sh）
 
 anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如下：
@@ -76,11 +122,11 @@ anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如�
 | # | 步骤 | 工具 | 作用 | pgr 现状 |
 |---|---|---|---|---|
 | 1 | clumpify | `clumpify.sh dedupe dupesubs=0` | 排序 + 精确整对去重（SE 追加） | `fq clump --dedupe` ✅ |
-| 2a | EC phase 1 | `bbmerge.sh ecco mix vstrict` + `ihist` | overlap 区域纠错（不合并） | ❌ 新 |
-| 2b | EC phase 2 | `clumpify.sh passes=4 ecc unpair repair` | clump 内共识纠错（单端） | ❌ 新（**可跳过**，见 §3.3） |
-| 2c | EC phase 3 | `tadpole.sh ecc tossjunk tossdepth=2 tossuncorrectable` | kmer 图纠错 + 丢弃坏 read | ❌ 新 |
-| 3 | Read extension | `tadpole.sh mode=extend el=20 er=20 k=62` | 3'/5' 端扩展 reads | ❌ 新 |
-| 4 | Read merging | `bbmerge-auto.sh strict k=81 extend2=80` + `ihist` | overlap 合并 + insert size 直方图 | ❌ 新 |
+| 2a | EC phase 1 | `bbmerge.sh ecco mix vstrict` + `ihist` | overlap 区域纠错（不合并） | `fq merge --ecco` ✅ |
+| 2b | EC phase 2 | `clumpify.sh passes=4 ecc unpair repair` | clump 内共识纠错（单端） | 跳过（见 §3.3） |
+| 2c | EC phase 3 | `tadpole.sh ecc tossjunk tossdepth=2 tossuncorrectable` | kmer 图纠错 + 丢弃坏 read | `fq ecc` ✅ |
+| 3 | Read extension | `tadpole.sh mode=extend el=20 er=20 k=62` | 3'/5' 端扩展 reads | `fq extend` ✅ |
+| 4 | Read merging | `bbmerge-auto.sh strict k=81 extend2=80` + `ihist` | overlap 合并 + insert size 直方图 | `fq merge --extend2 --rem` ✅ |
 | 5 | Dedupe merged | `clumpify.sh dedupe dupesubs=0` | 合并后 reads 去重 | `fq clump --dedupe` ✅ |
 | 6 | bbduk qtrim | `bbduk.sh qtrim=r trimq=... minlen=...` | 未合并 reads 质量修剪 | `fq clean`（无 ref）✅ |
 | 7 | repair | `repair.sh repair` | 拆分 R1/R2/singles | `fq split --repair` ✅ |
@@ -99,13 +145,14 @@ anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如�
   与 trim.era.sh 的纯 qtrim 一致，已解决）；
 * `fq split --repair`（步骤 7）：repair.sh rp 模式按名字配对，已对照。
 
-### 需迁移（新命令/功能）
+### 已迁移（2026-08-11 全部完成，逐字节 golden 对照）
 
-| 工具 | 功能点 | 规模评估 |
+| 工具 | pgr 命令 | 对照 |
 |---|---|---|
-| **bbmerge** | overlap merge + ecco + ihist | 核心算法 `mateByOverlapRatio` 已有简化版（trim_adapter 的 tbo）；merge/ecco/ihist 需完整移植，~3000 行源码 |
-| **tadpole** | kmer 图纠错（ecc）+ read 扩展（extend） | 最大工程：基于 kmer 图的组装式算法，~8000 行源码；pgr 有精确 KmerTable（`libs/kmer`）可作基础 |
-| **clumpify ecc** | `passes=4 ecc unpair repair` 模式 | **建议不做**（与 tadpole ecc 冗余，anchr 可跳过，见 §3.3） |
+| **bbmerge** | `fq merge`（--ecco / --strict / --no-make-vector / --extend2 --rem） | `merge.*` + `merge4.*` golden，net/classic/ecco/ihist 全一致 |
+| **tadpole ecc** | `fq ecc`（tossjunk/tossdepth/tossuncorrectable） | `ecct_sub.fq.gz` golden，丢弃判定一致 |
+| **tadpole extend** | `fq extend`（k=62 el/er） | `ext_sub.fq.gz` golden，扩展碱基一致 |
+| **clumpify ecc** | 跳过 | 与 tadpole ecc 冗余，anchr 可跳过（§3.3） |
 
 ## 3. 新工具源码分析（BBTools-40.01）
 
@@ -144,6 +191,39 @@ anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如�
   ihist 用的是 **bbmerge 的 ihist**（overlap 合并时统计），tadpole
   insertMode 不在流程必需范围（可选，做完整 tadpole 时再考虑）。
 * `prefilter`：同 bbmerge（countmin sketch）。
+
+**算法复杂度（原作者自述）**：Brian Bushnell 2015 年发布帖（SEQanswers
+"Introducing Tadpole"）明说 Tadpole "is only a contig-builder"——把 kmer
+组装成 contig，遇到 branch 或 dead-end 就截断；**不建显式 de Bruijn 图、
+不消除杂合 bubble、不做完美遍历、不做 scaffolding**（"It does not generate
+the explicit DeBruijn graph and try to remove heterozygous bubbles, or find
+a perfect traversal"）。设计初衷是给 BBMerge 做 read 延伸/纠错（"my primary
+design goals were for read extension and error-correction"）。官方 guide 同：
+"does not do any complicated graph analysis"。纠错方式 = "组装穿过错误"——
+用图路径穿过错误处、以组装出的碱基替换错误碱基。
+
+实际算法就四块：kmer 计数表 → 贪心延伸（查 4 个后继深度，branch 判定用
+**深度比自适应阈值** `branchmult1=20`/`branchmult2=3`/`branchlower=3`，非绝对
+深度）→ 纠错（`reassemble` 默认 + `pincer`/`tail` 可选）→ toss（低深度 kmer
+占比超限丢弃）。shave/rinse/pop 是可选增强、默认关，为组装连续性服务，
+merge 流程不涉及。
+
+**实现策略（建议）**：算法照原版（保守 + 深度比分支 + 组装式纠错），代码不
+照抄——砍掉 Tadpole1/Tadpole2 双实现（kmer 编码统一即可）、几百个选项
+（流程只用 `k`/`el`/`er`/`ecc`/三个 toss 参数 + 分支判定默认值）、线程/IO
+管道（rayon + pgr fq reader）、shave/rinse/pop/prefilter。核心逻辑估
+~2-3 千行，大头是与原版黑盒对照（Lambda golden）。需保留行为参数：bm1/bm2/
+blc 默认值、ecc 默认策略（reassemble + rollback + rbi）、toss 语义
+（`tossdepth=2` 时 pair 任一 read 失败即丢）。
+
+**同类思路：MaSuRCA super-reads（Zimin et al. 2013, Bioinformatics）**：
+super-read 把短 reads 用 kmer 查找表在 5'/3' 两端、**延伸唯一时**逐碱基延成
+更长的伪长读：先纠错（QuORUM）简化图，再沿 k-unitig（无分支最大路径，即
+唯一延伸路径）延伸，把 50-100× 覆盖压成 2-3× 喂给 OLC（Celera Assembler）。
+与 Tadpole 同源思路（kmer 唯一路径延伸 + 保守），差异：MaSuRCA 先独立纠错
+再延伸、严格"遇 branch 即停"；Tadpole 把纠错融入延伸（组装式）、分支处按
+深度比自适应决策、不接 OLC。侧面印证"唯一路径延伸"是成熟简单的设计模式，
+pgr 简化实现可行。
 
 ### 3.3 clumpify ecc（`clumpify.sh passes=4 ecc unpair repair`）
 
@@ -202,3 +282,106 @@ anchr `merge` 命令生成 `merge.sh`，输入 R1/R2（可选 SE），流程如�
 
 *参考来源: [merge.tera.sh](../../../anchr/templates/merge.tera.sh)（anchr 项目，只读） |
 BBTools-40.01 源码（`jgi/BBMerge*`、`assemble/Tadpole*`、`jgi/Clumpify*`）*
+
+## 6. 实现状态（bbmerge 迁移完成，2026-08-11）
+
+**`pgr fq merge` 已实现并通过 BBTools 40.01 黑盒逐字节对照**（Lambda 40k
+pairs，`tests/cli_fq_merge.rs`）：
+
+* `--ecco --mix --vstrict --net bbmerge.bbnet` ≡ `bbmerge.sh ecco mix vstrict`
+  （anchr merge phase 1，ihist 也一致）；
+* `--strict --net` ≡ `bbmerge.sh strict`（merged + unmerged + ihist 一致）；
+* `--no-make-vector` ≡ `bbmerge.sh ... makevector=f`（经典 efilter/pfilter
+  路径，vstrict/strict、ecco/join 全一致）。
+
+关键发现（BBTools 40.01）：
+
+1. **`BBMerge.main()` 无条件置 `MAKE_VECTOR=true`**（除非用 tadpole），把
+   ratio 预筛 `maxratio` 强制成 0.7，并跳过 ambig/pfilter 拒绝；最终合并
+   与否由 **bbmerge.bbnet 神经网络**（23 维特征，6 层稠密网络，`##ctf`
+   阈值）决定。pgr 移植了该 net 的推理（`libs/fq/bbnet.rs`，含 SIG/TANH/
+   MSIG/RSLOG 激活与 SIMD.fma 点积语义）；
+2. **质量值在解析时转 phred**（`applyQualOffset`，-33；N 碱基置 0，ACGT
+   至少 2），输出写回 +33 —— 未合并 reads 的碱基/质量也会被规范化；
+3. no-quality 路径的 `bestGood/secondBestGood` **永远为 0**（40.01 未赋值），
+   是 net 特征的重要输入；
+4. `fq merge` 默认走 net（与 bbmerge.sh 一致），`--net` 必填；classic 路径
+   用 `--no-make-vector`。
+
+## 7. 实现状态（tadpole ecc/extend 迁移完成，2026-08-11）
+
+**`pgr fq ecc` / `pgr fq extend` 已实现并通过 BBTools 40.01 黑盒逐字节对照**
+（Lambda 40k pairs 全量 + 2k pairs 子集 golden，`tests/cli_fq_ecc.rs` /
+`tests/cli_fq_extend.rs`，fmt/clippy clean，全量测试绿）：
+
+* `fq ecc ... --toss-junk --toss-depth 2 --toss-uncorrectable` ≡
+  `tadpole.sh ecc tossjunk tossdepth=2 tossuncorrectable`（phase 3，
+  丢弃判定 1702 对完全一致）；
+* `fq extend -k 62 --el 20 --er 20` ≡ `tadpole.sh mode=extend el=20 er=20
+  k=62`（read extension 步骤，k>31 走 Tadpole2 路径，扩展碱基 1,444,344
+  完全一致）。
+
+### 7.1 关键发现（Tadpole 源码语义，逐条复刻）
+
+1. **N 会重置 kmer 窗口与 minprob 乘积**：`AminoAcid.baseToNumber` 静态
+   初始化先 `Arrays.fill(..., -1)` 再写 ACGT(U)，所以 N 是 -1 而非 0；
+   计数表永远不含跨 N 的窗口（表构建、fillKmers、hasKmersAtOrBelow、
+   isJunk、reassemble_inner、regenerateCounts 全部一致重置）。
+2. **计数数组带符号**：缺失 kmer 的 `getCount` 返回 -1（NOT_PRESENT），
+   N 窗口在 fillCounts 里是 0；isError/isSimilar 全部按 Java 有符号语义
+   （low=-1 时 `low*em1<high` 恒真等）。
+3. **修正判定 `num==rightMax` 是"碱基编码 == 计数"**（不是位置索引）：
+   当碱基编码恰好等于深度时 BBTools 视作已修正跳过 —— 移植必须复刻。
+4. **extend 模式不做纠错**：`mode=extend` 时 Java `ecc_=false`（correctMode
+   才置 true），`processRead` 直接扩展；pgr 用 `TadpoleOptions.ecc` 开关
+   区分（`fq ecc` 置 true、`fq extend` 默认 false）。
+5. **扩展不做左分支检查**：`ExtendThread.leftCounts` 从未初始化（null），
+   `extendToRight2_inner` 只判右 junction；pgr `extend_to_right2` 的
+   `use_left=false`。
+6. **junction base 追加条件随 Tadpole 版本翻转**：Tadpole1（k≤31）
+   `kmer>rkmer`；Tadpole2（k>31，canonical 为 MIN）`kmer.key()==array2()`
+   ⇔ `kmer<rkmer`。
+7. **扩展 seed 含 N 直接失败**：`rightmostKmer` 对末尾 k 碱基含 N 返回
+   null → 该方向不扩展（pgr seed 构建带 N 重置）。
+8. **fromRight 的 clearWindow2 在反向方向做**（Java `reverseInPlace` +
+   reverse quals），正向方向 + 反向 quals 会把端头修正误清。
+9. **similar_range 负 loc2 是空区间 → true**（Java clamp 到 -1 循环不执行），
+   Rust usize 转换会包成巨大值，必须显式判负。
+
+### 7.2 merge phase 4（bbmerge-auto extend2/rem，2026-08-11 完成）
+
+**`pgr fq merge --strict --no-make-vector --extend2 80 --rem` 已实现并通过
+BBTools 40.01 黑盒逐字节对照**（`ext_sub.fq.gz` 2000 对，merged/unmerged/
+ihist 全一致，`merge4.*` golden + `cli_fq_merge.rs` 测试）。
+
+实现要点（逐条对照 Java `BBMerge.processReadPair`）：
+
+1. **触发条件**：`rem`（requireExtensionMatch）时**每个 pair** 都走扩展
+   块（条件 `requireExtensionMatch || AMBIG || NO_SOLUTION`），不是只对
+   AMBIG/NO_SOLUTION——初始 Merged 的 pair 也会扩展后重检；
+2. **扩展调用**：`tadpole.extendToRight2(..., includeJunctionBase=false)`，
+   与 `fq extend` 的 `true` 不同；`leftCounts` 仍为 null（
+   `extendThroughLeftJunctions` 默认 true），左分支检查关闭；k=81 走
+   Tadpole2 路径（多字 kmer，见下）；
+3. **迭代次数**：`extendIterations` 默认 1——只扩展一轮（每 read 至多
+   extend2 碱基），不是无限循环；
+4. **rem 接受规则**：`lengthSum` 用**扩展前** reads 长度（
+   `approxMaxOverlappingInsert = lengthSum - 26`）；`minExt =
+   min(12, extend2*2)`；只有"扩展前无 overlap 且扩展后 insert 超过
+   approxMax 且 extension >= minExt"才接受扩展合并；
+5. **unmerged 输出用原始 reads**：BBMerge 在 `findOverlapInThread` 快照
+   原始 reads（`originals`），未合并 pair 写 outu 前恢复——扩展后的 reads
+   不进 outu；
+6. **histogram 只记最终结果**：扩展块结束后重跑 overlap 检测（即使
+   e1=e2=0），按最终 outcome 记 stats（BBMerge 每 pair 只计一次）；
+7. **多字 kmer 支持（k>64）**：tadpole 的 kmer 从 u128 重构为
+   `Vec<u64>` 多字表示（`Kmer`），`push_right` 的最高字掩码按 `2k%64`
+   取位（k=62 时 60 位，旧 `!(3<<62)` 会留垃圾位）、`push_left` 的进位
+   方向（低字顶部落入高字底部）、junction 方向判定（`is_lt`）三个隐蔽
+   bug 修复后，k=62/81 均与 BBTools 逐字节一致；
+8. **bbmerge-auto.sh 本身**只是内存自动检测的包装，参数原样传给
+   `jgi.BBMerge`，无需单独迁移。
+
+至此 anchr merge 流程 7 步全部有 pgr 等价命令（clumpify 去重 / bbmerge
+ecco / clumpify ecc（跳过）/ tadpole ecc / tadpole extend / bbmerge-auto
+extend2+rem / clumpify 去重 / bbduk qtrim / repair）。

@@ -1,0 +1,17 @@
+#Mean	155.818
+#Median	158
+#Mode	158
+#STDev	34.176
+#PercentOfPairs	0.550
+#InsertSize	Count
+85	1
+105	1
+128	1
+144	1
+158	1
+176	1
+178	1
+182	1
+183	1
+187	1
+188	1

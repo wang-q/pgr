@@ -64,6 +64,16 @@ impl SeqRecord {
     pub fn is_fastq(&self) -> bool {
         self.is_fastq
     }
+
+    /// Replaces the sequence bases.
+    pub fn set_sequence(&mut self, seq: Vec<u8>) {
+        self.seq = seq;
+    }
+
+    /// Replaces the quality scores.
+    pub fn set_quality(&mut self, qual: Vec<u8>) {
+        self.qual = qual;
+    }
 }
 
 /// FAFQ sequential reader over any buffered input.
