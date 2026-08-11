@@ -4,76 +4,39 @@
 > 功能层基本齐备，近期大头是验证与数据驱动的扩展。
 > 已完成条目只留一行结论，细节见链接文档。
 
-## 0. 会话交接（2026-08-10：BBTools 替换逐命令核对与修复）
+## 0. 会话交接（2026-08-11：pgr fq assemble 完成并已提交）
 
-**新流程（2026-08-11 立项）：anchr merge.tera.sh 替换**，设计见
-`design/anchr-merge-replace.md`。涉及新工具：bbmerge（merge/ecco/ihist）、
-tadpole（ecc/extend）、clumpify ecc 模式。分阶段：
-阶段 A bbmerge 核心（复用 trim_adapter 的 mate_by_overlap_ratio）；
-阶段 B tadpole ecc（toss 语义与 s-filter 一致）；**clumpify ecc（phase 2）
-不做**（与 tadpole ecc 冗余，anchr `template.rs` 帮助明示 "Phase 2 can be
-skipped"，用户反馈以前常卡住）；
-阶段 C tadpole extend + prefilter。
+**当前交接**：tadpole 组装迁移 `pgr fq assemble` 已实现并验证（设计见
+`design/fq-assemble.md`），已提交（`752aafc`，含 cmd/libs/测试/golden/
+文档/设计笔记），全量 1661 测试绿、fmt/clippy clean。
+**下一步**：anchr 侧模板替换——`2_insert_size.tera.sh` / `unitigs.tera.sh`
+的 `tadpole.sh` → `pgr fq assemble`，注意 `0_cleanup.tera.sh` 文件名
+同步。已知偏差：bubble 解析与 tadpole 有少量差异（其 expand 顺序依赖
+`-Xmx` 相关哈希布局），已按用户确认接受确定性输出（§6）。
 
-**已完成（trim.era.sh 8 步 M0-M8 全部移植，测试 1594 全绿，fmt/clippy
-clean，代码已提交）**：
+**已完成（一行结论，细节见各设计笔记）**：
 
-- `fq sample`/`trim-adapter`/`norm` 与 BBTools 39.38 逐字节一致复核完成：
-  修复 changequality、qtrim 空 read 边界、`--ref` 可选、norm minq=6；
-  reformat/bbduk 参数全景盘查（唯一缺口 = ihist，用户决定放着）；
-  fairy/khmer 源码分析不改变 norm 精确/近似决策；bbnorm 深度分箱暂不做。
-  细节见 `design/anchr-trim-replace.md` §4.0/§4.8–4.11、
-  `references/fairy.md`、`references/khmer.md`。
-- `pgr kmer` 用 Lambda 真实数据验证（table/hist/gsize/gc/qhist/qcheck/
-  profile 全跑通；修复 gsize peak 估计：全局众数 → CallPeaks 主峰，
-  peak=56 与 BBTools 一致、genome_size 47786 bp）。细节见
-  `design/kmer.md` §10.8。
-- `fq split` 多参数核对完成：stdout 输出 R1 与 repair golden 逐字节一致、
-  尾记录（无 --outfile-single）warning + 丢弃均有测试；确认 `pgr::writer`
-  不做 `.gz` 自动压缩（设计如此，压缩由 shell 管道负责）、`fq interleave`
-  默认重命名 reads（roundtrip 逐字节不适用）。
-- `fq split --repair`（2026-08-11）：按 read 名前缀配对（repair.sh `rp`
-  模式源码逐行复刻——prefix 提取含单 token `/` 拆、suffix `/1` `/2`/`1:`
-  `2:` 判定、含 `/1`/`/2` 时重设 prefix、LinkedHashMap 缓存配对方向），
-  处理顺序错乱/孤儿；默认仍为流式位置拆分。合成 4 场景 + Lambda golden
-  与 repair.sh 逐字节一致。
-- bbduk 第一梯队功能补齐（2026-08-10）：`fq trim-adapter` 新增 qtrim
-  r/l/rl/w、polymer（poly-A/G/C + filter）、maq/mbq/maxnrate/mcb/mlf/
-  maxlength、GC 过滤、forcetrim、kmask（N/lc/fully-covered）——14 组
-  Lambda 真实数据黑盒对照 39.38/40.01 全部逐字节一致。细节见
-  `design/anchr-trim-replace.md` §4.12。
-- bbduk 两次调用拆分（2026-08-11）：`fq trim-adapter` 拆为
-  `fq clean`（kmer 修剪 + 质量/组成过滤，对应 bbduk 第一次调用）+
-  `fq filter`（kmer 污染过滤，对应第二次调用）；参数名统一 pgr 长名
-  风格并在帮助标注 `(bbduk: 原名)`；`fq trim-qual`（sickle 语义）保留。
-- quorum 端到端对照（2026-08-11）：本机 jellyfish 2.3.1 可用后，`pgr kmer
-  qcheck`（已更名 `pgr fq s-filter`）与 quorum error_correct_reads 在
-  Lambda filter golden（k=24）对照：
-  skip=1/good=2/ac=3 时 1703 = 1703 完全一致；默认参数 1267 vs 1264（3 条
-  边界差异）。**修复 backward 扩展 off-by-one**（extend 起点传 start-1 导致
-  漏检位置 start-1、窗口漂移，非默认参数下误判 ~27k read）。
-  新增真实数据回归测试（flagged 1240-1300 锚点）。
-- `qcheck` 更名 `fq s-filter`（2026-08-11）：内部自查（quorum 语义、无外部
-  参考）与 `fq filter`（外部参考 kmer 过滤）对照，沿用 rept `s-`/`e-` 的
-  self 前缀约定；命令从 `kmer` 移入 `fq`（与 norm 同类：基于 kmer 计数判定
-  并过滤 read）。qhist 留在 kmer。
+- **trim 8 步 M0-M8 全部移植**（fq sample/clump/split/clean/filter/norm/
+  trim-adapter/kmer hist），与 BBTools 39.38 逐字节一致，代码已提交 →
+  `design/anchr-trim-replace.md`。
+- **anchr merge 流程 7 步全部移植**（fq merge/ecc/extend/assemble +
+  split --repair + s-filter），golden/统计对照完成；clumpify ecc 按计划
+  跳过 → `design/anchr-merge-replace.md`、`design/fq-assemble.md`。
 
 **挂账/待决**：
 
 1. **norm 精确 vs 近似定稿**（§4.8 未定）：pgr 走精确表 + 外部桶（1TB
    答案）；bbnorm bits=16 近似表结果依赖 -Xmx。差异 = 定义差异不是 bug。
-2. **anchr 模板替换**（用户自己处理，命令已齐）：把 trim.era.sh 的
-   bbtools 调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）；
+2. **anchr 模板替换**（用户自己处理，命令已齐）：trim.era.sh 的 bbtools
+   调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）；
    merge.era.sh 的 bbduk 纯 qtrim → `pgr fq trim-adapter ... --no-ktrim
-   --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual> --minlen <len>`。
-   trim.era.sh 的 bbduk 两次调用 → `pgr fq clean`（trim）+ `pgr fq filter`
-   （filter）。
+   --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual>
+   --minlen <len>`；trim.era.sh 的 bbduk 两次调用 → `pgr fq clean`（trim）
+   + `pgr fq filter`（filter）；**新增**：2_insert_size/unitigs 的
+   `tadpole.sh` → `pgr fq assemble`（含 0_cleanup 文件名同步）。
 3. **ihist**（2_insert_size.era.sh 的 reformat ihist）：SAM→insert size
    直方图，pgr 无 SAM 命令，用户决定放着。
 4. **bbnorm 深度分箱**：暂不做（§4.9）。
-5. `fq split` 多参数核对已完成（见上）；`fq clump` 多参数 golden 验证
-   **不做**（体积控制，见 `design/anchr-trim-replace.md` §4.4 M1 注）。
-   `kmer` 系列已用 Lambda 真实数据验证完成（见上）。
 
 ---
 
@@ -144,6 +107,8 @@ clean，代码已提交）**：
 - **gzip 并行解压 / zlib-ng / libdeflate：明确不做**（2026-08-09 用户裁定——
   程序常被 shell 包裹并行执行，pgr 侧 `fa` 保持单线程；inflate 内部已是
   zlib-rs AVX2，见 `benchmarks/bench-profile-hotspots.md` 场景 1）。
+- `fq clump` 多参数 golden 验证：**不做**（体积控制，见
+  `design/anchr-trim-replace.md` §4.4 M1 注）。
 
 ## 5. 待实现 / 待决策（2026-08-09 文档扫描补充）
 
