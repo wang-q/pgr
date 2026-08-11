@@ -46,6 +46,8 @@ pub struct AssembleOptions {
     pub contig_passes: usize,
     /// Seeding pass multiplier (contigPassMult).
     pub contig_pass_mult: f64,
+    /// Merge parallel paths in the contig graph (Tadpole popbubbles).
+    pub pop_bubbles: bool,
 }
 
 impl Default for AssembleOptions {
@@ -63,6 +65,7 @@ impl Default for AssembleOptions {
             branch_lower_const: 3,
             contig_passes: 16,
             contig_pass_mult: 1.7,
+            pop_bubbles: true,
         }
     }
 }
@@ -228,10 +231,15 @@ pub fn assemble<W: Write>(
         &mut id_counter,
     );
 
-    // Contig graph + bubble popping (Tadpole.processContigs/popBubbles),
-    // then deterministic longest-first sort and renumbering.
-    process_contigs(&mut contigs, &table, opts);
-    pop_bubbles(&mut contigs, opts);
+    // Contig graph + bubble popping (Tadpole.processContigs/popBubbles);
+    // with --no-bubbles the pre-pop contigs are kept and only sorted and
+    // renumbered.
+    if opts.pop_bubbles {
+        process_contigs(&mut contigs, &table, opts);
+        pop_bubbles(&mut contigs, opts);
+    } else {
+        finalize_contigs(&mut contigs);
+    }
 
     let mut stats = AssembleStats {
         reads_in: records.len() as u64,
@@ -1658,4 +1666,13 @@ fn pop_bubbles(contigs: &mut Vec<Contig>, opts: &AssembleOptions) {
         c.renumber(new_id, inbound.as_deref());
     }
     *contigs = temp;
+}
+
+/// Deterministic longest-first sort and renumbering for the no-bubbles path
+/// (bubble popping performs the same step while also renumbering edges).
+fn finalize_contigs(contigs: &mut [Contig]) {
+    contigs.sort_by(contig_cmp);
+    for (new_id, c) in contigs.iter_mut().enumerate() {
+        c.renumber(new_id, None);
+    }
 }

@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{value_parser, Arg, ArgMatches, Command};
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fq::assemble::{assemble, AssembleOptions};
 use std::io::Write;
 
@@ -25,6 +25,9 @@ Notes:
   overlapping structures (its expand order depends on a memory-dependent
   hash layout); the contig set and total bases match, and the output is
   reproducible across runs
+* Bubble popping is on by default (tadpole `popbubbles=t`); pass
+  `--no-bubbles` to keep parallel-path contigs separate (tadpole
+  `popbubbles=f`)
 * Output sequences are wrapped at 70 columns, like BBTools FASTA output
 * Supports both plain text and gzipped (.gz) files
 
@@ -61,6 +64,12 @@ Examples:
                 .help("Minimum contig length (default: max(124, 2*k))"),
         )
         .arg(
+            Arg::new("no_bubbles")
+                .long("no-bubbles")
+                .action(ArgAction::SetTrue)
+                .help("Keep parallel-path contigs separate (disable bubble popping)"),
+        )
+        .arg(
             Arg::new("parallel")
                 .long("parallel")
                 .short('p')
@@ -87,6 +96,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .get_one::<usize>("min_contig_len")
             .copied()
             .unwrap_or(0),
+        pop_bubbles: !args.get_flag("no_bubbles"),
         ..AssembleOptions::default()
     };
 

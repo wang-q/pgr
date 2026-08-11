@@ -60,6 +60,14 @@
   shards plus a `.complete` marker. Old FastK caches are ignored and rebuilt
   once on the first run after upgrading.
 
+### FASTQ (`fq`)
+
+* **`fq assemble --no-bubbles`** - keeps parallel-path contigs separate
+  (tadpole `popbubbles=f`) instead of merging bubble branches into a
+  representative path. Bubble popping remains the default (`popbubbles=t`
+  compatible); the flag makes the pre-pop contig set directly observable
+  and deterministic for downstream unitig workflows.
+
 ## 0.5.0 - 2026-08-08
 
 ### New Features

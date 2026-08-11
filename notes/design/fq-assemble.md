@@ -123,6 +123,15 @@ pgr fq assemble [OPTIONS] <infiles>...
 `pgr fq assemble` 已实现：contig 构建（多轮种子/行走/认领）+ contig 图 +
 BubblePopper + 排序重编号 + 输出，全部确定性与单线程等价。
 
+**气泡开关（2026-08-11 定案）**：默认 `pop_bubbles=true`（tadpole
+`popbubbles=t` 兼容，anchr 行为不变），新增 `--no-bubbles` 逃生门
+（等价 tadpole `popbubbles=f`：跳过 process_contigs/pop_bubbles，直接对
+pre-pop contig 集排序重编号输出）。Lambda 实测：pre-pop ≥124bp 77 条
+（mincontig=1 全量 89 条），pop 后 66 条——合并路径让部分 <124bp 的
+中间 contig 并入长 contig（输出总碱基反而 +105）。理由：气泡合并的
+代表路径选择是任意启发式（依赖图布局），`--no-bubbles` 保留泡的两条
+分支，语义更接近 cdBG unitig（见 `notes/references/bcalm.md` §4.3）。
+
 ### 已验证（逐字节）
 
 - **pre-pop contig 集合 89/89 与 `tadpole.sh threads=1` 逐字节一致**

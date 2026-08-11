@@ -689,7 +689,11 @@ flag is set). K-mers are counted with a quality gate, contigs are seeded
 from k-mers above a depth threshold and extended greedily in both
 directions, stopping at branches and dead ends, then bubbles are resolved
 and contigs are sorted longest-first. This replaces the tadpole assembly
-steps of the anchr `2_insert_size` and `unitigs` flows.
+steps of the anchr `2_insert_size` and `unitigs` flows. Bubble popping is
+enabled by default (tadpole `popbubbles=t`); `--no-bubbles` keeps
+parallel-path contigs separate (tadpole `popbubbles=f`), which preserves
+both branches of a bubble instead of merging them into one representative
+path.
 
 ```bash
 pgr fq assemble [OPTIONS] <infiles>...
@@ -701,6 +705,8 @@ pgr fq assemble [OPTIONS] <infiles>...
 *   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
 *   `--min-contig-len <int>`: Minimum contig length (default:
     `max(124, 2*k)`).
+*   `--no-bubbles`: Keep parallel-path contigs separate; disable bubble
+    popping (default: bubble popping on, matching tadpole `popbubbles=t`).
 *   `-p, --parallel <int|auto>`: Accepted for tadpole.sh compatibility;
     ignored (processing is deterministic single-pass).
 

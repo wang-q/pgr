@@ -117,6 +117,55 @@ fn command_fq_assemble_is_deterministic() {
     assert_eq!(std::fs::read(&out1).unwrap(), std::fs::read(&out2).unwrap());
 }
 
+/// `--no-bubbles` keeps the pre-pop contig set (no parallel paths merged):
+/// at least as many contigs as the default bubble-popped output, and the
+/// no-bubbles run is byte-identical across repeated invocations.
+#[test]
+fn command_fq_assemble_no_bubbles_keeps_parallel_contigs() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let default_out = out_dir.path().join("default.fa");
+    let nb1 = out_dir.path().join("nb1.fa");
+    let nb2 = out_dir.path().join("nb2.fa");
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "assemble",
+            "tests/bbtools/Lambda/R1.2k.fq.gz",
+            "tests/bbtools/Lambda/R2.2k.fq.gz",
+            "-o",
+            default_out.to_str().unwrap(),
+            "--kmer",
+            "31",
+        ])
+        .assert()
+        .success();
+    for out in [&nb1, &nb2] {
+        PgrCmd::new()
+            .args(&[
+                "fq",
+                "assemble",
+                "tests/bbtools/Lambda/R1.2k.fq.gz",
+                "tests/bbtools/Lambda/R2.2k.fq.gz",
+                "-o",
+                out.to_str().unwrap(),
+                "--kmer",
+                "31",
+                "--no-bubbles",
+            ])
+            .assert()
+            .success();
+    }
+    let default_seqs = parse_fa(&std::fs::read(&default_out).unwrap());
+    let nb_seqs = parse_fa(&std::fs::read(&nb1).unwrap());
+    assert!(
+        nb_seqs.len() >= default_seqs.len(),
+        "no-bubbles contigs {} < default {}",
+        nb_seqs.len(),
+        default_seqs.len()
+    );
+    assert_eq!(std::fs::read(&nb1).unwrap(), std::fs::read(&nb2).unwrap());
+}
+
 /// A zero k-mer length must fail cleanly instead of panicking.
 #[test]
 fn command_fq_assemble_rejects_zero_kmer() {
