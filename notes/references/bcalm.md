@@ -104,6 +104,12 @@ BCALM 2 把 cdBG 构建拆成三段：**分桶压缩（bcalm2）→ UF 全局拼
 > 线程安全细节：用 `ThreadGroup::findThreadInfo` 找线程 id 决定写哪个 queue/glue
 > 文件，避免加锁；`flat_bucket_queues` 每线程一份。`BINSEQ` 宏可切换 string↔二进制
 > 序列存储（默认关，作者说 "graph4 is not ready"）。
+>
+> 设计点：**丰度阈值过滤发生在 InsertIntoQueues**（`operator()` 里 `abundance <
+> threshold` 就 return），而不是 dsk 计数阶段——所以同一份 `.h5` 计数文件可以
+> 用更高的 `-abundance` 复用重跑，无需重新数 k-mer（`bcalm_algo.cpp` 注释明说）。
+> 对 pgr 意义：若 `KmerTable` 做精确计数，把阈值过滤推迟到消费侧，可一次计数
+> 多次调阈值。
 
 ### 3.2 `bglue`：UF 全局拼接（`bglue_algo.cpp`）
 
@@ -336,6 +342,9 @@ overlap 恰好构成类型 4 的镜像对——所以 overlap 天然满足双向
   用"砍掉最后一个碱基"的方式避免自闭合（`glue_sequences` 里 `res_seq.substr(1)`）。
 - UF 键是 k-mer 哈希（可碰撞）；UF 类号 32 位，序列总数理论上限
   `2^(32-1)`（`bglue_algo.cpp` 文件头注释），超过会出错。
+- **`link_tigs` 不支持 k<4**（`LinkTigs.cpp` 检查 `kmerSize < 4` 直接报错退出，
+  作者说"tiny dBG 请用 Python 构造"）；`is_in_pass` 的分趟哈希也不支持超过
+  8 趟（`normalized_smallmer` 只处理 4 个碱基）。
 - unitig 方向跨 run 不保证稳定；输出是 FASTA（丢质量信息）。
 - 代码中多处 `#if 0` / `#ifdef` 遗留实验路径（`BINSEQ`、`pre_tip_cleaning`、
   `to_compact`、旧版 unordered_map 并查集），作者自己也标注了多处
