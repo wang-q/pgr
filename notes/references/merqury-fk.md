@@ -145,10 +145,22 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
   - 峰值语义：都从 x=2 起找"首个不单调下降点"再沿上升段扫全局最大
     （与 CNplot 一致），`-x` 倍率默认 2.1（KatGC 额外把 `XMAX` 封顶到
     `HMAX`）。
+    - **source quirk**：若在 `[1,HMAX]`（KatGC）/`[1,JMAX]`（KatComp）区间内
+      找不到"离原点的主峰"（`xmax == 0 || xmax >= HMAX/JMAX`），直接
+      `fprintf` 报 "No maximal peak away from 0 in histogrom interval"
+      并 `exit(1)`（KatGC.c:372-376、KatComp.c:419-423/448-452）——对
+      空表/退化数据是硬失败，pgr 移植时应转为友好报错。
   - 输出矩阵（坐标为**半格中心** `i.5/j.5`）到 `.kx`/`.kgc`，再 `Rscript`
     画 contour/heat/combo；**`val > ZMAX` 的值封顶写为 ZMAX**（ZMAX = 两维
     峰值中的最大者，用于 R 色标归一）。`.kx` 头 `KF1\tKF2\tCount`，`.kgc`
     头 `GCP\tKF\tCount`（其 y 输出是 GC 行索引 0..KMER，R 里再换算成 %GC）。
+    - **`val` 是 2×2 邻块平均**：并非直接写格值，而是
+      `val = (row0[a]+row0[a+1]+row1[a]+row1[a+1])/4`（KatGC.c:410、
+      KatComp.c:485），即对当前格与其右、下、右下三邻格求均值（等效把
+      4 个相邻计数的质心画在角点 `i.5/j.5`）；且输出循环上界是
+      `i < KMER`（KatGC）/`i < YMAX`、`a < XMAX`（两者），即只写主峰
+      截断后的**子矩阵**。pgr 复刻 `.kgc` 时若逐格直写会与 KatGC 语义
+      不一致（应做同款 2×2 平均）。
 
 ## 3c. HAPmaker 三阶段管线（三人家系 hap-mer 建表）
 

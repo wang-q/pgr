@@ -105,6 +105,19 @@
   khmer 3.0 试验特性（底层 `third-party/cqf/gqf.h` 不在本快照内，为外部依赖），
   每槽约 1.3 字节，槽被占满后会**停止接受 `add`**（内存不能像 CMS 那样
   预先严格固定），`get_tablesizes` 返回 `cf.xnslots`。
+- **HLLCounter（hllcounter.cc）= HyperLogLog（死代码/latent）**：估算
+  基因组大小用的 unique k-mer **基数**（不计数，只估基数）。`add` 用
+  `_hash_murmur(value, len)`（hllcounter.cc:264），低位取
+  `index = hash & (ncounters-1)` 当桶号，高位用 `__builtin_clzll` 数前导零
+  求 rank（hllcounter.cc:284-295）；`estimate_cardinality` 做标准三段式
+  ——线性计数/`alpha·m²/Σ2^-v` 基本估计/偏置校正（hllcounter.cc:237-260），
+  预置 `rawEstimateData`/`biasData` 两张查表（hllcounter.cc:69-103）。
+  **quirks**：`set_erate`/`set_ksize` 在首次计数后抛 `ReadOnlyAttribute`
+  （hllcounter.cc:214/229）；error_rate 有范围约束（`calc_alpha` 对
+  `p=floor(log2 m)` 越界抛 `InvalidValue`，hllcounter.cc:110-118）。
+  **dead code**：本快照（master）中 HLLCounter 未接入任何脚本或 Cython
+  绑定（`scripts/`、`khmer/_oxli/` 均无引用），是纯库层实验代码——与
+  diginorm 无关，pgr 无需参考其实现，仅作"基因组大小估计"功能的备选旁证。
 - **磁盘存储格式**（`SAVED_SIGNATURE="OXLI"`，`SAVED_FORMAT_VERSION=4`）：
   头部固定 `OXLI`(4B) + version(1B) + `ht_type`(1B)，类型常量
   `SAVED_COUNTING_HT=1`、`SAVED_HASHBITS=2`、`SAVED_SMALLCOUNT=7`、

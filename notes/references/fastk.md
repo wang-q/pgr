@@ -138,6 +138,12 @@ FastK 生成以下几种核心文件（均为二进制；最终结果写入 `-N`
 | `-M` | 排序阶段可用内存（GB） | 12 |
 | `-T` | 线程数 | 4 |
 
+> **隐藏选项（`#ifdef DEVELOPER`）**：`-1`/`-2`/`-3`/`-4` 只跑单个阶段——
+> 1=分片分发（`Split_Kmers`，可含 `Split_Table`）、2=排序计数（`Sorting`）、
+> 3=表格合并（`Merge_Tables`）、4=档案合并（`Merge_Profiles`）（FastK.c:301-314/
+> 491-540）。仅 `-DDEVELOPER` 编译才存在，正常发布版被 `#else` 顺序执行全部阶段，
+> 属调试/开发用隐藏参数，README 未收录。
+
 **内存/并行设计**：
 *   **NPARTS（分桶数）自适应**：先用前 1 Gbp 块估计总 k-mer 规模
     `gsize = (block->totlen - k*nreads) * ratio * rsize`，再

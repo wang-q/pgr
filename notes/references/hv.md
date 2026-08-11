@@ -81,6 +81,21 @@ fast 模式再快 1.8–2.7×。
 * **编码批次细节**：AVX2 版 `num_chunk = hv_d/64`、按 4 seeds 一批，
   每 chunk 每 seed 一次 `next_u64`（64 位 → 64 维），逐 16 轮 × 4 维写入
   `hv`；与标量逐位一致（`test_simd_hd_enc` 断言相等）。
+* **CLI 细节（utils.rs clap）**：`sketch` 子命令有 `-t --thread`（默认 16）、
+  `-C --canonical`（默认 `true`，控制 `FastxReader` 是否用 canonical k-mer，
+  sketch.rs:25）、`-a --ani_th`（默认 85.0，但 sketch 阶段不消费）；每个
+  子命令都重复声明了整组参数，但很多（`-m/-k/-d/-Q` 等）实际不参与计算
+  （见上"死参数"）。
+* **压缩恒开（`if_compressed`）**：`if_compressed: true, // TODO`
+  （utils.rs:200）被硬编码为真，`sketch()` 里 `if params.if_compressed`
+  （sketch.rs:50）恒成立 → 量化 + bitpack 压缩**总是执行**（`hv_quant_bits`
+  初值 16，压缩后回写），不存在"关压缩"的运行时开关。
+* **ANI 输出格式与稀疏告警**：`dump_ani_file`（utils.rs:260）按 ANI 降序、
+  只写 ≥ `ani_threshold` 的项，每行 `{ref_name}\t{query_name}\t{ANI:.3}`
+  （ANI 保留 3 位小数）；若通过阈值的 ANI 占比 < 5%，打印
+  `warn!`（"ANIs are too divergent"）提示结果过稀疏。
+* **`-r`/`-q` 的默认值**：sketch 子命令里 `path_r`/`path_q` 默认 `"1"` 占位，
+  仅 `-p` 与 `-o` 必需（sketch 只读 `-p`）；dist 里 `-r`/`-q` 才必需。
 
 **代码侧风险（对 pgr 有参考意义）**：
 

@@ -98,6 +98,12 @@ impg 的 22 个子命令并非平级，而是按**数据流方向**构成四层�
   [`Impg::from_multi_alignment_records`](../../../impg-0.4.1/src/impg.rs#L1531)
   把输入 PAF/1ALN/TPA **全量**装入。比对质量的挑选责任在生成 PAF 的上游工具（wfmash/sweepga），
   不在 impg——这是"比对即图"哲学的体现：索引保留所有边，挑选推迟到查询。
+  **索引模式的几个细节**：比对输入既可直接 `-a` 传多文件，也可 `--alignment-list` 传"每行一个
+  路径"的清单文件（二者 `conflicts_with` 互斥，main.rs:4070/4079）；`--index-mode` 是
+  `Single|PerFile|Auto` 三值枚举，**默认 `Auto`**——文件数 ≥ 100 时自动切到 per-file 模式
+  （main.rs:11070-11076，打印 "Auto-switching to per-file indexing (N files >= 100)"），
+  否则 single 模式；`-f/--force-reindex` 强制重建（对应 §3.4 的 staleness 检测），
+  `-i/--index` 指定既有索引（single 模式）。
 - **挑选发生在查询层** — 真正的"挑选比对"由
   [`QueryOpts`](../../../impg-0.4.1/src/main.rs#L4319)控制：
   `-d/--merge-distance`（必填或 `--no-merge`，合并间隔 ≤ D bp 的区间，D 也是单跳能吸收的 最大

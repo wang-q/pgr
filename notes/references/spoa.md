@@ -27,6 +27,12 @@
   GFA 的 `L` 边行形如 `L a + b + OM ew:f:W`（`OM` 为 CIGAR 域，`ew` 为边权重 tag），
   consensus 节点/边以 `ic:Z:true` 标记；`-s` 逐序列分别比对正/反向链并取更优者
   （反向链的 `P` 路径会倒序并追加 `-` 标记链向）。
+  **GFA 输出结构细节**（`main.cpp` `PrintGfa`，[main.cpp#L123-L203](../../../spoa-4.1.5/src/main.cpp#L123)）：
+  首行 `H\tVN:Z:1.0`；`S` 节点 id 为 `id+1`（**1-based**，`S` 只有正向、无方向列），每个 consensus
+  节点额外打 `ic:Z:true`；`L` 边统一 `a + b +`（两端都取正向，不表达反链），当 tail 与 head
+  均为 consensus 节点时追加 `ic:Z:true`（[main.cpp#L160-L163](../../../spoa-4.1.5/src/main.cpp#L160)）；
+  `P` 行按序输出 1-based 节点 id、以 `+`/`-` 标记链向、CIGAR 固定为 `*`（无 gap 信息），
+  `-r 4` 追加的 consensus 路径**固定命名 `Consensus`**（[main.cpp#L193-L201](../../../spoa-4.1.5/src/main.cpp#L193)）。
 - **SIMD 支持**: SSE4.1 与 AVX2（README 自评 "marginally faster due to high
   latency shifts"）；[SIMDe](https://github.com/simd-everywhere/simde) 提供
   非 x86 可移植；运行时分派按 AVX2 > SSE4.1 > SSE2。

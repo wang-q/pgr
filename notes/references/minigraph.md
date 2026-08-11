@@ -72,6 +72,12 @@ IO 层     bseq.c / gfa-io.c / format.c  FASTA/FASTQ/GFA/GAF 读写
 
 **CLI 预设**（`-x`，main.c + options.c）：`lr`（默认，k=17/w=11，长读映射）、`asm`（k=19/w=10，asm-to-ref）、`se`（k=21/w=10，单端短读）、`sr`（=se 且强制 `FRAG_MODE|FRAG_MERGE`，双端 FR，短读）、`ggs`（=asm 且自动开启 `--ggen` 增量图生成，并置 `best_n=0` 关闭 secondary 输出）。`se`/`sr` 均设 `MG_M_SR|MG_M_HEAP_SORT|MG_M_2_IO_THREADS`（短读走 heap-sort 收集种子）。图生成相关默认参数见 `mg_ggopt_init`（options.c）：`min_var_len=50`、`min_map_len=100k`、`min_depth_len=20k`、`min_mapq=5`、`match_pen=10`、`ggs_shrink_pen=9`、`ggs_min_end_cnt=10`、`ggs_min_end_frac=0.1`、`ggs_max_iden=0.80`、`ggs_min_inv_iden=0.95`，且默认开启 `MG_G_NO_QOVLP`（ggsimple 不接受 query 重叠区段）。索引默认 `bucket_bits=14`；`-c`（CIGAR）在 ggsimple 模式下会被警告推荐开启（main.c#L225）。
 
+**未实现功能守卫**（options.c 的 `mg_opt_check`，L110-118）：若只设
+`MG_M_FRAG_MODE` 而未同时设 `MG_M_FRAG_MERGE`，会在启动时打印
+"the fragment-without-merge mode is not implemented" 并返回失败——即
+"片段模式但不合并片段"这个组合在 minigraph 中**是未实现功能**，直接拒绝。
+pgr 移植 `sr` 预设时无需复刻这条路径（`sr` 恒同时置两者，见上）。
+
 ---
 ## 3. 核心数据结构
 

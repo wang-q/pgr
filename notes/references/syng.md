@@ -121,6 +121,9 @@ typedef struct {
 **步进**（`syncmerNext`）：
 
 1. 输出当前 syncmer 的 k-mer（`hash[iStart]`）、位置、链方向。
+   **位置是 `pos = base + iStart`**（[seqhash.c#L225](../../../syng-main/seqhash.c#L225)）：`base` 是环形缓冲
+   的绝对偏移，当 `iStart` 写满 `w` 回绕到 0 时 `base += w`（[seqhash.c#L238](../../../syng-main/seqhash.c#L238)），
+   从而让输出的 `pos` 在序列上是单调递增的真实坐标，而不是环形槽位下标。
 2. 若刚输出的位置就是 `min` 持有者，重置该槽为 `U64MAX` 并重新线性扫描 `hash[]` 求 `min`（注释提到可换堆，但 `w` 不大时线性扫描够用）。
 3. 同初始化的逻辑向前滑动找下一个 syncmer。
 

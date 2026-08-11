@@ -215,7 +215,26 @@ egaz 的 `lastz` 与 pgr `align lastz` 都是 lastz→LAV 的薄包装，但参�
 
 - **预设集**：egaz `parameters.yml` 有 set01..set10（10 套，全部 `C=2`，即 lastz 内置链化）；
   pgr 预设仅移植 set01..set07 且硬编码 `C=0`（关闭内置链化，等价 egaz doc 流程的 `-C 0`
-  覆盖，配合 kent chain/net）。set08..set10 是远缘物种的 `Q=distant` 变体，pgr 未移植，可补。
+  覆盖，配合 kent chain/net）。set08..set10 的 `Q=distant` + 更大 `K`（字长）变体，pgr 未移植，可补。
+  各套参数（`share/parameters.yml`，均 `C=2`；`E/O` 多为 `30/400`，唯 set02 为 `150/600`；
+  `Q` 映射 `matrix/{default,distant,similar,similar2}`）：
+
+  | set | comment | Q | K | L | 其他 |
+  |-----|---------|----|----|----|------|
+  | 01 | Hg17vsPanTro1 | similar | 3000 | 2200 | Y=3400 |
+  | 02 | Hg19vsPanTro2/RheMac2/CalJac3 | similar2 | 4500 | 2200 | H=2000, M=254, T=2, Y=15000, E=150, O=600 |
+  | 03 | Hg17vsMm5 | default | 3000 | 2200 | |
+  | 04 | Hg17vsRheMac2 | default | 3000 | 2200 | H=2000 |
+  | 05 | Hg17vsBosTau2 | default | 3000 | 2200 | H=2000, M=50 |
+  | 06 | Hg17vsDanRer3 | **distant** | 2200 | 6000 | H=2000, Y=3400 |
+  | 07 | Hg17vsMonDom1 | **distant** | 2200 | 10000 | H=2000, Y=3400 |
+  | 08 | — | **distant** | 3000 | 2200 | H=2000 |
+  | 09 | — | **distant** | 6000 | 2000 | |
+  | 10 | — | **distant** | 10000 | 2200 | |
+
+  注：`Q=distant` 并非 set08..10 独有——**set06/set07 也是 distant**（远缘 鱼/袋鼠 vs 人）；
+  set08..10 的区分点是 `Q=distant` 且 `K` 递增（3000/6000/10000，即第一遍 word 阈值更大、
+  更宽松以捕获远缘），set09 的 `L=2000` 也异于其余 2200。
 - **`--paired`**：egaz 用 `String::Similarity` 按文件名相似度为每个 target 挑最相近的一个
   query，做一对一（近缘菌株 chr 一一对应）比对；pgr 无此选项，只能全两两笛卡尔积。
 - **`--tp/--qp` 分块 + 自动 normalize**：egaz 在 target/query 被 `partition` 分块后，自动对每个

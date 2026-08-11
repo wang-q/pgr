@@ -62,6 +62,11 @@
 | `-a` | off | 关闭 reciprocal best 去冗余 |
 | `-t` | 1 | 线程数 |
 
+> **CLI quirk**：`-f` 虽默认是浮点 0.5，但命令行传入时经 `parse_num`（`alngap.c:544`，
+> `max_cov = (int) parse_num(opt.arg)`，help 也写成 `-f INT`）**转成整数**——传小数
+> `-f 0.5` 会被截成 0（= 完全不约束重叠），实际只能传 `-f 0` 或 `-f 1` 这类整数值。
+> 另 `-o`（`alngap.c:548-555`）可把输出写到文件（`freopen` 重定向 stdout，`-` 表示 stdout）；`-v` 为 verbose。
+
 ## 3. alnfill：跑 LastZ（alnfill.c，530 行）
 
 - **整库入内存**：`make_sdict_from_fa`（sdict.c:131）用 kopen（bgzip 感知）读入
@@ -70,8 +75,11 @@
 - 读 interval 文件：跳过 `#` 头行；解析 10 列（≥6 列可用）；用 ovl 列做越界校验
   （`qbeg ≥ qbol`、`qend+qeol ≤ qlen`、target 同理），非法区间跳过；
   **若 qname/tname 在已加载的 FASTA 中找不到则直接报错退出**（非跳过）。
+  interval 文件经 `gzopen`（alnfill.c:387）读取，**支持 .gz 压缩**。
 - 每线程一套临时文件（mkstemp 生成一个模板名，派生出 `_A.fna`/`_B.fna`/`_O.paf`
   三个具名临时文件，另有一个被 unlink 的匿名输出缓冲文件）；对每个 interval：
+  临时文件目录由 **`-w`** 指定（`alnfill.c:327`，默认 `./`）；`-o` 写输出到文件、
+  `-z` 指定 lastz 路径（默认 `lastz`）。
   1. 提取 `ref[tbeg,tend)`、`qry[qbeg,qend)` 写临时 FASTA（`>name` + 原序列名）；
   2. 跑 `lastz --format=PAF:wfmash --ambiguous=iupac --output=<pfile> <tfile> <qfile>`
      —— **target 在前**；除格式与 IUPAC 外全是 lastz 默认（无打分预设）；

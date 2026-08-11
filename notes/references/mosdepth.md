@@ -109,8 +109,12 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   4 列 name 时该列填 `unknown`。
 * **quantized**：`gen_quantized` 把相邻、同 bin 的碱基合并，bin 由
   `--quantize 1:10:20` 定义（`:inf` 表示开区间；环境变量 `MOSDEPTH_Q*` 可
-  覆盖输出标签）。无数据染色体（`tid==-2`）仅当 `quantize[0]==0` 时写一行全 0
-  （标签 `lookup[0]`），否则直接跳过该染色体。
+  覆盖输出标签）。`get_quantize_args`（mosdepth.nim:501-519）会先把参数**归一
+  化为闭合区间**：无 `:` 的裸整数 `20` 先包成 `:20:`、再补前导 `0`（`:` 开头）
+  与尾随 `high(int)`（`:` 结尾）→ 得 `0:20:inf`，即**单个整数表示"两段 bin"
+  （[0,N) 与 [N,∞)）**；随后 split 并 `sort`。所以 `-q 20` 的输出标签恒为
+  `0:20` 与 `20:inf` 两段。无数据染色体（`tid==-2`）仅当 `quantize[0]==0` 时写
+  一行全 0（标签 `lookup[0]`），否则直接跳过该染色体。
 * **distribution**：直方图数组从 512 动态增长（`inc` 在 `v >= len` 时
   `set_len(v+10)`，负深度 `v < 0` 直接跳过），深度 > 400000（`MAX_COVERAGE`）
   截断到 399990（只影响分布，不影响 per-base/quantized）；输出时反序 cumsum，

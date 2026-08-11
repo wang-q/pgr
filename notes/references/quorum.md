@@ -84,9 +84,14 @@ min-quality`，`quorum.in` 里 `-q` 传入）则 `high_len++`、否则清零；�
 ### 3.2 `database_query`：只读 mmap 查询
 
 纠错阶段把 `.jf` 库 mmap（或整读），`operator[](mer)` 返回
-`(count, quality)`；`get_best_alternatives(m, counts[4], ucode, level)`：
-把 `m` 第 0 位替换为 A/C/G/T，逐个查询 canonical 计数，返回 4 个计数、
-最高质量等级（level）与命中数——**纠错的核心查询原语**。
+`(count, quality)`；`get_best_alternatives(m, counts[4], ucode, level)`：把 `m` 第 0 位替换为 A/C/G/T，逐个查询 canonical 计数，返回 4 个计数、最高质量等级（level）与命中数——**纠错的核心查询原语**。
+
+> 精确语义（`mer_database.hpp:310-325`）：`counts[]` **只含最高质量等级**的替代——遍历
+> A/C/G/T 时若遇到 quality 更高的替代，会把之前记录的低质量位置的 `counts[j]`（j<i）清零、
+> 命中数 `count` 归零（`if(v.second > level && count>0) { for(j<i) counts[j]=0; count=0; }`）。
+> 因此 `counts[ori]==0` 有两种成因：原碱基是错误（低质量、无高质量替代），或**原碱基低质量而
+> 存在高质量替代**（其低质量计数被清零）——这正是 §4.2 `extend` 中"原碱基为错误、无高质量
+> 候选"截断分支与候选替换分支的判定依据。
 
 ## 4. 纠错算法（`error_correct_reads.cc`）
 

@@ -234,6 +234,40 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
   `-pafx` = `=`/`X`，`-pafm` = `M`；`-pafs/S` = CS 字符串）。
 - ONEaln.c 提供 C 库读取 .1aln（依赖 GDB/ONElib/alncode/align/gene_core 一起编译）。
 
+### 3.7 ALNchain：基于 KD-tree 的局部链过滤（ALNchain.c，Chenxi Zhou）
+
+`ALNchain` 是独立于主流程的**后处理工具**：读入一个 `.1aln`，只保留"最佳局部链"
+里的比对（丢弃被更高分链覆盖/包含的冗余比对），输出过滤后的 `.1aln`
+（默认 `<root>.chain.1aln`）。它是"从全比对集合提炼共线骨架"的参考实现。
+
+- **数据结构**：比对盒（TNODE：a/b 侧 beg/end + score/clen）组织成 **KD-tree**，
+  交替按 X=`aepos`、Y=`bepos` 分轴（`buildKDTree`，ALNchain.c:199），中位数用
+  `quickSelect` 的 **median-of-medians** 保证 O(n) 最坏情况（`selectPivot`，
+  ALNchain.c:162，`USE_MEDIAN_MEDIAN` 默认开）。
+- **链式 DP（`localChain`→`KDRangeChain`，ALNchain.c:336）**：对每个节点做 KD-tree
+  区间查询找前驱；节点作为前驱需满足 active 且两侧 ext>0、gap ≤ maxGap（默认 10000）、
+  ovl ≤ maxOvl（默认 10000）、重叠小于查询盒自身跨度。得分
+  `score = extX+extY − gap·penGap − ovl·penOvl`（penGap=penOvl=.10），保留
+  `root->score + score` 最大的前驱。gap 即"相邻比对间的间距"、ovl 即"重叠量"，
+  二者都按 X、Y 两侧分别计（gap<0 转成 ovl）。
+- **贪心选链（`popLocalChain`→`backtrackLocal`，ALNchain.c:447）**：按 score 降序
+  逐个回溯；链断裂条件为后继 `score > maxDrop + minScore`（`-z` maxDrop 默认 1000）
+  或后继已被占用。链保留条件：`score ≥ 2·minScore`（`-s` 默认 10000，链得分按 X+Y
+  双倍计故 ×2）且成员数 `clen ≥ minFrag`（`-n` 默认 1）。
+- **跨链去冗余（`filterChain`，ALNchain.c:518）**：同一 scaffold 对内按 score 取主链
+  （负链记录先 `reverseRangeStrand` 把 Y 侧翻正），其余链与其累计覆盖做 fuzzy merge
+  （`-f` fzMerge 默认 1000 容差），若**两侧**覆盖率都 > `maxCov`（`-c` 默认 .50），
+  或非重叠延伸 < `minExt`（`-e` 默认 0.0，占序列长度比例），则该链被过滤（置
+  INTERNAL）；主链的覆盖随保留链累积，保证贪心但单调。
+- **CLI**（ALNchain.c:48-52 Usage）：`-g` maxGap=10000、`-l` maxOvl=10000、
+  `-p`/`-q` penGap/penOvl=.10、`-c` maxCov=.50、`-e` minExt=0.0、`-s` minScore=10000、
+  `-n` minFrag=1、`-z` maxDrop=1000、`-f` fzMerge=1000、`-o` 输出、`-v`；输入为
+  `.1aln` 路径。
+- **与 pgr 的对照**：pgr 的 pgi/chainnet 里"保留主链 + 按覆盖去冗余"（如
+  `dedupe_contained`、synteny 骨架挑选）思路同源，但 pgr 用的是区间树/贪心排序，
+  ALNchain 用 KD-tree 区间查询做前驱 DP——KD-tree 在多维（X/Y 同时约束 gap 与 ovl）
+  前驱查询上是更完整的形态，pgr 若需"双轴 gap+overlap 约束的链式 DP"可参考此实现。
+
 ## 4. 源码模块结构
 
 | 模块 | 职责 |
@@ -248,9 +282,9 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 | `ONElib.c` / `ONEaln.c` | ONEcode 数据编码框架、.1aln 读取 C 库 |
 | `alncode.c` | trace point 编解码 |
 | `ALNtoPAF.c` / `ALNtoPSL.c` | 轨迹 → PAF/PSL（多线程、含 CIGAR 生成）|
-| `ALNchain.c`（Chenxi Zhou）| 按局部链过滤 .1aln 比对（-c/-s 阈值）|
+| `ALNchain.c`（Chenxi Zhou）| 按 KD-tree 局部链过滤 .1aln 比对（见 §3.7）|
 | `ALNreset.c` | 重设 .1aln 对 GDB 的内部引用 |
-| `select.c` | 基因组选择表达式解析（只比对选定的 contig/区间）|
+| `select.c` | 基因组选择表达式解析（**仅供展示/绘图工具** GDBshow/ALNshow/ALNplot/ANOshow 用，不参与 FastGA 主流程比对选择；语法：`@`scaffold、`.`contig、`:`position、`#`last、`-`range、`,`分隔，位置可带 G/M/k 后缀）|
 | `PAFtoALN.c` / `PAFtoPSL.c` | 反向转换（PAF 带 X-CIGAR → .1aln/.psl）|
 | `FAtoGDB.c` / `GDBtoFA.c` | FASTA/ONEcode ↔ GDB 互转 |
 | `GDBshow`/`GDBstat`/`ALNshow`/`ALNplot`/`ANOshow`/`ANOstat` 等 | 查看/统计/绘图工具 |

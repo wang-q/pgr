@@ -25,7 +25,10 @@
 2. **比对索引** — [alignments.rs](../../../seqwish-master/src/alignments.rs)
    `unpack_paf_alignments`：多线程读 PAF，双向写入 `aln_iitree`（query→target 与 target→query
    各一份）。每个 worker 在共享 `Mutex<BufRead>` 上逐行取一条 PAF（`more: AtomicBool` 标记
-   EOF），用 `rank_of_seq_named` 解析 query/target 序列 id。**关键细节**：对 CIGAR 的 `M/=/X`
+   EOF），用 `rank_of_seq_named` 解析 query/target 序列 id。解析后先做**坐标合法性校验**
+   （query/target 序列长度为 0、`query_start >= query_end`、`query_start >= query_sequence_length`、
+   `query_end > query_sequence_length` 等任一不满足即**静默跳过该行**，`alignments.rs:87-97`）。
+   **关键细节**：对 CIGAR 的 `M/=/X`
    块**逐碱基比对**——仅当 `query_base == target_base && != 'N' && offset(q) != offset(t)`
    时才延长当前 match，遇到错配（X 或 N）即切断、把已累积段 flush 出去。也就是说 CIGAR M 块
    内部会按"实际相等的碱基"再切成更细的 match 段（`I` 跳过 query、`D` 跳过 target）。写入前

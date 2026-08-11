@@ -54,6 +54,12 @@
 | 1%–10% | 1000 | 50000 | 100000 | 250 100 |
 | > 10% | 10000 | 100000 | 1000000 | 500 250 |
 
+> **顶层 CLI 约束**（`ntSynt` 顶部，L101-116）：`-d/--divergence` 必须在
+> **[0,100]** 区间（越界 `parser.error`）；`--w_rounds` 的**每个值都必须 < `-w`**
+> （否则 `parser.error`），因为细化窗口只能比初始窗口小。另：手动显式传
+> `--indel/--merge/--w_rounds/--block_size` 会**覆盖**按分歧推导的默认值
+> （源码用 `args.indel or 默认` 的 or 短路实现）。
+
 > **双层 CLI 架构（易混淆点）**：ntSynt 实际是**两层命令**，上面这张表属于**顶层驱动
 > `bin/ntSynt`**（snakemake 驱动器：吃 FASTA + `-d/--divergence`，据此推导 indel/merge/block_size/
 > w_rounds，再拼 snakemake 命令），而真正跑图算法的是**底层 `bin/ntsynt_run.py`**（图阶段，
@@ -196,6 +202,12 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 4. **filter_minimizers_synteny_blocks**：新 minimizer 里，凡是落在块区间重叠处
    （intervaltree/NCLS）或属于 internal black_list 的去掉，只留**块与块之间**的新 minimizer。
 5. **build_graph**：把这些新 minimizer 以权重 1 加进现有图（`black_list=terminal_mxs`）。
+   `build_graph`（ntjoin_utils.py:83-141）在**增量重建**（图已存在）时还会调
+   `check_added_edges_incident_weights`（ntjoin_utils.py:70-80）加一道守卫：
+   对每个新加的边，若其任一端点的**总关联权重** `sum(incident weight) >
+   sum(weights.values())*2`（即超出"全基因组满权重×2"），就把这条新边删掉——
+   防止细化过程中某些 minimizer 变成超度 hub 节点。注意 `sum(weights)*2` 用的是
+   各基因组恒 1 的权重表，故阈值恒等于 `2×基因组数`。
 6. 重新找路径 → 断 indel → 过滤 → 输出 `<prefix>.pre-collinear-merge.synteny_blocks.tsv`。
 7. 最后一轮（`new_w == w_rounds[-1]`）：额外做 `filter_graph_global_flag_overlaps` +
    `refine_graph`（§3.5），然后 `merge_collinear_blocks`（§3.6）。

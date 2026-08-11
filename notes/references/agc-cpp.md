@@ -350,6 +350,11 @@ struct segment_desc_t {
 > - `getcol` 另有 `-f`(fast, 更耗内存)、`-l`(line length)；`getset`/`getctg` 另有
 >   `-p`(关 prefetch)、`-s`(streaming, 更省内存)；`getctg` 支持
 >   `contig` / `contig@sample` / `contig:from-to` / `contig@sample:from-to` 定位。
+> - **样本名推导**：create/append 中样本名 = 输入文件名的 `filesystem::path(fn).stem()`，
+>   再经 `remove_common_suffixes`（`application.cpp:606-630`）循环剥掉
+>   `.fna/.gz/.fa/.fasta` 后缀得到（如 `sample.fa.gz` → `sample`）。参考样本即第一个输入
+>   文件的 stem。**输入文件名去重**：`sanitize_input_file_names`（`application.cpp:587-603`，
+>   用 `MurMurStringsHash`）在 create/append 开头对 `input_names` 去重。
 > - 其中 `-a` 自适应压缩与 `-f` 与参考选择相关：`-a` 用参考外的 duplicated k-mers 生成
 >   新参考段、提高阈值（短段≥0.9×段长 / 长段≥0.2×段长才复用）；`-f` 控制 fall-back
 >   minimizers 比例。pgr 的 Reference Index 设计可参考其"切点定位 + 局部 fall-back"思路

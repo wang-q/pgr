@@ -149,6 +149,12 @@ FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
   输出相似单倍型（`--all-e2e` 紧凑输出）。
 - **性能提示**：局部比对比 SMEM 慢数十倍，不用于高通量 reads。
 
+> **`sw` 的 PAF 输出 tag**（`search.c` `write_paf`）：12 列之外固定追加 `AS:i:`（得分）、
+> `qh:i:`（query 端命中数 n_qoff）、`rh:i:`（ref 端区间长度 hi-lo）、`cg:Z:`（CIGAR）、
+> `cs:Z:`（cs 串）；`--seq` 时再追加 `rs:Z:`（参考序列）；多位置命中（n_pos>1）时追加
+> `ap:Z:`/`aq:Z:`（有/无序列名时，逐位置 `name,strand,pos;`）。其中 `cg`（CIGAR）与 `cs`
+> （cs 字符串）是**两个不同的 tag**，分别对应 `h->cigar` 与 `h->cs`。
+
 ### 3.6 hapdiv（单倍型多样性）
 
 把 end-to-end 模式应用于滑动的 101-mer，报告：命中的不同等位基因数、最大编辑距离、

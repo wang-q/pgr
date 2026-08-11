@@ -410,6 +410,29 @@ score 求和)`；否则各自独立输出。
 近似"覆盖所有 SD 的最小 elementary 集合"。凡覆盖 SD 数 `< 2` 的集合被跳过（`len(sds) < 2`），剩余
 core 在 `.elem` 输出中给对应行（`len(l) <= 8`）追加 `CORE` 标记。
 
+#### 3.3.6 Python 管线编排（`__main__.py`）
+
+Codon 二进制只做单条序列对/单 cluster 的计算，跨染色体/chunk、跨物种的调度全在 Python 层：
+
+- **align 分桶**：`align()`/`cross_biser()` 把每条染色体 search 出的 hits 按 `span`
+  （= 两 mate 区间较大者）排序，再 **round-robin**（`i % nbuckets`）分到
+  `nbuckets = max(threads*2, 50)` 个 bucket，每个 bucket 单独跑一次 `align`（`__main__.py:142-185`），
+  避免单次 align 输入过大；cross_align 的 nbuckets 恒为 `max(threads*2, 50)`（`:261`）。
+- **任务缓存 / 断点续跑**：`run_biser` 以 `(exe, args)` 的 **md5** 在 `{tmp}/status/<subcmd>_<md5>`
+  写缓存文件，已成功的子命令直接跳过（`__main__.py:47-76`）。配合 `--keep-temp` 保留的临时目录，
+  `--resume` 可复用该目录续跑未完成部分（`--resume` 会自动置 `keep_temp=True`）。
+- **CLI 选项**（`__main__.py:354-438`）：除 `--hard/-H`、`--keep-contigs`、`--no-decomposition`、
+  `--max-chromosome-size`（默认 300_000_000）外，还有 `--temp/-T`、`--threads/-t`（默认 1）、
+  `--output/-o`（必填）、`--keep-temp/-k`、`--resume`、`--max-error`（默认 30，限 `0<v<100`）、
+  `--max-edit-error`（默认 15，同上）、`--kmer-size`（14）、`--winnow-size`（16）、
+  `--ld-path`、`--gc-heap`（调试用）、`--version/-v`。
+- **任务划分**：基因组名 = `Path(path).stem`；按 `.fai` 把每条染色体切成 `--max-chromosome-size`
+  一段，每段一个 `search -c chr <start>` job；默认跳过含 `_` 的 contig 与 `chrM`
+  （`valid_chr`，`--keep-contigs` 关闭过滤）。
+- **输出路径**：`!hard` 时对 `final.bed` 跑 `translate` 映射回原基因组坐标；`hard` 时直接
+  `shutil.copy` final.bed（及 `.elem.txt`）。进程统一设 `env OMP_NUM_THREADS=1` 限制 Codon 的
+  OpenMP；`--gc-heap` 设 `GC_INITIAL_HEAP_SIZE`。
+
 ## 4. 相关研究：T2T-CHM13 SD 注释来源与下游分析
 
 本节记录 T2T-CHM13 基因组中 SD 注释的产生方式，以及基于这些注释开展的 SNV / IGC 研究。

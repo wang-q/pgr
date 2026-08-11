@@ -12,12 +12,30 @@ GFA 是用于描述序列图（Sequence Graphs）的通用文本格式，广泛�
 
 *   **GFA 1.0**: 最基础且广泛支持的版本。定义了 Segment (S), Link (L), Path (P), Containment (C)。
 *   **GFA 1.1**: 在 1.0 基础上增加了 **Walk (W)** 行，专门用于表示泛基因组中的单倍型路径（Haplotypes）。这是 Minigraph-Cactus 输出的标准格式。
-*   **GFA 2.0**: 对 1.0 的泛化和重设计，支持更复杂的层级结构和间隙（Gaps），但与 1.0 **不兼容**。目前主流泛基因组工具（vg, odgi）主要支持 GFA 1.x。
+*   **GFA 2.0**: 对 1.0 的泛化和重设计，但与 1.0 **不兼容**。行类型为 `H/S/F/E/G/O/U`：`S` 段增加**长度字段**（`S <sid> <slen> <sequence>`，长度可不等于实际序列长，仅作绘图提示）、`E` 边**统一取代 GFA1 的 `L` 与 `C`**（用区间 `beg1 end1 beg2 end2` 表示任意两段区间比对，位置可用 `$` 后缀标记末端，即 dovetail/containment 可由区间端点的 `$` 位置识别）、`G` gap 边（估计距离 + 方差，用于 scaffold）、`F` fragment（外部序列多重比对到段）、`O/U` group（**有序/无序子图**，`O` 即路径、`U` 即集合，替代 `P`）。对齐字段可为 **CIGAR 或 Dazzler-trace**（trace 为逗号分隔整数，每整数表示第二段在下一 `TS` 个第一段字符上比对的字符数，`TS` 为头部或行内默认 trace 间距）。目前主流泛基因组工具（vg, odgi）主要支持 GFA 1.x。
 *   **rGFA (Reference GFA)**: GFA 1.0 的一个特定子集/约定。它要求图中的节点必须基于一个线性参考序列进行坐标定义（通过特定的 Tag）。**Minigraph** 原生输出此格式。
 
 ## 2. GFA 1.0/1.1 核心语法
 
 GFA 是 Tab 分隔的文本文件。
+
+### 可选字段 TAG:TYPE:VALUE 语法
+所有行的可选字段统一为 `TAG:TYPE:VALUE`：`TAG` 是两个字符（`/[A-Za-z][A-Za-z0-9]/`），
+每行每个 TAG 只能出现一次；**含小写字母的 TAG 保留给最终用户**。`TYPE` 为单个字符，
+定义 `VALUE` 的格式：
+| TYPE | 含义 |
+| :--- | :--- |
+| `A` | 单个可打印字符 |
+| `i` | 有符号整数 |
+| `f` | 单精度浮点数 |
+| `Z` | 可打印字符串（含空格） |
+| `J` | JSON（不含换行与制表符） |
+| `H` | 十六进制字节数组 |
+| `B` | 数值数组，首字符 `cCsSiIf` 分别表 `int8/uint8/int16/uint16/int32/uint32/float` |
+
+### 名字规则与命名空间
+段名与路径名共享**同一个命名空间**，因此一条路径不能与某个段同名。名字不能含空白，
+不能以 `*` 或 `=` 开头，不能包含 `+,` 与 `-,` 子串，其余可打印 ASCII 均可，且大小写敏感。
 
 ### Header (H)
 ```gfa
@@ -31,6 +49,9 @@ S	s1	ACGT	LN:i:4
 S	s2	*	LN:i:1000  # * 表示序列未在文件中显式列出
 ```
 *   字段: `Type`, `Name`, `Sequence`, `Optional Tags`
+*   `Sequence` 可省略（`*`），此时长度可用 `LN:i:` tag 给出，或把序列存放在外部 FASTA 文件。
+*   常用可选 tag：`LN`（段长）、`RC`（read 数）、`FC`（fragment 数）、`KC`（k-mer 数）、
+    `SH`（序列 SHA-256 校验和）、`UR`（序列的 URI 或本地路径）。
 
 ### Link (L)
 定义节点间的连接（边）。
@@ -38,7 +59,20 @@ S	s2	*	LN:i:1000  # * 表示序列未在文件中显式列出
 L	s1	+	s2	+	0M
 ```
 *   字段: `Type`, `From_Segment`, `From_Orient`, `To_Segment`, `To_Orient`, `Overlap`
-*   `0M` 表示无重叠连接（CIGAR 格式）。
+*   `0M` 表示无重叠连接（CIGAR 格式），即 `To` 段直接跟在 `From` 段之后；`*` 表示重叠方式未指定。
+*   重叠语义：`A` 到 `B` 的 link 表示 `A` 末端与 `B` 起点重叠，CIGAR 以 `FromOrient` 方向的
+    `A` 末端为参考、以 `ToOrient` 方向的 `B` 起点为查询。
+*   常用可选 tag：`MQ`（mapping quality）、`NM`（错配/缺口数）、`RC`/`FC`/`KC`、`ID`（边标识）。
+
+### Containment (C) - GFA 1.0
+表示一个段（`Contained`）被完整包含在另一个段（`Container`）中。
+```gfa
+C	1	-	2	+	110	100M
+```
+*   字段: `Type`, `Container`, `Container_Orient`, `Contained`, `Contained_Orient`, `Pos`, `Overlap`
+*   `Pos` 是 contained 段在 **container 段正向坐标系**中的 0-based 左端位置（在按
+    `Container_Orient` 定向之前）。
+*   常用可选 tag：`RC`（read 覆盖度）、`NM`、`ID`。
 
 ### Jump (J) - GFA 1.2
 类似 Link，但**不隐含两端节点的直接邻接**，而是给出两端之间的估计距离（gap）。
@@ -46,7 +80,10 @@ L	s1	+	s2	+	0M
 J	s1	+	s2	+	500
 ```
 *   字段: `Type`, `From_Segment`, `From_Orient`, `To_Segment`, `To_Orient`, `Dist`
+*   `Dist` 为有符号整数估计距离，可为 `*`（距离未知）、可为**负值**（提示未检测到的重叠）。
 *   主要用途：跨 assembly gap（如 Hi-C / BioNano 支架）的 contig 连接关系。
+*   带 `SC:i:1` tag 的 `J` 行表示 **shortcut**（捷径）——不对应缺失序列，用于在 `P` 行中
+    `;` 分隔处定义任意组装 scaffold（见下方 Path 的 GFA 1.2 扩展）。
 
 ### Path (P) - GFA 1.0
 定义一条路径（有序的节点列表）。
@@ -54,6 +91,12 @@ J	s1	+	s2	+	500
 P	path1	s1+,s2+	*
 ```
 *   字段: `Type`, `Path_Name`, `Segment_Names`, `CIGARs`
+*   `CIGARs` 可为单个 `*`（此时由对应 link 记录的 CIGAR 或两序列 pairwise overlap 比对得出）；
+    若指定，CIGAR 数量必须比段数**少一个**。
+*   **GFA 1.2 扩展**：`Segment_Names` 除了 `,` 还可使用 `;` 分隔，`;` 表示使用 `J` 行（jump
+    连接）而非 `L` 行（link 连接）；此时 `CIGARs` 用 `[-+]?[0-9]+J`（`J` 后缀表示 jump 距离，
+    如 `10J`）或 `.`（对应 `J` 行未提供距离估计）。同一对有向段可用不同分隔符区分 link 与
+    shortcut jump（如 `11+,12-` 用 link、`11+;12-` 用 jump）。
 
 ### Walk (W) - GFA 1.1
 相比 Path，Walk 更适合描述泛基因组中的样本和单倍型信息。
@@ -62,6 +105,10 @@ W	sample1	1	chr1	0	1000	>s1<s2>s3
 ```
 *   字段: `Type`, `SampleID`, `HaplotypeIdx`, `SeqID`, `Start`, `End`, `Path`
 *   Path 格式为 `>s1` (forward) 或 `<s1` (reverse) 的连续字符串。
+*   `HaplotypeIdx` 约定：单倍体样本为 `0`，二倍体/多倍体从 `1` 起；对相同
+    (`SampleID`, `HaplotypeIdx`, `SeqID`) 的两条 W 行，其 `[Start, End)` 区间不能重叠。
+*   `Start`/`End` 可选 `*`，为 BED 式半开半闭区间（half-open）。W 行**不能使用** jump 连接，
+    且每条 W 的 walk 必须是图中实际存在的游走。
 
 ## 3. rGFA (Reference GFA) 特性
 

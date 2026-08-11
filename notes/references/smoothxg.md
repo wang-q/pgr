@@ -422,6 +422,45 @@ pgr 若做流水线化（类似 impg 的 stage 化）可借鉴这种"后处理�
 - **[cleanup.cpp](../../../smoothxg-master/src/cleanup.cpp)** —
   类似 prep 但只做排序，不加载 GFA。主流程未调用。
 
+### 4.7 笔记此前未覆盖的 CLI 参数与校验
+
+正文各节已覆盖核心参数，以下几项此前遗漏，一并补全：
+
+- **`-k/--kmer-size-mash-distance`（默认 17）** — [main.cpp#L111-L112](../../../smoothxg-master/src/main.cpp#L111-L112)、
+  `kmer_size` 取值见 [main.cpp#L304](../../../smoothxg-master/src/main.cpp#L304)。它同时服务于**两处**：
+  块拆分的 mash 聚类（§4.3）与 adaptive POA 打分——后者用 `8*kmer_size` 作短序列过滤阈值
+  （[smooth.cpp#L1968/L2154](../../../smoothxg-master/src/smooth.cpp#L1968)，
+  "We can't compute the hashes for what is shorter than the kmer size"）。§4.4 的 `8*kmer_size`
+  常量在此落地为 `8*17=136`。另有一条硬校验：`min_length_mash_based_clustering >= kmer_size`
+  （[main.cpp#L305-L311](../../../smoothxg-master/src/main.cpp#L305-L311)）。
+- **`-m/--write-msa-in-maf-format`** — [main.cpp#L160-L162](../../../smoothxg-master/src/main.cpp#L160-L162)
+  把每块的 MSA 写成 MAF 文件，是 §4.6 `maf.hpp` 数据结构的实际消费者。**仅在最后一轮迭代输出**
+  （[main.cpp#L491](../../../smoothxg-master/src/main.cpp#L491)），MAF 头含 `##maf version=1`、`# smoothxg`、
+  `# input=... sequences=N` 及一段把本次运行参数（merge_blocks/contiguous_path_jaccard/POA 引擎/
+  alignment_mode/order_paths/max_block_weight/max_block_jump/max_edge_jump/max_poa_length/min_copy_length/
+  max_copy_length/min_autocorr_z/autocorr_stride）逐行写进 header 的完整记录（[main.cpp#L500-L528](../../../smoothxg-master/src/main.cpp#L500-L528)）。
+  `-M/--merge-blocks` 开启时还会把跨块连续的 MAF 行合并（`maf_t::rows` 按路径拼接，见
+  [smooth.cpp#L1076-L1267](../../../smoothxg-master/src/smooth.cpp#L1076)）。
+- **块合并选项（配合 `-M`）**：`-J/--contiguous-path-jaccard`（默认 1.0，被 `min(·,1.0)` 钳制，
+  [main.cpp#L171-L173, L282](../../../smoothxg-master/src/main.cpp#L282)）、
+  `-N/--preserve-unmerged-consensus`（保留未合并的原始 consensus，[main.cpp#L168-L170](../../../smoothxg-master/src/main.cpp#L168-L170)）、
+  `-G/--max-block-groups-in-memory`（默认 50，越大越会合并图上不立即连续的块，
+  [main.cpp#L174-L176, L297-L298](../../../smoothxg-master/src/main.cpp#L297)）。
+- **共识图补充选项**：`-P/--ref-paths`（[main.cpp#L138-L140, L1070](../../../smoothxg-master/src/main.cpp#L1070)）
+  是**独立于 `-C` DSL 之外**的参考路径列表文件标志（DSL 内的 refs 走 `spec.ref_file`，
+  [main.cpp#L1106](../../../smoothxg-master/src/main.cpp#L1106)）；`-f/--write-consensus-path-names`
+  （[main.cpp#L142-L144, L1048-L1054](../../../smoothxg-master/src/main.cpp#L1048)）把 consensus path 名逐行
+  写入文件，供后续 `-H/--consensus-from` 复用。
+- **`-n/--no-prep`** — [main.cpp#L62-L64, L422-L434](../../../smoothxg-master/src/main.cpp#L422)
+  跳过 prep 阶段直接加载原 GFA（此时相当于只做 XG 索引 + 块分解）；从 `-i` XG 输入起跑时 prep
+  也自动被绕过（[main.cpp#L417-L419](../../../smoothxg-master/src/main.cpp#L417)）。
+- **参数校验（main.cpp 的硬性互斥/依赖约束）**，笔记各节未汇总：
+  - `-M` 必须配 `-m` 或在图中保留 consensus，否则报错退出（[main.cpp#L249-L254](../../../smoothxg-master/src/main.cpp#L249)）；
+  - `-J`/`-N` 必须配 `-M`（[main.cpp#L256-L261](../../../smoothxg-master/src/main.cpp#L256)）；
+  - `-K`（保留临时文件）与 `-n` 互斥（[main.cpp#L263-L267](../../../smoothxg-master/src/main.cpp#L263)）；
+  - 必须给 `-o`（[main.cpp#L269-L272](../../../smoothxg-master/src/main.cpp#L269)）；
+  - `-r/--n-haps` 与 `-w/--block-weight-max` **至少给一个**（[main.cpp#L274-L278](../../../smoothxg-master/src/main.cpp#L274)）。
+
 ## 5. 关键算法深入
 
 ### 5.1 块分解：path step 遍历 + 跳距切分
