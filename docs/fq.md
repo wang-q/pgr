@@ -14,6 +14,7 @@
 *   `merge`: Overlap-merge paired-end reads (bbmerge-compatible).
 *   `ecc`: Error-correct reads by k-mer reassembly (tadpole-compatible).
 *   `extend`: Extend reads along the k-mer graph (tadpole-compatible).
+*   `assemble`: Assemble reads into contigs (tadpole-compatible).
 *   `norm`: Filter reads by k-mer depth (bbnorm-style cutoff).
 *   `range`: Extract FASTQ records by name or region.
 *   `trim-qual`: Trim reads by quality score (sickle/cutadapt-style).
@@ -676,4 +677,46 @@ pgr fq extend [OPTIONS] <infiles>...
 2.  **Extend only to the right**:
     ```bash
     pgr fq extend in.fq.gz -o out.fq --el 0 --er 50
+    ```
+
+---
+
+## assemble
+
+Assembles reads into contigs through the k-mer graph, reproducing the
+BBTools `tadpole.sh` contig mode (the default mode when no `ecc`/`extend`
+flag is set). K-mers are counted with a quality gate, contigs are seeded
+from k-mers above a depth threshold and extended greedily in both
+directions, stopping at branches and dead ends, then bubbles are resolved
+and contigs are sorted longest-first. This replaces the tadpole assembly
+steps of the anchr `2_insert_size` and `unitigs` flows.
+
+```bash
+pgr fq assemble [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `-k, --kmer <int>`: K-mer length (default 31).
+*   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
+*   `--min-contig-len <int>`: Minimum contig length (default:
+    `max(124, 2*k)`).
+*   `-p, --parallel <int|auto>`: Accepted for tadpole.sh compatibility;
+    ignored (processing is deterministic single-pass).
+
+### Examples
+
+1.  **Assemble contigs from corrected reads (anchr unitigs step)**:
+    ```bash
+    pgr fq assemble pe.cor.fa -o unitigs_K31.fasta --kmer 31
+    ```
+
+2.  **Assemble from paired-end reads (anchr 2_insert_size step)**:
+    ```bash
+    pgr fq assemble R1.fq.gz R2.fq.gz -o contigs.fasta
+    ```
+
+3.  **Raise the minimum contig length**:
+    ```bash
+    pgr fq assemble in.fq -o out.fasta --min-contig-len 500
     ```

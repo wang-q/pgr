@@ -155,6 +155,11 @@ impl TadpoleTable {
         self.map.get(&kmer.canonical()).copied().unwrap_or(0)
     }
 
+    /// Iterates the distinct canonical k-mers and their counts.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Kmer, u32)> {
+        self.map.iter().map(|(k, &c)| (k, c))
+    }
+
     /// Counts of the four right-extensions of `kmer`.
     pub(crate) fn fill_right_counts(&self, kmer: &Kmer) -> [u32; 4] {
         let mut out = [0u32; 4];
@@ -187,7 +192,7 @@ pub(crate) struct Kmer {
 }
 
 impl Kmer {
-    fn new(k: usize) -> Self {
+    pub(crate) fn new(k: usize) -> Self {
         let n = (2 * k).div_ceil(64);
         Self {
             k,
@@ -195,7 +200,7 @@ impl Kmer {
         }
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         for w in &mut self.words {
             *w = 0;
         }
@@ -207,7 +212,7 @@ impl Kmer {
         (bit / 64, (bit % 64) as u32)
     }
 
-    fn base_at(&self, i: usize) -> u8 {
+    pub(crate) fn base_at(&self, i: usize) -> u8 {
         debug_assert!(i < self.k);
         let (w, b) = Self::bit_pos(i);
         ((self.words[w] >> b) & 3) as u8
@@ -220,7 +225,7 @@ impl Kmer {
     }
 
     /// Shift left by one base (2 bits) and append `x` at the 3' end.
-    fn push_right(&mut self, x: u8) {
+    pub(crate) fn push_right(&mut self, x: u8) {
         // Shift the whole 2k-bit window left by 2; only the highest word is
         // masked so bits beyond the window are dropped.
         let n = self.words.len();
@@ -247,7 +252,7 @@ impl Kmer {
     }
 
     /// Shift right by one base (2 bits) and prepend `x` at the 5' end.
-    fn push_left(&mut self, x: u8) {
+    pub(crate) fn push_left(&mut self, x: u8) {
         // Shift the whole 2k-bit window right by 2: the low 2 bits of word
         // i+1 become the top 2 bits of word i, and the low 2 bits of word 0
         // are discarded. Then the new base is placed at the window top.
@@ -261,7 +266,7 @@ impl Kmer {
     }
 
     /// Reverse complement, mirroring `rc_kmer` over the base sequence.
-    fn rc(&self) -> Self {
+    pub(crate) fn rc(&self) -> Self {
         let mut r = Self::new(self.k);
         for i in 0..self.k {
             let x = self.base_at(i);
@@ -271,7 +276,7 @@ impl Kmer {
     }
 
     /// Lexicographic comparison of the base sequences (5' to 3').
-    fn cmp_bases(&self, other: &Self) -> std::cmp::Ordering {
+    pub(crate) fn cmp_bases(&self, other: &Self) -> std::cmp::Ordering {
         for i in (0..self.k).rev() {
             match self.base_at(i).cmp(&other.base_at(i)) {
                 std::cmp::Ordering::Equal => {}
@@ -282,7 +287,7 @@ impl Kmer {
     }
 
     /// Canonical key (lexicographically smaller of forward / reverse-complement).
-    fn canonical(&self) -> Self {
+    pub(crate) fn canonical(&self) -> Self {
         let r = self.rc();
         if r.cmp_bases(self).is_lt() {
             r
@@ -294,7 +299,7 @@ impl Kmer {
 
 /// 2-bit base code, mirroring `AminoAcid.baseToNumber`: A=0, C=1, G=2,
 /// T/U=3, and -1 for everything else (N and ambiguity reset the k-mer window).
-fn base_code(b: u8) -> u8 {
+pub(crate) fn base_code(b: u8) -> u8 {
     match b {
         b'A' | b'a' => 0,
         b'C' | b'c' => 1,
@@ -318,7 +323,7 @@ fn base_comp_code(b: u8) -> u8 {
 
 /// `AminoAcid.baseToNumber >= 0`: A/C/G/T/U count as defined (baseToNumber
 /// is filled with -1 and only ACGTU are overwritten).
-fn base_defined(b: u8) -> bool {
+pub(crate) fn base_defined(b: u8) -> bool {
     matches!(
         b,
         b'A' | b'a' | b'C' | b'c' | b'G' | b'g' | b'T' | b't' | b'U' | b'u'
@@ -632,7 +637,7 @@ fn has_errors_fast(kmers: &[Option<Kmer>], table: &TadpoleTable, opts: &TadpoleO
 }
 
 /// `isJunction(max, second)` with branch-resolution thresholds.
-fn is_junction(max: u32, second: u32, opts: &TadpoleOptions) -> bool {
+pub(crate) fn is_junction(max: u32, second: u32, opts: &TadpoleOptions) -> bool {
     if second < 1
         || (second as f32) * opts.branch_mult1 < max as f32
         || (second <= opts.branch_lower_const as u32
@@ -772,7 +777,7 @@ fn extend_to_right2(
     added
 }
 
-fn number_to_base(n: u8) -> u8 {
+pub(crate) fn number_to_base(n: u8) -> u8 {
     match n {
         0 => b'A',
         1 => b'C',
@@ -782,7 +787,7 @@ fn number_to_base(n: u8) -> u8 {
     }
 }
 
-fn argmax2(a: &[u32; 4], max: &mut u32) -> usize {
+pub(crate) fn argmax2(a: &[u32; 4], max: &mut u32) -> usize {
     let mut pos = 0usize;
     *max = a[0];
     for (i, &x) in a.iter().enumerate().skip(1) {
@@ -794,7 +799,7 @@ fn argmax2(a: &[u32; 4], max: &mut u32) -> usize {
     pos
 }
 
-fn second_highest_position(a: &[u32; 4]) -> usize {
+pub(crate) fn second_highest_position(a: &[u32; 4]) -> usize {
     let (mut p, mut p2) = if a[0] >= a[1] { (0, 1) } else { (1, 0) };
     for i in 2..a.len() {
         let x = a[i];

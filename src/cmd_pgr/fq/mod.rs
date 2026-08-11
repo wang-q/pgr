@@ -1,3 +1,4 @@
+pub mod assemble;
 pub mod clean;
 pub mod clump;
 pub mod ecc;
@@ -31,6 +32,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(clean::make_subcommand())
         .subcommand(ecc::make_subcommand())
         .subcommand(extend::make_subcommand())
+        .subcommand(assemble::make_subcommand())
         .subcommand(filter::make_subcommand())
         .subcommand(s_filter::make_subcommand())
         .subcommand(trim_qual::make_subcommand())
@@ -51,6 +53,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("clean", sub_matches)) => clean::execute(sub_matches),
         Some(("ecc", sub_matches)) => ecc::execute(sub_matches),
         Some(("extend", sub_matches)) => extend::execute(sub_matches),
+        Some(("assemble", sub_matches)) => assemble::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
         Some(("s-filter", sub_matches)) => s_filter::execute(sub_matches),
         Some(("trim-qual", sub_matches)) => trim_qual::execute(sub_matches),

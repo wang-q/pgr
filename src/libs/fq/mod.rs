@@ -1,5 +1,6 @@
 //! FASTQ read-processing algorithms.
 
+pub mod assemble;
 pub mod bbnet;
 pub mod clump;
 pub mod merge;
