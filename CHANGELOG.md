@@ -67,6 +67,12 @@
   representative path. Bubble popping remains the default (`popbubbles=t`
   compatible); the flag makes the pre-pop contig set directly observable
   and deterministic for downstream unitig workflows.
+* **`fq assemble` performance** - the k-mer count table is now built with
+  rayon-parallel per-chunk counting (the same pattern as the native `kmer`
+  pipeline) and the multi-pass seeding scans iterate a once-built
+  canonical-k-mer sorted snapshot instead of re-sorting the hash table each
+  pass. Lambda 20k-read benchmark: full assembly 576 ms -> 157 ms (~3.7x),
+  with byte-identical output.
 
 ## 0.5.0 - 2026-08-08
 

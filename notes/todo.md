@@ -142,6 +142,11 @@
       Coverage 过滤维度，查询时无法全图计算，作传递闭包后处理过滤）；
       `--end-trim` 推迟（需 per-interval 修剪 CIGAR，待序列输出引入时
       一并处理）（来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
+- [ ] **fq assemble 计数表 radix 化（k>64 多 word）**：`sorted_entries`
+      现用比较排序；泛化 Myers radix sort（`libs/ds/radix_sort.rs` 目前
+      u128 特化）到多 word 后替换，查询侧二分 vs HashMap 先基准
+      （Lambda 20k 基线：build ~100 ms / 全流程 ~157 ms，
+      `benches/fq_assemble_benchmark.rs`）。
 - [ ] **chain 算法待验证（低优先）**：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的**真实数据验证**待做；KD-tree

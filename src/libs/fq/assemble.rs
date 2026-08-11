@@ -277,15 +277,13 @@ fn scan_table(
     contigs: &mut Vec<Contig>,
     id_counter: &mut usize,
 ) {
-    // Deterministic scan order: the k-mer table is a HashMap, whose iteration
-    // order is randomized per process. Sorting the entries keeps the build
-    // order (and therefore the contig list) reproducible across runs.
-    let mut entries: Vec<(&Kmer, u32)> = table.iter().collect();
     // Deterministic scan order by canonical k-mer sequence (the BBTools
-    // hash-table cell order is memory-dependent and not portable).
-    entries.sort_by(|a, b| a.0.cmp_bases(b.0));
-    for (kmer, count) in entries {
-        if count < threshold as u32 {
+    // hash-table cell order is memory-dependent and not portable). The
+    // sorted snapshot is cached in the table, so all 16 seeding passes
+    // iterate it linearly instead of re-sorting the HashMap each pass.
+    let entries = table.sorted_entries();
+    for (kmer, count) in entries.iter() {
+        if *count < threshold as u32 {
             continue;
         }
         if claimed.contains(kmer) {

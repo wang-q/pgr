@@ -9,8 +9,10 @@ use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use crate::libs::fq::qual::{from_phred, to_phred};
 use crate::libs::nt::rev_comp;
 use anyhow::Result;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::Write;
+use std::sync::OnceLock;
 
 /// Default k-mer length (tadpole.sh `k`).
 pub const DEFAULT_K: usize = 31;
@@ -128,26 +130,57 @@ impl Default for TadpoleOptions {
 #[derive(Debug, Clone, Default)]
 pub struct TadpoleTable {
     map: HashMap<Kmer, u32>,
+    /// Canonical-kmer sorted (key, count) snapshot, built once on first
+    /// request (the assemble passes scan it multiple times).
+    sorted: OnceLock<Vec<(Kmer, u32)>>,
 }
 
 impl TadpoleTable {
     /// Builds the table from reads (bases, phred qualities) with `minprob`
     /// quality filtering, mirroring `KmerTableSetU.addKmersToTable`.
     pub fn build(reads: &[(Vec<u8>, Vec<u8>)], k: usize, min_prob: f32) -> Self {
-        let mut map: HashMap<Kmer, u32> = HashMap::new();
         let (prob_correct, prob_correct_inv) = prob_tables();
-        for (bases, quals) in reads {
-            count_read_kmers(
-                &mut map,
-                bases,
-                quals,
-                k,
-                min_prob,
-                &prob_correct,
-                &prob_correct_inv,
-            );
+        if reads.is_empty() {
+            return Self {
+                map: HashMap::new(),
+                sorted: OnceLock::new(),
+            };
         }
-        Self { map }
+        // Parallel per-chunk counting (the same rayon pattern as
+        // `libs/kmer::build_table`), then a deterministic merge; the table
+        // contents are identical to a single-threaded build.
+        let chunk_size = 4096usize;
+        let maps: Vec<HashMap<Kmer, u32>> = reads
+            .par_chunks(chunk_size)
+            .map(|chunk| {
+                let mut map: HashMap<Kmer, u32> = HashMap::new();
+                for (bases, quals) in chunk {
+                    count_read_kmers(
+                        &mut map,
+                        bases,
+                        quals,
+                        k,
+                        min_prob,
+                        &prob_correct,
+                        &prob_correct_inv,
+                    );
+                }
+                map
+            })
+            .collect();
+        let map: HashMap<Kmer, u32> = maps
+            .into_iter()
+            .reduce(|mut acc, other| {
+                for (kmer, count) in other {
+                    *acc.entry(kmer).or_insert(0) += count;
+                }
+                acc
+            })
+            .unwrap();
+        Self {
+            map,
+            sorted: OnceLock::new(),
+        }
     }
 
     /// Count of the canonical form of `kmer` (0 when absent).
@@ -155,9 +188,14 @@ impl TadpoleTable {
         self.map.get(&kmer.canonical()).copied().unwrap_or(0)
     }
 
-    /// Iterates the distinct canonical k-mers and their counts.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Kmer, u32)> {
-        self.map.iter().map(|(k, &c)| (k, c))
+    /// Deterministic (canonical k-mer) sorted snapshot of (key, count),
+    /// computed once and cached for the multi-pass assemble scans.
+    pub(crate) fn sorted_entries(&self) -> &[(Kmer, u32)] {
+        self.sorted.get_or_init(|| {
+            let mut v: Vec<(Kmer, u32)> = self.map.iter().map(|(k, &c)| (k.clone(), c)).collect();
+            v.sort_by(|a, b| a.0.cmp_bases(&b.0));
+            v
+        })
     }
 
     /// Counts of the four right-extensions of `kmer`.

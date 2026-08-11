@@ -95,6 +95,10 @@ name = "kmer_benchmark"
 harness = false
 
 [[bench]]
+name = "fq_assemble_benchmark"
+harness = false
+
+[[bench]]
 name = "paf_index_benchmark"
 harness = false
 

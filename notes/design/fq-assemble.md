@@ -164,3 +164,20 @@ unitigs 组装）影响可忽略。
 回归测试：`tests/cli_fq_assemble.rs` + golden
 `tests/bbtools/Lambda/golden/tadpole_contigs31.fasta.gz`（tadpole
 默认输出 67 contig），断言确定性、总碱基差 ≤100、序列集合重合 ≥90%。
+
+## 7. 性能优化（2026-08-11）
+
+计数表与组装扫描按 `libs/kmer`（FastK/Myers 计数骨架）模式改造，输出
+逐字节不变（golden 全绿）：
+
+- **`TadpoleTable::sorted_entries`**：canonical k-mer 排序快照用
+  `OnceLock` 缓存一次；`scan_table` 16 轮种子扫描改为线性迭代，去掉
+  每轮 O(n log n) 的 collect+sort（原 HashMap 迭代需每轮排序保证确定性）。
+- **并行构建**：`TadpoleTable::build` 按 4096 reads 分块 rayon 并行计数
+  + 确定性合并；表内容与单线程一致（`libs/kmer::build_table` 同款模式）。
+- **基准**（`benches/fq_assemble_benchmark.rs`，Lambda 20k reads，k=31，
+  release）：assemble 全流程 576 ms →（sorted_entries）313 ms →
+  （+并行 build）157 ms，~3.7×；build 247 ms → ~100 ms。
+- **下一步（未做）**：k>64（如 unitigs k=81）时把 Myers radix sort
+  （`libs/ds/radix_sort.rs`，当前 u128 特化）泛化到多 word，替换
+  sorted_entries 的比较排序；查询侧二分 vs HashMap 需先基准。
