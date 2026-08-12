@@ -236,13 +236,21 @@ overlap（第 0 步恒 0）。同 contig 内区间连续（`q_end[i] == q_start[
   `SPURIOUS_COVERAGE_THRESHOLD=6` / `ISECT_NEEDED_TO_BREAK=15` 的
   单元化版本）；contain unitig 是否参与 consensus 投票；短 unitig
   （< seed k）的 overlap 缺失处理。
+* **v1 素材来源（2026-08-12）**：repeat breaking 的覆盖度阈值与实现路径
+  有两个成熟参考——`references/skesa.md` §7.1（`FilterLowAbundanceNeighbors`
+  fraction=0.1 多层过滤 + 可逆性检查）与 `references/metaMDBG.md` §9
+  （渐进丰度过滤 t=1.1/10% 步长 + RepeatRemover 的桥接 reads 证据，
+  pgr 用 `asm map` + `sam to-rg` + `rg coverage` 回放即等价设施）；
+  多 k 反馈（SKESA clean_reads / metaMDBG unitig 反馈）为 v2 候选。
 * **参考**：`canu-2.3/src/bogart/`、`wgs-8.3rc2/src/AS_BAT/` 源码随取随用；
   不引入其代码/依赖（Canu EOL）。
 
 ## 11. 相关文档
 
-* `references/canu.md`（Canu OLC 源码分析 + §8 设计意图）
-* `references/celera.md`（Celera 8.3rc2 源码分析 + 对照）
+* `references/canu.md`（Canu OLC 源码分析 + §8 设计意图 + §8.5 实现后理解回写）
+* `references/celera.md`（Celera 8.3rc2 源码分析 + 对照，§9 已按实现更新）
+* `references/skesa.md` §7.1 + `references/metaMDBG.md` §9（v1 素材来源：
+  fork 过滤/丰度过滤/桥接 reads repeat breaking）
 * `design/kmer.md` §11/§12（k 范围、FastK 字节键唯一表示）
 * `design/fq-assemble.md` §8（`asm unitig` 语义与 L: 边）
 * `todo.md` §3（多 k unitig OLC 挂账项，本项目承接）

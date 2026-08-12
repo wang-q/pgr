@@ -1,7 +1,13 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-09
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-12
+（2026-08-12：新增 OLC 组装四命令（`pgr asm ovlp`/`layout`/`cns`/`olc`）+
+`libs/olc/`（多 k unitig 层精确 OLC），设计 [[design/olc.md]]；参考分析
+[[canu.md]] §8.5 与 [[celera.md]] §9 回写实现后理解；参考项目盘点——
+新增 [[wgatools.md]]，[[skesa.md]] §7.1 与 [[metaMDBG.md]] §9 补 OLC v1
+素材映射；HyperGen 并入既有 [[hv.md]]（误建的 hypergen.md 合并删除）；
+更新 §3.1/§6.1/§10/§11。
 （2026-08-09：新增 `pgr kmer` 命令组（table/profile/hist）与三种格式
  定稿——`.pkt`（表，原 `.pgrk` 改名）、`.pkp`（profile，自有单文件）、
  `.hist`（直方图，FASTK 字节兼容，实测与 FastK 输出一致）；`.prof` 因
@@ -193,7 +199,7 @@ src/
 | `fa`     | 18       | FASTA 全能操作：统计、筛选、切分、转换、mask、索引    |
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
 | `fq`     | 14       | FASTQ 处理：合并/纠错/延伸/清洗/过滤/归一化/质量修剪等 |
-| `asm`    | 3        | 组装相关：contig（tadpole 兼容种子组装）、unitig（BCALM 式最大 unitig + --links/--gfa 图输出）、map（完美匹配 reads 回贴，bbwrap perfectmode 替代） |
+| `asm`    | 7        | 组装相关：contig（tadpole 兼容种子组装）、unitig（BCALM 式最大 unitig + --links/--gfa 图输出）、ovlp/layout/cns/olc（多 k unitig 层 OLC 四阶段，见 [[design/olc.md]]）、map（完美匹配 reads 回贴，bbwrap perfectmode 替代） |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
 | `pbit`   | 7        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa） |
 | `gff`    | 2        | GFF 注释：rg (提取 feature 区间为 range 列表)、runlist (GFF → runlist JSON) |
@@ -466,6 +472,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   SAM 输出；覆盖度由 `pgr sam to-rg` + `pgr rg coverage` 派生；`--paired`
   + `pgr sam ihist` 覆盖 2_insert_size 的 bbmap + reformat ihist）、
   `sam`（ihist 插入片段直方图 / to-rg 转换，noodles-sam 解析）。
+  **OLC（2026-08-12）**：`ovlp`/`layout`/`cns`/`olc` 四命令——多 k
+  （默认 21/51/81）unitigs 当伪 reads，精确 seed-verify overlap（canonical
+  k-mer 边界种子 + ± 双向扩展）→ 互惠 best-edge greedy layout（重复交界
+  停止）→ 精确缝合 consensus；合成基因组 30× 重建验证（contigs 全为
+  精确子串），设计见 [[design/olc.md]]。
   性能：contig 全流程 Lambda 20k 576→157 ms（~3.7×，并行计数 + 排序
   快照）；基准 `benches/fq_assemble_benchmark.rs` / `asm_map_benchmark.rs`。
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
@@ -646,6 +657,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 方案 A 已落地（2026-08-05）；LBYTE/vlcp 定稿不做，变长种子未立项 |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
+| [[olc.md]] | 多 k unitig 层 OLC 设计（overlap/layout/consensus 四命令 + `libs/olc/`，承接 canu/celera 参考分析） | 已实现（2026-08-12）；合成基因组 30× 验证通过；repeat 覆盖度证据与列投票留 v1 |
 | [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令（2026-08-04） |
 | [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（2026-08-04，见 [[audit/audit-runlist-rg.md]]） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
@@ -673,12 +685,14 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[cactus_lastz.md]] | Cactus lastzRepeatMasking 子模块深度分析 |
 | [[pangenome-tools.md]] | 泛基因组工具生态全景与 pgr 定位 |
 | [[gfa.md]] | GFA 格式规范 + untangling 博客译文 |
+| [[hv.md]] | HV 与测距/聚类外部参考（HyperGen 源码/论文、hdlib、DotHash、稀疏投影文献家族等；2026-08-12 合并 hypergen.md） |
 | [[ucsc.md]] | UCSC chain-net pipeline 脚本（pgr 重实现参照基准） |
 | [[multiz.md]] | multiz profile–profile DP 算法源码分析 |
 | [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
 | [[mosdepth.md]] | mosdepth BAM/CRAM 深度计算器源码分析（差分数组 + CIGAR 事件，对照 rg coverage） |
 | [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
 | [[spoa.md]] | Spoa (SIMD POA) C++ 源码分析（偏序图 + SIMD DP，pgr `libs/poa` 参考） |
+| [[wgatools.md]] | wgatools（Rust PAF/MAF 工具库）源码分析——pgr `paf` 模块对照（filter/trimovp/pafcov 缺口） |
 
 ## 12. 笔记根文件索引（notes/）
 

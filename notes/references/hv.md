@@ -5,6 +5,9 @@
 > 持续扩充。目的：为 pgr 的 HV 实现（`src/libs/hv.rs`、[[../design/hv.md]]）
 > 与细菌测距/聚类方向提供外部参考。本文是背景材料；pgr 的实现决策以
 > [[../design/hv.md]] §1/§2 与 §6 审计为准。
+> **2026-08-12 复核**：参考项目盘点时误建了 `hypergen.md`（与本文重复，
+> 命名/索引问题教训），已合并删除；结论无新增，仅 §2 借鉴点 1 补
+> pbit 决策 B 交叉引用。
 >
 > 来源：
 > * HyperGen 论文：**Bioinformatics 2024（HyperGen）**
@@ -146,7 +149,8 @@ fast 模式再快 1.8–2.7×。
    `BitPacker8x` 压位串（读取时解压）。pgr `.hv` 存原始 i32（32 bit/维）：
    `pgi to-hv` 稀疏路径每维值域小（±s·碰撞数），量化收益明显；稠密
    bit 值域 ±N 也可按位宽压。4 万 cohort 的存储端值得评估（对应
-   design/hv.md §5.2 已有此条，这里是其源码依据）。
+   design/hv.md §5.2 已有此条，这里是其源码依据）。pbit 决策 B
+   （无源 FASTA 归档距离粗筛，暂缓）的编码选型亦可对照此压缩方案。
 2. **预存 L2 范数**：HyperGen sketch 时算好 `hv_norm_2` 存盘，距离阶段
    省一次 O(D) 范数；pgr FASTA 侧 `calc_distances` 每次现算，`.hv` 侧
    已用文件头 `n_kmer` 等价物。可把范数写进 `.hv` 头，省比较前的范数。

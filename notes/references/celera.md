@@ -5,6 +5,8 @@
 > **r4587**（更早），8.3rc2 是主干上更晚的 r4627——两条线随后分化。本文档记录
 > 原版 OLC（overlap → unitig → consensus → scaffold）结构，并逐组件与 Canu
 > 对照；pgr 视角沿用 canu.md §8 的设计意图（**多 k unitig 的 OLC 拼接**）。
+> **实现状态（2026-08-12）**：已落地为 `pgr asm ovlp`/`layout`/`cns`/`olc`
+> 四命令（`design/olc.md`），§9 的"pgr 借鉴"列按实现结果更新。
 
 ## 1. 概况
 
@@ -193,10 +195,10 @@ bestPath + min-coverage 修剪（为高噪声长读设计）。**pgr 完美匹�
 
 | 环节 | Celera 8.3rc2（r4627） | Canu 2.3（r4587 fork） | pgr 借鉴 |
 |---|---|---|---|
-| overlap | OlapFromSeedsOVL（seed k=9 + banded DP） | MHAP 默认 + overlapInCore 降级 | seed→verify 同源，pgr 是精确版 |
+| overlap | OlapFromSeedsOVL（seed k=9 + banded DP） | MHAP 默认 + overlapInCore 降级 | seed→verify 同源，pgr 是精确版（`asm ovlp`：canonical k-mer 种子 + ± 双向扩展，已实现） |
 | trimming | merTrim + finalTrim | overlapBasedTrimming（同源） | 已由 fq 系列覆盖 |
-| unitig | utg/bog（AS_BOG）+ bogart（AS_BAT） | bogart（AS_BAT 血统，去 mate） | repeat split 的覆盖度证据可记；气泡不处理 |
-| consensus | AS_CNS 列投票（可选 pbdagcon） | utgcns（template + POA-DAG） | 列投票 = pgr polish 的雏形 |
+| unitig | utg/bog（AS_BOG）+ bogart（AS_BAT） | bogart（AS_BAT 血统，去 mate） | greedy best-edge + 互惠检查已实现（`asm layout`）；覆盖度证据 repeat split（6/15）留 v1；气泡不处理 |
+| consensus | AS_CNS 列投票（可选 pbdagcon） | utgcns（template + POA-DAG） | 精确缝合已实现（`asm cns`，v0 无投票）；列投票 = pgr polish 的雏形，留 v1 |
 | scaffold | AS_CGW（mate 驱动） | 无（长读无 scaffold） | pgr 无 paired map 前不适用 |
 
 **pgr 视角**（承接 canu.md §8 的多 k unitig OLC）：
@@ -209,6 +211,11 @@ bestPath + min-coverage 修剪（为高噪声长读设计）。**pgr 完美匹�
   回来逐列多数投票即可，无需 Canu 的模板重比对。
 - 8.3rc2 已把 pbdagcon 列为可选 consensus，佐证"模板+DAG"是 Celera 主干演进
   方向——对 pgr 的意义仍是"只取 consensus 后半段"，不整套搬 OLC。
+- **实现映射（2026-08-12）**：`asm ovlp` = seed→verify 精确版；`asm layout`
+  = greedy best-edge + 互惠检查（连接端语义见 canu.md §8.5）；`asm cns`
+  = 精确缝合（overlap 已对齐坐标，投票无增量，留 v1）。合成数据 30× 下
+  contigs 全部为基因组精确子串；6× 低覆盖出现重复区环形错装（top2 repeat
+  近似不触发），v1 优先补 AS_BAT 的覆盖度证据（6/15）。
 
 ## 10. 关键文件清单（速查）
 

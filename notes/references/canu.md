@@ -6,6 +6,8 @@
 > 的设计意图——**把不同 k 各自生成的 unitigs 当"伪 reads"，在 unitig 层做
 > OLC 拼接**（见 §8）。本文档记录 Canu 的 OLC 三组件源码结构，以及该设计意图
 > 对应的借鉴评估。
+> **实现状态（2026-08-12）**：设计意图已落地为 `pgr asm ovlp`/`layout`/`cns`/
+> `olc` 四命令（`design/olc.md`），§8.5 回写实现后的理解修正。
 
 ## 1. 概况
 
@@ -210,8 +212,38 @@ unitigs 当"伪 reads"，直接在 unitig 层做 OLC 拼接**。
 - **气泡/孤儿合并**（`mergeOrphans` bubble 遍）：用户裁定不做。
 - **难点**：unitig 边界/包含关系（Canu `PlaceContains` 场景）、重复混淆、
   unitig 无方向（正反链都要查）、以及不同 k 的 unitig 冗余（同一区域多套
-  表示，overlap 图会稠密，需去重/合并包含）。
+  表示，overlap 图会稠密，需去重/合并包含）。其中"unitig 无方向"已解决
+  （canonical 索引 + 双向扩展验证，见 §8.5）；重复混淆与冗余去重留 v1。
 - **Canu EOL**：只取算法思想，不引入其代码/依赖。
+
+### 8.5 实现后的理解回写（2026-08-12，`design/olc.md`）
+
+实现四命令后，对 bogart / utgcns 的几个语义有了更具体的理解：
+
+- **互惠检查在连接端而非自由端**：Canu 互惠种子（`edgeTo5 && edgeTo3`）的
+  语义在延伸时落实为——target 的**连接端**（junction end）的 best edge 必须
+  指回当前 unitig，而自由端留给下一步扩展。实现中若误查自由端，线性链会
+  在每一步断掉（延伸边和回程边天然指向不同 unitig 的两端）。
+- **repeat 双定位的单元化近似**：v0 用"unitig 某端 top2 best 边长度近等
+  （≥ 0.9×）且指向不同 unitig → 该端标记 repeat、停止延伸"，是
+  `markRepeatReads` 图级双定位在 unitig 层的简化，不携带覆盖度证据。
+  合成数据观察：6× 低覆盖时随机基因组仍出现重复区**环形错装**（contig 在
+  重复处把基因组两段接反；当时该 unitig 只有唯一 best 边且连的就是错误副本，
+  top2 近似不触发）——印证 Canu 覆盖度证据（`SPURIOUS_COVERAGE_THRESHOLD=6` /
+  `ISECT_NEEDED_TO_BREAK=15`）的必要性，v1 优先补。
+- **consensus：精确缝合即共识**：unitig 无错 + overlap 全精确时，overlap 已
+  把坐标完全对齐，缝合即共识（`asm cns`，重叠区不一致会友好报错）；Canu 的
+  template stitch + edlib 重比对 + POA-DAG bestPath 是为高噪声长读设计的。
+  §8.3 建议的"asm map 回放 + 多数投票"在 v0 简化为直接缝合（坐标已对齐，
+  投票无增量），列投票留 v1（引入错配 overlap 或 junction 不一致时启用）。
+- **unitig 无方向的解决**：canonical k-mer 索引天然双向（`canonical_keys`），
+  边界 k-mer 查回候选后对 ± 两个方向各做一次扩展验证（`comp` 互补表），
+  一条 overlap 记录同时推出两个方向的连接边（flip 位），layout 沿 flip 翻转
+  链上后续 unitig 的 strand——对应 Celera/Canu 的 overlap orientation 处理。
+- **同 k unitig 通常无端到端精确重叠**：唯一区满足 DBG 最大路径性质（有重叠
+  就会被合并）；重复区例外（两个副本共享序列，可产生同 k 重叠，正是 repeat
+  检测的用武之地）。跨 k 的 contain/延伸重叠天然存在，使 overlap 图稀疏；
+  合成数据 30× 下 3 条 contigs 全部为基因组精确子串。
 
 ## 9. 关键文件清单（速查）
 

@@ -8,6 +8,9 @@
 > 工程化版本，与 pgr 的 `asm unitig`（bcalm 移植）同属 k-mer/unitig 路线，但其
 > 核心创新——**local progressive abundance filter（用丰度替代气泡解析处理菌株
 > 多样性）**——正好回应 pgr 讨论中"气泡不如不处理"的直觉。
+> **与 OLC 的连接（2026-08-12）**：pgr `asm olc` 已落地，metaMDBG 的
+> 渐进丰度过滤与 RepeatRemover 直接映射其 v1 的"覆盖度证据 repeat
+> breaking"（见 §9）。
 
 ## 1. 概况
 
@@ -268,3 +271,27 @@ cutoff 倒序消费（见下）。
 > "不解析菌株气泡、用丰度逐级简化"的成熟实现，正好验证用户对气泡处理的直觉；
 > 其次是 unitig 丰度中位数语义与多 cutoff 快照输出。其余（minimizer-space、
 > minimap2 抛光）与 pgr 短读+完美匹配的路线距离较远，暂不借鉴。
+
+## 9. OLC v1 借鉴映射（2026-08-12）
+
+承接 `design/olc.md` 的 v1 待决项：
+
+1. **渐进丰度过滤 → unitig 覆盖度驱动的布局前过滤**：
+   `ProgressiveAbundanceFilter::removeAbundanceNoQueue`
+   （`ProgressiveAbundanceFilter.hpp:2183`）：`t=1.1` 起步、`~10%` 步长、
+   每轮删 `abundance < t` 的 unitig 并 recompact 邻接——不是单阈值一刀切。
+   pgr `asm unitig` 头部已带 `cov=`，v1 可在 `asm olc` 布局前按 unitig
+   丰度多轮剔除（或给 `asm unitig` 加渐进 `--min-coverage` 模式）。
+2. **RepeatRemover 的桥接 reads 证据 → OLC repeat breaking 的实现路径**：
+   `RepeatRemover.hpp:283` 把 reads 映射回 contig（`ReadVsContigMapper`，
+   minimizer 索引）→ 按比对边界分片算覆盖度与 `_nbBridgingReads`
+   （`:1195`）→ 无桥接的片段边界断开（判定在 `RepeatRemover.hpp:1257`，
+   `nbContigsFinal>1` 即 split）。这正是 `canu.md` §8.3 预言的"pgr
+   `asm map` + `sam to-rg` + `rg coverage` 回放"的成熟实现——pgr 设施
+   齐全，v1 可直接照搬语义
+   （桥接 reads = 覆盖度证据，对应 Celera 的 6/15 阈值）。
+3. **cutoff 快照倒序输出 → 宏基因组 contig 分级输出**：多个 cutoff 的图
+   快照、从高丰度往低丰度补——适合"先出高置信 contig、再补低丰度"策略。
+4. **unitig 丰度中位数语义**：pgr `asm unitig` 的 `cov=` 是平均丰度；
+   宏基因组场景若要稳健丰度，可参考"组成 k-min-mer 丰度向量取中位数、
+   merge 时合并向量再取中位"（`Graph.hpp` `computeMedianAbundance`）。

@@ -7,6 +7,9 @@
 > `27caba2`，2024-10-11）的**逐位忠实 Rust 移植**（henriksson-lab/rustification
 > 项目），并追求与 C++ 输出字节级一致。两者共享同一算法族，是 pgr 做
 > k-mer 计数 / de Bruijn 图遍历的**首选参考**。
+> **与 OLC 的连接（2026-08-12）**：pgr 的 `asm olc`（多 k unitig 层 OLC，
+> `design/olc.md`）已落地，SKESA 的 fork 过滤 / 可逆性 / 迭代多 k 语义
+> 直接映射其 v1 待决项（见 §7.1）。
 
 ## 1. 概况
 
@@ -208,6 +211,33 @@ de Bruijn 图遍历启发式：
    - `Storage` enum 按精度选内联数组 vs boxed，兼顾缓存与正确性；
    - 排序阈值（>10000 并行 else 串行）保小规模确定性；
    - 用 `noodles`+`flate2` 替代 C++ NGS 库；把 CLI 做成 optional feature（库优先）。
+
+### 7.1 OLC v1 借鉴映射（2026-08-12）
+
+承接 `design/olc.md` 的 v1 待决项，SKESA 提供三块直接素材：
+
+1. **覆盖度/丰度驱动的 fork 过滤 → OLC repeat breaking 参数**：
+   `FilterLowAbundanceNeighbors`（`graphdigger.hpp:1770`）的
+   `abundance <= fraction × Σabundance`（`--fraction` 默认 0.1）与
+   "`LowCount()==1` 且首后继丰度>5 时删丰度==1 尾巴"；`FilterNeighbors`
+   的不可扩展 fork 剔除（`:1824`）与 strand 平衡检查（`:1862`，
+   `min(plusf,minusf) < 0.1×fraction×max` 剔偏链）。这是"在重复区断裂"的
+   成熟多层阈值语义——pgr layout 的 v0 repeat 检测只有 top2 近等边近似
+   （`canu.md` §8.5 记录了 6× 低覆盖漏检案例），v1 应移植这层丰度阈值
+   （pgr `asm unitig` 头部已带 `cov=`，可直接取用）。
+2. **可逆性检查（`GetReversibleNodeSuccessors`，`graphdigger.hpp:1740`）→
+   layout 延伸的"回得来"保证**：SKESA 扩展前验证后继的 revcomp 能回到原
+   节点、否则断裂；与 pgr layout 的互惠 best edge（`canu.md` §8.5 连接端
+   语义）是同一思想的两个实现——SKESA 在 k-mer 图、pgr 在 unitig 重叠图。
+3. **迭代多 k + read 清理 → `asm olc` 的多 k 反馈**：pgr `asm olc` 目前
+   各 k 独立出 unitig 再合并（无反馈）；SKESA 的"每轮用上一轮 contig 引导
+   + `clean_reads`（阈值 `max(max_kmer, paired_insert_n50)`，
+   `assembler.rs:407`）"与 metaMDBG 的 unitig 反馈（`metaMDBG.md` §4.1）
+   同族，是 v2 候选。
+4. **count 打包 + Node 奇偶编码（`DBGraph.hpp:180/102`）**：若 pgr 从
+   bcalm 式哈希表切换到排序 DBG（kmer 表已走 radix 排序路线），
+   total(32)+branch(8)+plus-fraction(16) 打包与 `Index()=m_node/2-1`
+   是现成模式。
 
 ## 8. 局限
 
