@@ -62,7 +62,7 @@ pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
 ///
 /// The deduplication tail shared by [`build_table`] and the memory-bounded
 /// bucket path of `fq norm`. `k` must already be validated.
-pub(crate) fn count_keys(mut keys: Vec<u8>, k: usize) -> KmerTable {
+pub fn count_keys(mut keys: Vec<u8>, k: usize) -> KmerTable {
     let key_bytes = k.div_ceil(4);
     if keys.is_empty() {
         return KmerTable {

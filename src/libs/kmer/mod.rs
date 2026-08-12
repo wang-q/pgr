@@ -110,7 +110,7 @@ fn canonical_le(a: &key::Kmer, b: &key::Kmer) -> bool {
 }
 
 /// Base -> 2-bit code (0..3) or 4 (N / ambiguity); indexed by byte value.
-pub(crate) fn base_codes() -> [u64; 256] {
+pub fn base_codes() -> [u64; 256] {
     let mut codes = [4u64; 256];
     for b in *b"Aa" {
         codes[b as usize] = 0;

@@ -74,8 +74,10 @@ pgr 保持"通用基因组数据处理工具集"定位，不吸收 anchr 的流�
 
 ### 4.2 迁移到 pgr（通用原语，大部分已就位）
 
-- 已覆盖（anchr 模板改调用即可）：`asm unitig/ovlp/layout/cns/olc`、
-  `paf coverage`、`paf graph`、`fq` 系列；
+- **2026-08-12 修正**：`fq`/`asm` 的**业务逻辑迁回 anchr**（reads 处理 +
+  组装归位组装器，见 [[design/fq-asm-migrate.md]]）；pgr 只留基础层
+  （FASTA/FASTQ 读入、Phred 编码、k-mer、PAF、io/ds），anchr 依赖 pgr
+  crate。pgr 仍覆盖的通用原语：`paf coverage`、`paf graph`（分组/图）。
 - 待补小 gap：`paf coverage` 支持无 `cg:Z` 的 PAF（见 §5）；
 - 7_glue/7_fill 的 `dazz group/layout` → `paf graph` + `asm layout`
   （需先对照语义，见 §5）。

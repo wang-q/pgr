@@ -182,7 +182,18 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 
 ## 2. 待实现
 
-（当前无条目；`--min-tree-coverage` 已完成见 §1，`--end-trim` 推迟见 §3）
+- [ ] **fq/asm 命令组迁移到 anchr**（2026-08-12 方案定稿；**阶段 1
+      （pgr libs pub 化）已完成**——detect_quality_base 抽到 qual 基础层、
+      base_codes/count_keys 转 pub、`tests/migrate_api.rs` 外部 API 验证、
+      1755 测试全绿；**参考笔记随迁清单已定**（9 references + 6 design +
+      audit-fq 迁 anchr，见 `design/fq-asm-migrate.md` §8）；待阶段 2
+      anchr 侧迁移）：
+      业务逻辑（`libs/fq` 除 qual/pairs、`libs/asm`、`libs/olc` + 对应 cmd +
+      21 测试 + docs）迁 anchr；FASTA/FASTQ 读入与 Phred 编码基础留 pgr
+      （与 FA 读取不迁移同理），anchr 依赖 pgr crate。**双轨迁移**：
+      ① pgr libs pub 化（不删代码）→ ② anchr 逐步迁移（pgr 原样保留）→
+      ③ 两目录核对（golden 逐字节一致）→ ④ 仅核对通过的从 pgr 删除。
+      实施步骤、成本与参考笔记迁移见 `design/fq-asm-migrate.md`。
 
 ## 3. 挂账 / 待决
 

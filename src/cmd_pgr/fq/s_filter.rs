@@ -137,7 +137,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let thresh = match args.get_one::<u8>("qual_thresh").copied() {
         Some(t) => t,
-        None => pgr::libs::fq::trim::detect_quality_base(&recs) + 5,
+        None => pgr::libs::fq::qual::detect_quality_base(&recs) + 5,
     };
     let bits = *args.get_one::<u8>("bits").unwrap();
     anyhow::ensure!(

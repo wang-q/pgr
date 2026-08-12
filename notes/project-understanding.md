@@ -1,53 +1,10 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-12
-（2026-08-12：新增 OLC 组装四命令（`pgr asm ovlp`/`layout`/`cns`/`olc`）+
-`libs/olc/`（多 k unitig 层精确 OLC），设计 [[design/olc.md]]；参考分析
-[[canu.md]] §8.5 与 [[celera.md]] §9 回写实现后理解；参考项目盘点——
-新增 [[wgatools.md]]，[[skesa.md]] §7.1 与 [[metaMDBG.md]] §9 补 OLC v1
-素材映射；HyperGen 并入既有 [[hv.md]]（误建的 hypergen.md 合并删除）；
-更新 §3.1/§6.1/§10/§11。
-（2026-08-09：新增 `pgr kmer` 命令组（table/profile/hist）与三种格式
- 定稿——`.pkt`（表，原 `.pgrk` 改名）、`.pkp`（profile，自有单文件）、
- `.hist`（直方图，FASTK 字节兼容，实测与 FastK 输出一致）；`.prof` 因
- 分片布局明确不做；更新 §2.1/§3/§4.4，设计见 [[design/kmer.md]] §10。
-（2026-08-09：`libs/poa` 补 SIMD 垂直并行（`simd.rs`，AVX2 手写 + `wide` 回退，
- 分派沿用 HV 式），`Poa` 默认引擎切换，基准 120 bp ~8.7× / 600 bp ~12.3×；
- 更新 §4.1/§9/§10 与 [[spoa.md]] 参考分析（新增，合并原 spoa_port.md 移植状态）。
-（2026-08-09：新增 [[design/simd-optimization.md]]——三轮向量化（HV/POA/
- fa 逐字节统计）的共同模式、适用边界与教训；实测 50 MB DNA 下 gzip 解压
- 占 81%，建议下一步先 profile 真实场景再选点；更新 §10。
-（2026-08-09：fa 逐字节统计矢量化——`libs/nt_simd.rs`（count_valid/count_n/
- masked_bitmap，AVX2 + `wide` 回退），`fa size --no-ns`/`fa masked`/`fa filter`
- 接入；基准 count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，详见
- [[benchmarks/bench-nt-simd.md]]，更新 §4.4。
-（2026-08-08：全量核对子命令注册与库文件——align 4 子命令（fill/lastz/pgi/rest）、paf 10
- 子命令（新增 validate）、pl 4 子命令（ir/rept/trf 迁出为独立 rept 命令：ir→e-kmer、
- rept→s-kmer）、rept 独立命令（6 子命令，含 masker）；补 libs/rmblast.rs、
- 更新 §2.1/§3/§4.4/§6.2/§8/§9/§10/§13）。
-（2026-08-07：AVX2 加速 HV 编码（hash_hv_bit/hash_hv_i8）+ `rept masker` 完整 RepeatMasker
- 模拟 pipeline（TRF + rmblastn），更新 §8/§13）。
-（2026-08-06：新增 notes/todo.md 近期待办索引，见 §12）。
-（2026-08-06：SIMD 迁移——`std::simd`（nightly portable_simd）→ `wide` 1.6.0，
- `rust-toolchain.toml` 切 stable 1.97，更新 §2.4/§8.1）。
-（2026-08-06：align fill/rest 拆分 + rest 采样预筛 + sd search 灵敏度优化
- （freq=50/k=31）+ 重复遮蔽完整流程验证 + 审计项批量修复，更新 §6.2/§6.3）。
-（2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
- dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§10）。
-（2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
-§4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
-  SE11 多染色体反向验证）、§10 索引状态；
-（2026-08-05：核对 PGI 现状——align 迁出后 `pgr pgi` 为 3 子命令（build/stat/to-hv）、版本
- 升至 0.4.0、§3.4/§6.1/§10 基准更新为 2026-08-04 复测数据（端到端反超 FastGA ~2.3×、
- .pgi 存储小 ~23%））
-2026-08-01 深夜：全量通读 src/ 后复核——修正 §2.3 serde_json 用途、§2.4 nightly 固定版本、
-§3.1 gff rg 描述、§3.3 paf 双向镜像索引、§4.1 poa 文件清单、§4.3 maf 行数，§8 新增帮助文本脱节风险；
-2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
-  §3.4 dist syncmer 采样、§11/§12 笔记索引；2026-08-01 早：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、
-§6.2 pbit 状态）。
+当前能力与未来方向。本文档反映代码当前状态，随项目演进维护；命令/库清单、
+基准数字与索引见对应章节与 `notes/` 各文档。
 
-> **2026-07 迁移说明**：`clust`/`cut`/`eval`/`mat`/`nwk` 命令模块及对应库
+> **迁移说明**：`clust`/`cut`/`eval`/`mat`/`nwk` 命令模块及对应库
 > (`libs/phylo/`、`libs/clust/`、`libs/cut/`、`libs/eval/`、`libs/pairmat/`)
 > 已迁移到 `necom` 项目。pgr 现聚焦于基因组数据处理（序列、比对、泛基因组、流程、可视化）。
 > 本文已移除这些已迁移模块的描述。
@@ -57,7 +14,7 @@
 pgr 是一个**生物信息学 CLI 工具集**，定位是"基因组数据处理瑞士军刀"。它不追求成为某个领域的
 一站式平台，而是在日常生信流程中充当格式转换、数据查询、快速分析的胶水层。
 
-当前版本 0.4.0，作者 wang-q，MIT 协议，Rust 2021 edition。
+当前版本 0.5.0，作者 wang-q，MIT 协议，Rust 2021 edition。
 
 ### 1.1 与同类工具的差异
 
@@ -181,7 +138,7 @@ src/
 
 ### 2.4 构建配置
 
-- `wide` 1.6.0 — portable SIMD（2026-08-06 自 `std::simd` 迁移，去 nightly）
+- `wide` 1.6.0 — portable SIMD（自 `std::simd` 迁移，去 nightly）
 - `rust-toolchain.toml` 固定 stable 1.97，组件含 clippy/rust-src（miri 未使用已移除）
 - `lto = true` — release 构建启用链接时优化
 - 测试框架：`assert_cmd` + `predicates` 做 CLI 集成测试，`criterion` 做基准测试
@@ -225,7 +182,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 与 kent-tools **字节级一致**（含 `--syn`、medium gap model、多染色体反向场景，见 §7.1 与
 [[ucsc.md]]）。
 
-> 已实现（2026-08-06）：`pgr align fill`（pgi 锚点 + LASTZ 2D gap fill）与
+> 已实现：`pgr align fill`（pgi 锚点 + LASTZ 2D gap fill）与
 > `pgr align rest`（两侧 trim→excise→holes 全基因组补集填充），设计见
 > [[design/pgi-lastz-hybrid.md]]；坐标回移复用 `pgr psl lift`。
 
@@ -244,7 +201,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
   （CIGAR 反转并交换 I/D），使 BFS 无需反向 PAF 记录即可双向遍历；`.paf.idx` v4 已持久化镜像树
 - **图构建层**：`graph` 粗全局 GFA（seqwish DSU 风格，零序列依赖拓扑模式）；`to-gfa` 区域精细 GFA；
   `to-vcf` POA MSA 导出变异；`stat` 图拓扑统计报告
-- **校验层**：`validate` 校验 PAF 记录 CIGAR 坐标与长度一致性（2026-08-06 新增）
+- **校验层**：`validate` 校验 PAF 记录 CIGAR 坐标与长度一致性
 
 详见 [[paf-pangenome.md]]。
 
@@ -270,7 +227,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依赖；
 通用 k-mer 分析另有独立命令组 `pgr kmer`，见 §3.6）。
 
-> 注意（2026-08-06 与用户确认）：`pgr pl` 目前是"暂时没想好该放到哪边"的命令的
+> 注意（与用户确认）：`pgr pl` 目前是"暂时没想好该放到哪边"的命令的
 > 临时存放处，定位可能随命令演化调整；新命令不要默认往 `pl` 里放。
 
 ### 3.6 分析 (Analysis)
@@ -300,7 +257,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `poa.rs`：`Poa` 引擎封装（序列逐条入图 → 产出 consensus / MSA / 图+路径）
 - `graph.rs`：POA 图结构
 - `align.rs`：序列到图的比对（标量 SISD，保留作测试对照）
-- `simd.rs`：`SimdAlignmentEngine`（2026-08-09）——垂直并行 DP（lane = 序列
+- `simd.rs`：`SimdAlignmentEngine`——垂直并行 DP（lane = 序列
   位置），AVX2 手写 intrinsic + `is_x86_feature_detected!` 运行时检测 +
   portable `wide` 回退（分派沿用 HV 式），两路与标量逐位一致；`Poa` 默认引擎
 - `consensus.rs`：从 POA 图提取一致性序列
@@ -315,7 +272,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `net/`：Net 格式处理子模块（builder/class/filter/finalize/reader/subset/syntenic/to-axt/types/writer）
 - 注：`GapCalc`、`KdTree`、`BitMap`、`DupeTree`、`TopKPurity`、`best_crossover`、
   `merge_intervals` 已下沉到 `src/libs/ds/`（自 chain）；`radix_sort`（MSD 基数排序，
-  自 FastGA `MSDsort.c` 移植）为 2026-08 新增，供 `pgi build` 使用
+  自 FastGA `MSDsort.c` 移植），供 `pgi build` 使用
 
 ### 4.3 `libs/fmt/` — 格式解析
 
@@ -325,7 +282,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 
 最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs`、`lav.rs`、`maf.rs` 等移入 `libs/fmt/`。
 
-> **MAF 支持现状**（2026-07 确认）：
+> **MAF 支持现状**：
 
 > - `maf.rs`（372 行）：完整的读写支持
 >   - 读取：`MafComp`（s 行结构体）、`MafAli`（a 行 + components，含 `score=` 解析）、`next_maf_block()`（流式读取）、`parse_maf_block()`
@@ -340,14 +297,14 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `libs/linalg.rs`：线性代数
 - **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（File/Bgzf）+
   `create_loc`（建 `.loc` 索引）+`read_offset`（seek+read）。
-  **2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
+  **此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
   见 [[paf-pangenome.md]] §6.1。
 - `libs/nt.rs`：核苷酸类型
 - `libs/hv.rs`：hypervector 距离（哈希投影：dense bit/i8 与 sparse 三种编码，`calc_distances`）
 - `libs/fmt/twobit.rs`：2bit 格式读写
 - `libs/fmt/psl.rs`：PSL 格式
 - `libs/alignment/`：FAS 比对工具箱 + 共享工具（coords/msa/slice/stat/trim/
-  variation；`banded` 已随 greedy 链化删除，2026-08-05 移除）
+  variation；`banded` 已随 greedy 链化删除）
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
@@ -387,7 +344,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 - `libs/par.rs`：并行辅助
 - `libs/translate.rs`：序列翻译（六框翻译）
 
-### 4.5 k-mer 表示与 k 范围（2026-08-11 记录）
+### 4.5 k-mer 表示与 k 范围
 
 k 的上限由表示决定，不是全局统一的（完整记录见 `design/kmer.md` §11）：
 
@@ -431,7 +388,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - 用 `anyhow::Result<()>` 做返回值（CLAUDE.md 硬性要求）
 - 不使用 clap derive 宏，手写 `Command` 构建
-- 共享参数通过 `cmd_pgr::args` 复用（`outfile`/`infile` 等标准定义，2026-07 CLI 标准化）
+- 共享参数通过 `cmd_pgr::args` 复用（`outfile`/`infile` 等标准定义）
 - `about` 用第三人称单数
 - 输入参数统一命名：`infile`（单文件）或 `infiles`（多文件）
 
@@ -466,13 +423,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
 - **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(14) +
   `twobit`(5) + `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
-- **组装（`pgr asm`，2026-08-11）**：`contig`（tadpole 兼容，含 `--no-bubbles`）、
+- **组装（`pgr asm`）**：`contig`（tadpole 兼容，含 `--no-bubbles`）、
   `unitig`（BCALM 式最大 unitig：顺序无关、无气泡、`--min-count-seed`/`--links`/`--gfa`/
   circular 标记）、`map`（完美匹配回贴：anchors 流程 bbwrap `perfectmode` 替代，
   SAM 输出；覆盖度由 `pgr sam to-rg` + `pgr rg coverage` 派生；`--paired`
   + `pgr sam ihist` 覆盖 2_insert_size 的 bbmap + reformat ihist）、
   `sam`（ihist 插入片段直方图 / to-rg 转换，noodles-sam 解析）。
-  **OLC（2026-08-12）**：`ovlp`/`layout`/`cns`/`olc` 四命令——多 k
+  **OLC**：`ovlp`/`layout`/`cns`/`olc` 四命令——多 k
   （默认 21/51/81）unitigs 当伪 reads，精确 seed-verify overlap（canonical
   k-mer 边界种子 + ± 双向扩展）→ 互惠 best-edge greedy layout（重复交界
   停止）→ 精确缝合 consensus；合成基因组 30× 重建验证（contigs 全为
@@ -482,13 +439,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
   syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
   精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→tube 链→mid-line wave 扩展→PSL；
-  2026-08-04 复测端到端 1.67 s vs FastGA 3.86 s，反超 ~2.3×，chainnet 覆盖 89.33%
-  vs 89.3% 持平；2026-08-05 tube 成为唯一流程，greedy 链化/窗口扩展已移除）；
+  端到端 1.67 s vs FastGA 3.86 s，反超 ~2.3×，chainnet 覆盖 89.33% vs 89.3%
+  持平；tube 为唯一流程，greedy 链化/窗口扩展已移除）；
   格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠），复测后 35.5 MB，
   比 GIX 真实数据 48.2 MB 小 ~23%，详见 [[pgi-align.md]] 与
   `notes/benchmarks/bench-pgi-vs-gix-storage.md`。
-- **距离工具**：`dist` 的 mini/mash/frac/hv/pgi 五个子命令已实现（2026-08-08
-  拆分，`dist seq` 删除）：`dist mini` minimizer 草图（排序/粗筛，DNA 默认
+- **距离工具**：`dist` 的 mini/mash/frac/hv/pgi 五个子命令已实现（`dist seq`
+  已删除）：`dist mini` minimizer 草图（排序/粗筛，DNA 默认
   k=21/w=5）、`dist mash` bottom-k MinHash（与 Mash 2.3 字节级兼容，20 对
   真实基因组对照一致，见 `benchmarks/bench-dist-mash-compat.md`）、
   `dist frac` FracMinHash + ANI CI（无偏数值）、`dist pgi` 确定性精确归并距离、
@@ -503,7 +460,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`append-ref`/`stat`/
   `range`/`some`/`to-fa` 七个子命令已实现（用户文档见 `docs/pbit.md`，设计笔记见
   `notes/design/pbit.md`）；v1004 支持多参考（每参考 2bit 段组 + Reference Table）。
-  **决策 A（2026-08-02）**：索引不进 pbit（体积 79× 压缩数据），`.pgi` 为独立
+  **决策 A**：索引不进 pbit（体积 79× 压缩数据），`.pgi` 为独立
   临时工作对象；HV sketch 内嵌暂缓。**⚠️ 暂停评审中**：多参考路由、ref_id 存储、
   追加参考语义等设计决策待作者定夺（见设计笔记顶部开放项）。
 
@@ -526,7 +483,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   引擎互相漏检 3.2%/6.0%，pgi 可替代 lastz）。详见
   [[design/sd.md]] §4.9/§4.10。
 
-- **重复遮蔽（masker）**（2026-08-07）：`rept masker` 完整 RepeatMasker 模拟 pipeline
+- **重复遮蔽（masker）**：`rept masker` 完整 RepeatMasker 模拟 pipeline
   （TRF PERFECT 简单重复 → rmblastn 库搜索 → TRF DIVERGED，输出 runlist JSON 供
   `pgr fa mask`）；`libs/rmblast.rs` 移植 RepeatMasker 4.2.4 的
   general_search_parameters / word size tiers / gap 参数。
@@ -574,7 +531,7 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 - **完全原生管道**：`pgr pl chainnet` 使用纯 pgr 命令完成全流程，已验证与 `pgr pl ucsc`（kent-tools）的输出字节级一致。
 - **唯一外部依赖**：`lastz` 比对器本身（由 `pgr align lastz` 封装调用，需 PATH 中存在 `lastz` 二进制）。
 
-**验证矩阵（2026-08-02 确认）**：在 E. coli MG1655 × Sakai 上，12 步主流程（axtChain →
+**验证矩阵**：在 E. coli MG1655 × Sakai 上，12 步主流程（axtChain →
 chainAntiRepeat → chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset →
 chainStitchId → netSplit → netToAxt → axtSort → axtToMaf）与 `--syn` 模式、medium gap
 model（min-score 5000）、SE11（7 replicon，含 6 质粒）作 target 的多染色体反向场景，
@@ -599,7 +556,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 
 ## 8. 关键风险与技术债
 
-1. ~~nightly 依赖~~（已解决 2026-08-06）：`#![feature(portable_simd)]` 迁移到
+1. ~~nightly 依赖~~（已解决）：`#![feature(portable_simd)]` 迁移到
    `wide` 1.6.0（stable，1.x semver 承诺），`rust-toolchain.toml` 已切 stable 1.97；
    迁移同时清理了 stable 1.97 新增 clippy lint（byte_char_slices /
    collapsible_match）触发的 12 处告警。
@@ -619,10 +576,10 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
    拆分为独立顶层命令。
 7. **帮助文本与注册脱节（已自动化）**：`pgr.rs` 的 after_help 手工维护，增删命令时需
    同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册。`tests/cli_consistency.rs`
-   （2026-08-03 新增）已把该约束固化为回归测试：after_help 提及的命令集合必须与
+   已把该约束固化为回归测试：after_help 提及的命令集合必须与
    注册的顶层命令集合一致，且每个顶层命令必须有对应 docs（`2bit` 例外映射到
    `twobit.md`）。首次运行即发现 `align` 缺 `docs/align.md`，已补上。
-8. ~~HV 矢量化提速不明显~~（已解决 2026-08-07）：`hash_hv_bit` / `hash_hv_i8`
+8. ~~HV 矢量化提速不明显~~（已解决）：`hash_hv_bit` / `hash_hv_i8`
    以 AVX2（256-bit）为主实现（跳步 RapidRng + 块主序 + 位展开），bit ±1 编码实测
    ~4.8×（相对旧 bit）/ ~3.1×（相对旧 i8）、i8 保语义 ~2.1×；AVX-512 仅作基准参考
    不参与分派，无 AVX2 自动降级（基准见 [[benchmarks/bench-simd-hv-jaccard.md]] §2/§5）。
@@ -653,20 +610,21 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | 文档 | 定位 | 状态 |
 |------|------|------|
 | [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + 多参考，已合并原扩展草案；索引不内嵌，决策 A） | v1004 已实现，**暂停评审中** |
-| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→tube 链→mid-line wave 扩展→PSL） | 已实现（2026-08-05 tube 单流程定稿，端到端反超 FastGA ~2.3×） |
-| [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 方案 A 已落地（2026-08-05）；LBYTE/vlcp 定稿不做，变长种子未立项 |
+| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→tube 链→mid-line wave 扩展→PSL） | 已实现（tube 单流程定稿，端到端反超 FastGA ~2.3×） |
+| [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 方案 A 已落地；LBYTE/vlcp 定稿不做，变长种子实验否定（§7.3.1/§7.3.2） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
-| [[olc.md]] | 多 k unitig 层 OLC 设计（overlap/layout/consensus 四命令 + `libs/olc/`，承接 canu/celera 参考分析） | 已实现（2026-08-12）；合成基因组 30× 验证通过；repeat 覆盖度证据与列投票留 v1 |
-| [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令（2026-08-04） |
-| [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（2026-08-04，见 [[audit/audit-runlist-rg.md]]） |
+| [[olc.md]] | 多 k unitig 层 OLC 设计（overlap/layout/consensus 四命令 + `libs/olc/`，承接 canu/celera 参考分析） | 已实现；合成基因组 30× 验证通过；repeat 覆盖度证据与列投票留 v1 |
+| [[fq-asm-migrate.md]] | `fq`/`asm` 命令组迁移到 anchr 方案（业务逻辑迁走，FASTQ 读入与 Phred 编码基础留 pgr，anchr 依赖 pgr crate） | 方案定稿，待实施 |
+| [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令 |
+| [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（见 [[audit/audit-runlist-rg.md]]） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
-| [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成（2026-08-06）；`rept masker` 完整 RepeatMasker 模拟已实现（2026-08-07） |
-| [[genome-nn-query.md]] | 百万级基因组最近邻查询/聚类/搜索方法调研（GSearch / RabbitTClust / BIGSI / LexicMap / MMseqs2 等），为 UI 设计铺垫 | 调研完成（2026-08-08）；命令形态与 sketch 选型待讨论 |
-| [[genescopefk.md]] | genescopefk.R（GenomeScope 2.0）移植对齐：lmdif 移植 4 处列主序索引反转根因与修复（qrsolv/lmpar）、R nmath dnbinom（bd0/stirlerr/ebd0）逐位移植、qrfac/enorm 对齐 minpack.lm 实际源码、gfortran 差分验证（2026-08-10） | 已对齐：pgr 与 R 同盆地，summary 逐字节一致（Model Fit/Error Rate 除外） |
-| [[simd-optimization.md]] | SIMD 优化方法论（HV/POA/fa 逐字节三轮的"三步模式"、适用边界表、gzip 主导实测、后续候选热点与建议流程） | 已建立（2026-08-09） |
-| [[kmer-sampling-simd.md]] | Kmer 采样消费方分析 + simd-minimizers/packed-seq 参考评估（2026-08-09）：pgi build/align rest/dist mini/frac/mash/hv 采样占比；窗口最小型仅 pgi build 值得（分块法已优化 -16.6%）；frac 8 路并行滚动证伪（87→282 ms）；"人基因组 4 秒"来源分析；基线基准数据 | 已建立（2026-08-09，自 benchmarks/references 合并迁入） |
-| [[seq-reader.md]] | FAFQ（FASTA/FASTQ）读取与 noodles 切换决策（2026-08-09）：读取性能基准（记录构造占 64%）、noodles_bgzf 不完整 + pgr 后加清单（gzi 索引/头部检测/64KB 块）、kseq 缓冲复用/FAFQ 统一、tva SIMD 分隔符搜索、切换边界（BGZF 独立，部分切换可行，借用式 reader 候选） | 已建立（2026-08-09，自 fasta-reader 更名） |
+| [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 命令已迁移（`pgr rept`）；遮蔽验证已完成；`rept masker` 完整 RepeatMasker 模拟已实现 |
+| [[genome-nn-query.md]] | 百万级基因组最近邻查询/聚类/搜索方法调研（GSearch / RabbitTClust / BIGSI / LexicMap / MMseqs2 等），为 UI 设计铺垫 | 调研完成；命令形态与 sketch 选型待讨论 |
+| [[genescopefk.md]] | genescopefk.R（GenomeScope 2.0）移植对齐：lmdif 移植 4 处列主序索引反转根因与修复（qrsolv/lmpar）、R nmath dnbinom（bd0/stirlerr/ebd0）逐位移植、qrfac/enorm 对齐 minpack.lm 实际源码、gfortran 差分验证 | 已对齐：pgr 与 R 同盆地，summary 逐字节一致（Model Fit/Error Rate 除外） |
+| [[simd-optimization.md]] | SIMD 优化方法论（HV/POA/fa 逐字节三轮的"三步模式"、适用边界表、gzip 主导实测、后续候选热点与建议流程） | 已建立 |
+| [[kmer-sampling-simd.md]] | Kmer 采样消费方分析 + simd-minimizers/packed-seq 参考评估：pgi build/align rest/dist mini/frac/mash/hv 采样占比；窗口最小型仅 pgi build 值得（分块法已优化 -16.6%）；frac 8 路并行滚动证伪（87→282 ms）；"人基因组 4 秒"来源分析；基线基准数据 | 已建立（自 benchmarks/references 合并迁入） |
+| [[seq-reader.md]] | FAFQ（FASTA/FASTQ）读取与 noodles 切换决策：读取性能基准（记录构造占 64%）、noodles_bgzf 不完整 + pgr 后加清单（gzi 索引/头部检测/64KB 块）、kseq 缓冲复用/FAFQ 统一、tva SIMD 分隔符搜索、切换边界（BGZF 独立，部分切换可行，借用式 reader 候选） | 已建立（自 fasta-reader 更名） |
 
 ## 11. 外部工具参考索引（notes/references/）
 
@@ -675,7 +633,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[agc-cpp.md]] | AGC (Assembled Genomes Compressor) C++ 源码分析（pbit 算法参考：LZ-diff、段级参考压缩） |
 | [[biser.md]] | BISER 分段重复 (SD) 检测源码与论文分析（pgr 实现见 [[design/sd.md]]） |
 | [[fastga.md]] | FastGA 快速全基因组比对器源码分析（adaptive seeds + wave aligner + trace points） |
-| [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影）+ 原创性调研（§11，2026-08-08） |
+| [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影）+ 原创性调研（§11） |
 | [[seqwish.md]] | seqwish 从 PAF 诱导 GFA 变异图（DSU 传递闭包） |
 | [[smoothxg.md]] | smoothxg GFA 图归一化（POA 块分解 + 平滑） |
 | [[minigraph.md]] | minigraph 参考锚定增量图构建（rGFA） |
@@ -685,7 +643,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[cactus_lastz.md]] | Cactus lastzRepeatMasking 子模块深度分析 |
 | [[pangenome-tools.md]] | 泛基因组工具生态全景与 pgr 定位 |
 | [[gfa.md]] | GFA 格式规范 + untangling 博客译文 |
-| [[hv.md]] | HV 与测距/聚类外部参考（HyperGen 源码/论文、hdlib、DotHash、稀疏投影文献家族等；2026-08-12 合并 hypergen.md） |
+| [[hv.md]] | HV 与测距/聚类外部参考（HyperGen 源码/论文、hdlib、DotHash、稀疏投影文献家族等；合并 hypergen.md） |
 | [[ucsc.md]] | UCSC chain-net pipeline 脚本（pgr 重实现参照基准） |
 | [[multiz.md]] | multiz profile–profile DP 算法源码分析 |
 | [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
@@ -714,7 +672,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 
 | 文档 | 定位 |
 |------|------|
-| [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽）+ PAF 爆炸调研（§8，2026-08-09） |
+| [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽）+ PAF 爆炸调研（§8） |
 | [[ecoli-cohort.md]] | E. coli 泛基因组端到端路线：4 万 cohort 去冗余/sparsify + 小 cohort（3 基因组）先行验证 |
 | [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |
 | [[ecoli-genome.md]] | 测试基因组数据（MG1655/Sakai/SE11）下载与使用说明 |
@@ -732,8 +690,8 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-rg-prop.md]] | `pgr rg prop` vs `rgr prop`（同源 IntSpan 算法）命令行基准：持平（rgr 快 ~6%）；含二分重叠段优化方向 |
 | [[benchmarks/bench-intspan-setops.md]] | IntSpan 集合运算（intersect/union/diff/xor）线性化与 `from_pairs` 批量构建的 criterion 基准：20k span 时 ~100–220×、100k 构建 ~105× |
 | [[benchmarks/bench-rg-runlist.md]] | `pgr rg runlist` vs `rgr runlist`：`IntSpan::covered` 二分后 overlap ~83×、superset ~588×（rgr 走旧 diff） |
-| [[benchmarks/bench-simd-hv-jaccard.md]] | SIMD/HV/Jaccard 基准（hnsm 迁移 + AVX2）：norm SIMD ~7.8×、AVX2 bit ±1 编码 ~4.8×（相对旧 bit）/~3.1×（相对旧 i8）、i8 保语义 ~2.1×、rapidhash Jaccard 最快（2026-08-07 更新） |
-| [[benchmarks/bench-nt-simd.md]] | fa 逐字节统计 SIMD 基准（nt_simd）：count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，wide 回退 ~2.8×；单基因组 CLI 上 I/O 主导（2026-08-09） |
-| [[benchmarks/bench-profile-hotspots.md]] | 热点 profiling 实测（2026-08-09，perf）：fa size gz 中 inflate 43%+memset 35%；rept s-kmer 中 table_profiles 79%（partition_point cache miss 41%）→ 排序合并优化 ~5.2–5.4×、整命令 3.4×；pgi build 无单一主导；gzip 并行解压已裁定不做 |
-| [[benchmarks/bench-simd-tiers.md]] | SIMD 三级回退速度对比（AVX2 / wide128 / 标量，2026-08-09 汇总）：统计类 AVX2 超 wide 5–6×、DP/打包类仅 1.2–1.8×；count_n/masked 无 wide、norm 无 AVX2 手写、cigar 无 wide 的设计取舍与依据 |
-| [[benchmarks/kmer-throughput.md]] | `pgr kmer` 六子命令吞吐 sanity（2026-08-09，release）：5 Mb 基因组 table/hist/gc ~0.1 s、profile 0.26 s；1 万 reads qhist 0.07 s、qcheck 0.51 s（2.6% 判定有错） |
+| [[benchmarks/bench-simd-hv-jaccard.md]] | SIMD/HV/Jaccard 基准（hnsm 迁移 + AVX2）：norm SIMD ~7.8×、AVX2 bit ±1 编码 ~4.8×（相对旧 bit）/~3.1×（相对旧 i8）、i8 保语义 ~2.1×、rapidhash Jaccard 最快 |
+| [[benchmarks/bench-nt-simd.md]] | fa 逐字节统计 SIMD 基准（nt_simd）：count_valid ~14×、count_n ~6.5×、masked_bitmap ~15×，wide 回退 ~2.8×；单基因组 CLI 上 I/O 主导 |
+| [[benchmarks/bench-profile-hotspots.md]] | 热点 profiling 实测（perf）：fa size gz 中 inflate 43%+memset 35%；rept s-kmer 中 table_profiles 79%（partition_point cache miss 41%）→ 排序合并优化 ~5.2–5.4×、整命令 3.4×；pgi build 无单一主导；gzip 并行解压已裁定不做 |
+| [[benchmarks/bench-simd-tiers.md]] | SIMD 三级回退速度对比（AVX2 / wide128 / 标量）：统计类 AVX2 超 wide 5–6×、DP/打包类仅 1.2–1.8×；count_n/masked 无 wide、norm 无 AVX2 手写、cigar 无 wide 的设计取舍与依据 |
+| [[benchmarks/kmer-throughput.md]] | `pgr kmer` 六子命令吞吐 sanity（release）：5 Mb 基因组 table/hist/gc ~0.1 s、profile 0.26 s；1 万 reads qhist 0.07 s、qcheck 0.51 s（2.6% 判定有错） |
