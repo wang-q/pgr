@@ -273,6 +273,39 @@ fn command_asm_unitig_links_header() {
     assert!(any_link, "no L: entries in headers");
 }
 
+/// A k-mer above the 128-base key limit must fail cleanly instead of
+/// panicking in `Kmer::new().expect()` (zero-panic policy).
+#[test]
+fn command_asm_unitig_rejects_kmer_above_limit() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "unitig",
+            "tests/bbtools/Lambda/R1.2k.fq.gz",
+            "tests/bbtools/Lambda/R2.2k.fq.gz",
+            "-o",
+            out.to_str().unwrap(),
+            "--kmer",
+            "129",
+        ])
+        .assert()
+        .failure();
+}
+
+/// `-o` must not overwrite an input file (the writer is opened before the
+/// reads are consumed).
+#[test]
+fn command_asm_unitig_outfile_not_input() {
+    let infile = "tests/bbtools/Lambda/R1.2k.fq.gz";
+    PgrCmd::new()
+        .args(&["asm", "unitig", infile, "-o", infile])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+}
+
 /// A cyclic genome (periodic sequence) assembles into a circular unitig
 /// flagged in the FASTA header.
 #[test]

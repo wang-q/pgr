@@ -99,6 +99,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .cloned()
         .collect();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    // Reject `-o` that would overwrite an input file (the writer is opened
+    // before the reads are consumed).
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(|s| s.as_str()))?;
     crate::cmd_pgr::args::parse_parallel_auto(args.get_one::<String>("parallel").unwrap())?;
     let opts = AssembleOptions {
         k: *args.get_one::<usize>("kmer").unwrap(),

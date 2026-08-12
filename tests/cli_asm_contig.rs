@@ -186,6 +186,39 @@ fn command_asm_contig_rejects_zero_kmer() {
         .failure();
 }
 
+/// A k-mer above the 128-base key limit must fail cleanly instead of
+/// panicking in `Kmer::new().expect()` (zero-panic policy).
+#[test]
+fn command_asm_contig_rejects_kmer_above_limit() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "contig",
+            "tests/bbtools/Lambda/R1.2k.fq.gz",
+            "tests/bbtools/Lambda/R2.2k.fq.gz",
+            "-o",
+            out.to_str().unwrap(),
+            "--kmer",
+            "129",
+        ])
+        .assert()
+        .failure();
+}
+
+/// `-o` must not overwrite an input file (the writer is opened before the
+/// reads are consumed).
+#[test]
+fn command_asm_contig_outfile_not_input() {
+    let infile = "tests/bbtools/Lambda/R1.2k.fq.gz";
+    PgrCmd::new()
+        .args(&["asm", "contig", infile, "-o", infile])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+}
+
 /// Assembles a small synthetic repeat into contigs.
 #[test]
 fn command_asm_contig_small_synthetic() {

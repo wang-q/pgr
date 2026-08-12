@@ -116,6 +116,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_contig_len = *args.get_one::<usize>("min_contig_len").unwrap();
     let keep_dir = args.get_one::<String>("keep_dir");
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    // Reject `-o` that would overwrite an input read file.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(|s| s.as_str()))?;
 
     // S0: unitigs per k.
     let mut unitigs = Vec::new();

@@ -68,6 +68,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let seed_k = *args.get_one::<usize>("overlap_k").unwrap();
     let min_overlap = *args.get_one::<usize>("min_overlap").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    // Reject `-o` that would overwrite an input file (unitig FASTA).
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(|s| s.as_str()))?;
 
     let unitigs = super::common::read_unitigs(&infiles)?;
     let overlaps = find_overlaps(

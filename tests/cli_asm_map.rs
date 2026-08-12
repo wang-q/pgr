@@ -360,6 +360,46 @@ fn command_asm_map_coverage_pipeline() {
     assert!(cov.contains("21-60"), "cov: {cov}");
 }
 
+/// `--outm`/`--outu` must not overwrite a reference or read file.
+#[test]
+fn command_asm_map_outm_not_input() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let ref_file = out_dir.path().join("ut.fa");
+    let reads_file = out_dir.path().join("reads.fq");
+    std::fs::write(&ref_file, format!(">ut\n{REF}\n")).unwrap();
+    write_fastq(&reads_file, &[("a", &REF[10..60])]);
+    // outm == the read file.
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "map",
+            ref_file.to_str().unwrap(),
+            reads_file.to_str().unwrap(),
+            "--outm",
+            reads_file.to_str().unwrap(),
+            "-k",
+            "31",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+    // outu == the reference file.
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "map",
+            ref_file.to_str().unwrap(),
+            reads_file.to_str().unwrap(),
+            "--outu",
+            ref_file.to_str().unwrap(),
+            "-k",
+            "31",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+}
+
 /// Output is deterministic across runs.
 #[test]
 fn command_asm_map_deterministic() {

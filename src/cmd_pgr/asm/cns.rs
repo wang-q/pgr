@@ -68,6 +68,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect();
     let min_contig_len = *args.get_one::<usize>("min_contig_len").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    // Reject `-o` that would overwrite an input file (layout TSV or unitig
+    // FASTA).
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        infiles
+            .iter()
+            .map(|s| s.as_str())
+            .chain(std::iter::once(layout_path.as_str())),
+    )?;
 
     let unitigs = super::common::read_unitigs(&infiles)?;
     let mut id = HashMap::new();
@@ -111,7 +120,12 @@ fn parse_layouts(path: &str, id: &HashMap<&str, usize>) -> anyhow::Result<Vec<La
             fields.len() == 7,
             "invalid layout line, expected 7 fields: {line}"
         );
-        let ci = parse_index(fields[0], "contig id")? - 1;
+        // `contig_N` ids are 1-based; reject `contig_0` (would underflow).
+        let ci = {
+            let n = parse_index(fields[0], "contig id")?;
+            anyhow::ensure!(n >= 1, "invalid contig id in layout line: {line}");
+            n - 1
+        };
         let si = parse_index(fields[1], "step")?;
         let name = fields[2];
         let strand = match fields[3] {

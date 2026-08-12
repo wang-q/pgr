@@ -310,6 +310,29 @@ fn command_asm_cns_stitches_layout() {
     assert!(data.contains("AAAAAAAAACGTACGTCCCCCCCCGGGGGGGG"));
 }
 
+/// A layout referencing `contig_0` (id 0) must fail cleanly instead of
+/// underflowing `ci - 1` (zero-panic policy).
+#[test]
+fn command_asm_cns_rejects_contig_zero() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let ut = out_dir.path().join("ut.fa");
+    let layout = out_dir.path().join("layout.tsv");
+    let out = out_dir.path().join("contigs.fa");
+    fs::write(&ut, ">unitig_1\nAAAAAAAAACGTACGT\n").unwrap();
+    fs::write(&layout, "contig_0\t0\tut:unitig_1\t+\t0\t16\t0\n").unwrap();
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "cns",
+            layout.to_str().unwrap(),
+            ut.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+}
+
 /// `--keep-dir` writes the intermediate stage files.
 #[test]
 fn command_asm_olc_keep_dir_writes_stages() {

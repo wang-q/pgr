@@ -59,6 +59,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .cloned()
         .collect();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    // Reject `-o` that would overwrite an input file (PAF or unitig FASTA).
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        infiles
+            .iter()
+            .map(|s| s.as_str())
+            .chain(std::iter::once(paf_path.as_str())),
+    )?;
 
     let unitigs = super::common::read_unitigs(&infiles)?;
     let mut id = HashMap::new();

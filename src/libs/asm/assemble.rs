@@ -5,6 +5,7 @@ use crate::libs::asm::tadpole::{
 };
 use crate::libs::fmt::seq::{SeqReader, SeqRecord};
 use crate::libs::fq::qual::{from_phred, to_phred};
+use crate::libs::kmer::key;
 use crate::libs::nt::rev_comp;
 use anyhow::Result;
 use std::collections::HashSet;
@@ -168,6 +169,12 @@ pub fn assemble<W: Write>(
     anyhow::ensure!(
         opts.k >= 1,
         "k-mer length must be at least 1, got {}",
+        opts.k
+    );
+    anyhow::ensure!(
+        opts.k <= key::Kmer::MAX_K,
+        "k-mer length must be at most {} (the k-mer key limit), got {}",
+        key::Kmer::MAX_K,
         opts.k
     );
 
@@ -363,6 +370,12 @@ fn assemble_unitigs_core(
     anyhow::ensure!(
         opts.k >= 1,
         "k-mer length must be at least 1, got {}",
+        opts.k
+    );
+    anyhow::ensure!(
+        opts.k <= key::Kmer::MAX_K,
+        "k-mer length must be at most {} (the k-mer key limit), got {}",
+        key::Kmer::MAX_K,
         opts.k
     );
     let records = read_records(infiles)?;

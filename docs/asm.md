@@ -38,8 +38,8 @@ pgr asm contig [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound — k > 64
-    uses multi-word k-mers).
+*   `-k, --kmer <int>`: K-mer length (default 31; up to 128, the k-mer key
+    table limit — k > 64 uses multi-word k-mers).
 *   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
 *   `--min-contig-len <int>`: Minimum contig length (default:
     `max(124, 2*k)`).
@@ -93,8 +93,8 @@ pgr asm unitig [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound — k > 64
-    uses multi-word k-mers).
+*   `-k, --kmer <int>`: K-mer length (default 31; up to 128, the k-mer key
+    table limit — k > 64 uses multi-word k-mers).
 *   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
 *   `--min-contig-len <int>`: Minimum unitig length (default:
     `max(124, 2*k)`).
@@ -166,7 +166,7 @@ pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
 
 ### Options
 
-*   `-k, --kmer <int>`: Seed k-mer length (default 31, range 1..=64).
+*   `-k, --kmer <int>`: Seed k-mer length (default 31, range 1..=128).
 *   `--outm <file>`: SAM output of perfectly matched reads.
 *   `--outu <file>`: SAM output of unmapped reads.
 *   `--paired`: Map reads as R1/R2 pairs (exactly 2 read files; pairs with

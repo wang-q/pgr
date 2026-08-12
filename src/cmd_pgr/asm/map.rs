@@ -70,7 +70,7 @@ Examples:
                 .num_args(1)
                 .default_value("31")
                 .value_parser(value_parser!(usize))
-                .help("Seed k-mer length (1..=64)"),
+                .help("Seed k-mer length (1..=128)"),
         )
         .arg(
             Arg::new("outm")
@@ -115,6 +115,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         paired: args.get_flag("paired"),
         max_reads: args.get_one::<u64>("max_reads").copied(),
     };
+    // Reject `--outm`/`--outu` that would overwrite a reference or read file
+    // (the SAM writers are opened before the reads are consumed). Reads are
+    // checked in `map_files` too, since the writer is opened there.
+    for of in opts.outm.iter().chain(opts.outu.iter()) {
+        crate::cmd_pgr::args::ensure_outfile_distinct(
+            of,
+            ref_files
+                .iter()
+                .map(|s| s.as_str())
+                .chain(read_files.iter().map(|s| s.as_str())),
+        )?;
+    }
     let refs = read_fasta(&ref_files).context("failed to read reference")?;
     let stats = map_files(&refs, &read_files, &opts)?;
     eprintln!(
