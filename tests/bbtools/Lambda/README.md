@@ -45,7 +45,7 @@ decompress both sides, since gzip bytes (mtime) are not stable.
 
 ## merge (bbmerge)
 
-`pgr fq merge` goldens (`merge.*.fq.gz`, `merge.*.txt`) were produced with the
+`anchr fq merge` goldens (`merge.*.fq.gz`, `merge.*.txt`) were produced with the
 locally installed **BBTools 40.01** (`jgi.BBMerge`) using `ordered=t threads=1`
 on a 2000-pair subset (`R1.2k.fq.gz` / `R2.2k.fq.gz`, the first 2000 pairs of
 `R1.fq.gz` / `R2.fq.gz`). bbmerge processes each pair independently, so the
@@ -84,7 +84,7 @@ are gzipped afterwards; pgr reads the gzipped inputs directly.
 
 The bbduk `stats=` text files (`R.trim.stats.txt` / `R.filter.stats.txt`) are
 not committed; regenerate them with the commands above if a stats comparison
-is ever needed. `pgr fq clean --stats` reproduces the 3-column format
+is ever needed. `anchr fq clean --stats` reproduces the 3-column format
 byte for byte (values checked in `cli_fq_trim_adapter.rs`); the `#File` line
 carries the input path, so it is path-dependent by design.
 
@@ -106,7 +106,7 @@ differ from `bbnorm.sh` output.
 
 ## merge pipeline: tadpole ecc and extend (golden committed)
 
-`pgr fq ecc` and `pgr fq extend` were byte-compared against BBTools 40.01 on
+`anchr fq ecc` and `anchr fq extend` were byte-compared against BBTools 40.01 on
 the full Lambda data (40000 pairs), then committed as a 2000-pair subset
 golden (`ecco_sub.fq.gz` input, `ecct_sub.fq.gz` / `ext_sub.fq.gz` outputs):
 
@@ -134,7 +134,7 @@ Tadpole2 (`kmer<rkmer`).
 
 ## merge phase 4: bbmerge-auto extend2/rem (golden committed)
 
-`pgr fq merge --extend2 N --rem` reproduces anchr merge phase 4
+`anchr fq merge --extend2 N --rem` reproduces anchr merge phase 4
 (`bbmerge-auto.sh ... strict k=81 extend2=80 rem`): pairs that fail the
 classic overlap are extended along the k=81 k-mer graph and re-checked, with
 `requireExtensionMatch` requiring the extended overlap to agree with the
@@ -147,7 +147,7 @@ java -Xmx4g -cp BBTools-40.01/current jgi.BBMerge \
     ihist=merge4.ihist.txt threads=1 strict k=81 extend2=80 rem overwrite
 ```
 
-The output is byte-identical to `pgr fq merge ... --strict --no-make-vector
+The output is byte-identical to `anchr fq merge ... --strict --no-make-vector
 --extend2 80 --rem` (merged, unmerged, and ihist). Key semantics: BBMerge
 snapshots the pre-extension reads and restores them for unmerged output;
 `lengthSum` for the rem acceptance rule is the *unextended* length; the
@@ -158,7 +158,7 @@ set, not just ambiguous ones.
 
 ## clumpify dedupe (verified once, no golden)
 
-`pgr fq clump --dedupe --dupesubs 0` was byte-compared against BBTools 39.38
+`anchr fq clump --dedupe --dupesubs 0` was byte-compared against BBTools 39.38
 `clumpify.sh ... threads=1 dedupe=t dupesubs=0` on the Lambda data (40000 ->
 39984 reads; R1 and R2 both exact, N wildcard; higher-quality copy kept) and
 matched byte for byte. No golden is committed; a small synthetic test covers

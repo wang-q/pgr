@@ -42,21 +42,23 @@ contig.fasta）。anchr 的 `7_glue_anchors` / `7_fill_anchors` 模板至今调�
 
 ## 3. pgr 覆盖对照
 
-| anchr/App-Dazz 命令 | 功能 | pgr 对应 | 状态 |
-| :--- | :--- | :--- | :--- |
-| `unitigs` | 从 reads 建 unitigs | `asm unitig` | ✅ 已覆盖 |
-| `overlap` / `overlap2` | overlap 检测 | `asm ovlp` / `asm olc` | ✅ 已覆盖（自包含，不依赖 DALIGNER） |
-| `contained` | 丢弃被包含 unitig | `asm olc` 的 contain 预过滤 | ✅ 已覆盖 |
-| `orient` / `merge` | overlap 图定向/合并 | `asm layout` + `asm cns` | ✅ 已覆盖 |
-| `covered` | 覆盖区间 | `paf coverage`（需 cg:Z）+ `rg coverage` | ✅ 基本覆盖（见 §5 gap） |
-| App-Dazz `cover` | 被第二文件覆盖的可信区间 | `paf coverage -m N` | ✅ 已覆盖 |
-| App-Dazz `group` | anchors 按长读分组 | `paf graph`（DSU 连通分量） | ✅ 已覆盖 |
-| App-Dazz `layout` | 组内 anchors 布局 | `asm layout` + `asm cns` | ✅ 已覆盖 |
-| `trim` / `mergeread` | reads 处理 | `fq` 系列命令链 | ✅ 已覆盖（见 todo §3 模板替换） |
-| `covered --mean/--longest` | 多文件均值/最长区间 | 需组合（paf coverage TSV + awk/runlist） | ⚠️ 部分 |
-| `restrict` | 过滤到已知对 | `paf query --subset-sequence-list` | ⚠️ 语义不同，实现极简 |
-| `dazzname` | DALIGNER 式重命名 | `fa filter --simplify`（格式不同） | ⚠️ 无兼容需求 |
-| `paf2ovlp` / `show2ovlp` | DALIGNER ovlp 格式转换 | 无 | ❌ DALIGNER 生态特定 |
+> 2026-08-13 更新：`fq`/`asm` 业务已随迁移回到 anchr（anchr 自实现，
+> 依赖 pgr 基础层）。下表为迁移后的分工。
+
+| anchr/App-Dazz 命令 | 功能 | 迁移后归属 |
+| :--- | :--- | :--- |
+| `unitigs` / `overlap` / `overlap2` / `contained` / `orient` / `merge` | reads/unitig 组装与 overlap 处理 | anchr `asm` 命令组自实现 |
+| `trim` / `mergeread` | reads 处理 | anchr `fq` 命令组自实现 |
+| App-Dazz `cover` / `group` / `layout` | 覆盖区间 / 长读分组 / 组内布局 | anchr 自实现（分层策略，§5） |
+| `covered` | 覆盖区间 | pgr `paf coverage`（无 cg:Z 已支持）+ `rg coverage` |
+| `covered --mean/--longest` | 多文件均值/最长区间 | pgr 需组合（paf coverage TSV + awk/runlist） |
+| `restrict` | 过滤到已知对 | pgr `paf query --subset-sequence-list`（语义不同） |
+| `dazzname` | DALIGNER 式重命名 | 无兼容需求（DALIGNER 生态退役） |
+| `paf2ovlp` / `show2ovlp` | DALIGNER ovlp 格式转换 | ❌ DALIGNER 生态特定 |
+
+pgr 侧提供的基础：FASTA/FASTQ 读入（`libs/fmt`）、Phred 编码（`fq::qual`）、
+配对 FASTQ 读取（`fq::pairs`）、k-mer、PAF、io/ds/loc/sys（anchr 依赖
+pgr crate，见 [[design/fq-asm-migrate.md]]）。
 
 ## 4. 边界划分方案（2026-08-12 用户裁定方向：anchr 留在外部）
 
@@ -72,21 +74,22 @@ pgr 保持"通用基因组数据处理工具集"定位，不吸收 anchr 的流�
 - 0/1/3/8/9 步模板：reads 质控、bwa 比对、megahit/spades 组装、quast/busco
   统计——纯编排。
 
-### 4.2 迁移到 pgr（通用原语，大部分已就位）
+### 4.2 pgr 提供的基础层（fq/asm 已迁回 anchr）
 
-- **2026-08-12 修正**：`fq`/`asm` 的**业务逻辑迁回 anchr**（reads 处理 +
-  组装归位组装器，见 [[design/fq-asm-migrate.md]]）；pgr 只留基础层
-  （FASTA/FASTQ 读入、Phred 编码、k-mer、PAF、io/ds），anchr 依赖 pgr
-  crate。pgr 仍覆盖的通用原语：`paf coverage`、`paf graph`（分组/图）。
-- 待补小 gap：`paf coverage` 支持无 `cg:Z` 的 PAF（见 §5）；
-- 7_glue/7_fill 的 `dazz group/layout` → `paf graph` + `asm layout`
-  （需先对照语义，见 §5）。
+- **2026-08-12/13**：`fq`/`asm` 业务逻辑迁回 anchr（reads 处理 + 组装
+  归位组装器，双轨 golden 核对后从 pgr 删除，见 [[design/fq-asm-migrate.md]]）；
+  pgr 保留基础层（FASTA/FASTQ 读入、Phred 编码、k-mer、PAF、io/ds/loc/sys），
+  anchr 依赖 pgr crate。pgr 仍提供的通用原语：`paf coverage`、`paf graph`
+  （分组/图）、`sam`（ihist/to-rg）、`rg coverage`。
+- 7_glue/7_fill 的 `dazz group/layout` → anchr 自实现（`paf graph` 分组 +
+  anchr `asm layout`，见 §5）。
 
 ### 4.3 退役（DALIGNER 生态，不迁）
 
 - `dazzname` / `show2ovlp` / `paf2ovlp` / `restrict`；
-- `overlap`/`overlap2` 的 DALIGNER 依赖（换 pgr `asm ovlp`）；
-- 7_glue/7_fill 的 App-Dazz（Perl）+ dazz_db 依赖（换 pgr）。
+- `overlap`/`overlap2` 的 DALIGNER 依赖（换 anchr `asm ovlp`）；
+- 7_glue/7_fill 的 App-Dazz（Perl）+ dazz_db 依赖（换 anchr 自实现
+  group/layout，overlap 用 anchr `asm ovlp`）。
 
 ## 5. 待办与风险
 
@@ -104,12 +107,12 @@ pgr 保持"通用基因组数据处理工具集"定位，不吸收 anchr 的流�
   剔除；`asm layout` 是 unitig×unitig 的 OLC 链化，不消费"锚经长读链接"
   的分层证据。**直接替换不可行**（语义差异大）。
   **结论**：group/layout 的**分层策略逻辑留在 anchr**（用 Rust 重写
-  替换 Perl App-Dazz），pgr 只提供底层原语——overlap 检测 `asm ovlp`/
-  `olc`（甩掉 DALIGNER）、覆盖 `paf coverage`、图构建 `paf graph`；
+  替换 Perl App-Dazz，overlap 检测用 anchr `asm ovlp`/`olc` 甩掉
+  DALIGNER），pgr 提供覆盖 `paf coverage`、图构建 `paf graph`；
   ovlp.tsv 13 列格式可保留为 anchr 内部格式（或换 PAF）。**pgr 侧无需
   新增命令**，符合"anchr 留流程 + 策略"的边界原则。
 - **`paf coverage` 无 cg:Z gap**：ovlpr `covered` 用 PAF start/end（不依赖
   CIGAR），pgr `paf coverage` 要求 `cg:Z`（无标签记录不贡献）——补丁方向：
   无 cg:Z 时退回用 target 区间算覆盖。**2026-08-12 已落地**（见 todo §5）。
-- **anchr 模板替换整体**：见 todo §3 挂账条目（trim.era.sh 等 bbtools
-  调用换 pgr 命令链，用户自处理）。
+- **anchr 模板替换整体**：见 anchr `notes/todo.md`（trim.era.sh 等
+  bbtools 调用换 anchr fq/asm 命令链，用户自处理）。
