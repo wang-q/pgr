@@ -48,12 +48,6 @@ fq 家族以 BBTools 39.38 为主参考，逐字节核对（golden 数据见
 - `fq range` 的 LRU 缓存：`LruCache<String, Vec<u8>>` 用 `&str` 借钥命中，
   `Borrow` 关系成立。
 
-## 已知限制（有意保留）
-
-- `interleave` 双文件格式只按 `infiles[0]` 探测（`is_fq` 只看第一个文件），若
-  第二个文件格式不同会在实际读取时报错（非静默）。
-- `trim-qual` 配对质量编码只从 R1 自动检测（文档已注明）。
-
 ## 记录项（未改，低风险 / 待决策）
 
 - `fq range` 的 `name:0-N`（start=0）被当作"整条记录"而非子序列（与 `fa range`
@@ -61,9 +55,17 @@ fq 家族以 BBTools 39.38 为主参考，逐字节核对（golden 数据见
 - `norm` 输出会对保留的读施加 `changequality` 归一化（N 质 0、ACGT 质最低 2），
   与 bbnorm 默认一致；文档已说明 changequality 被应用。
 
+## 已知限制（有意保留）
+
+- `interleave` 双文件格式只按 `infiles[0]` 探测（`is_fq` 只看第一个文件），若
+  第二个文件格式不同会在实际读取时报错（非静默）。
+- `trim-qual` 配对质量编码只从 R1 自动检测（文档已注明）。
+
 ## 修复的缺陷（根因模式）
 
-### Zero-Panic / clap 参数缺失（本次审核）
+按根因模式分组；标注"承袭"者自 `audit-fa-fq-2bit.md` 沿袭，其余为本次审核新发现。
+
+### Zero-Panic / clap 参数缺失
 
 - **`split` 缺少 `--outfile-2` 时 panic**：`args.get_one::<String>("outfile_2")
   .unwrap()` 对 `None` 解包崩溃。修复：`outfile_2` 参数加 `.required(true)`，
@@ -92,17 +94,17 @@ fq 家族以 BBTools 39.38 为主参考，逐字节核对（golden 数据见
   前若 `remaining == 0`（说明剩余全为空记录）直接 `break`。新增回归测试
   `command_fq_sample_trailing_empty_records_do_not_panic`。
 
-### 数据安全（`-o` 同输入保护，承袭自 fa/fq/2bit 审核）
+### 数据安全（`-o` 同输入保护）
 
 - **流式命令允许 `-o` 覆盖输入文件**：`fq to-fa`/`fq interleave` 已统一加入
   `ensure_outfile_distinct`。
 
-### 输入校验 / 静默错误（承袭）
+### 输入校验 / 静默错误
 
 - **`interleave` 双文件交错对读取计数不匹配静默截断**（`zip` 取较短者）。修复：
   `interleave_read` 中任一文件先读完而另一未读完即 `bail!`。
 
-### 行为一致性 / 算法（承袭）
+### 行为一致性 / 算法
 
 - **`interleave` 单文件虚拟 R2 两路径不一致**：单 FQ→FA 为 `"\n"`（空序列）、单
   FA→FA 为 `"N"`；帮助与 `docs/fq.md` 均声明 "N's"。修复：统一为 `b"N"`。
@@ -110,7 +112,7 @@ fq 家族以 BBTools 39.38 为主参考，逐字节核对（golden 数据见
   未递增的 `start`，违背 pub fn 契约。修复：两文件分支改为
   `idx = interleave_read(..)?`。
 
-### 文档一致性（本次审核）
+### 文档一致性
 
 - **`trim-qual` 命令名错写为 `trim-q`**：`trim_qual.rs` 帮助文本/示例、
   `libs/fq/trim.rs` 的 `TrimOptions` doc、`docs/fq.md` 均改为 `trim-qual`。
@@ -120,7 +122,7 @@ fq 家族以 BBTools 39.38 为主参考，逐字节核对（golden 数据见
   `-o unmerged.trim.fq.gz` 改为 `-o unmerged.trim.fq` 并仅指明输入可为 gzipped。
 - **`to-fa` 文档误置于 `norm` 小节**：移回其所属小节。
 
-### 死代码 / 功能不可达（本次审核）
+### 死代码 / 功能不可达
 
 - **`clean` 的 `--mask-kmers` 静默失效（死代码）**：`trim_adapter.rs` 中按
   `ktrim_right` 分派"ktrim / kmask / filter"三个分支，但 `clean.rs` 把
@@ -162,7 +164,7 @@ overlap,bbnet}`、`libs/asm/{tadpole,assemble}`、`libs/kmer/{quality,qcheck}`�
 - `libs/kmer/quality.rs` 对 `k > MAX_K` 提前返回空表；`qcheck::check_read` 对
   短读/无锚点返回 `NoAnchor` 而非 panic。
 
-### 修复的缺陷（第二轮）
+### 修复的缺陷
 
 - **`s-filter` `-k ≥ 65` 触发 u128 移位越界 panic**：`qcheck` 的锚点/延伸扫描用
   u128 滚动 k-mer（每碱基 2 bit，最多 64 碱基），`masks` 返回 `rc_top=2k-2`，对
@@ -181,7 +183,7 @@ overlap,bbnet}`、`libs/asm/{tadpole,assemble}`、`libs/kmer/{quality,qcheck}`�
   2 维输入网，被 `dims[0]==23` 校验拒绝后 `unwrap()` panic。修复：测试改用 23 维
   输入（隐藏层补足 23 权重），并新增 `parse_rejects_wrong_input_dims` 用例。
 
-### 文档一致性（第二轮）
+### 文档一致性
 
 - **`docs/fq.md` 的 `ec-kmer`/`extend` `-k` 标注 "no upper bound" 不实**：实际
   `tadpole::run` 限制 `k≤128`。改为 "up to 128, the k-mer key table limit"。
