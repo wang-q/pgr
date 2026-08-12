@@ -24,10 +24,6 @@
   dominate, low-quality evidence never raises a high-quality count) with an
   auto-detected Phred offset + 5 threshold and a `-b` count cap (default 7
   bits, max count 127, matching quorum `create_database`).
-* **`pgr kmer qcheck`** - flags reads quorum would correct or truncate and
-  keeps the rest as-is; reproduces quorum's anchor + extend error signals
-  (high-quality anchors only, substitution/truncation events, Poisson
-  collision test) without producing corrected sequences.
 * **`pgr kmer gsize`** - coverage peak and haploid genome-size estimate
   (total k-mer instances / peak coverage) from sequences or a `.pkt` table.
   `--model` runs a native port of `genescopefk.R` (GenomeScope 2.0):
@@ -60,75 +56,21 @@
   shards plus a `.complete` marker. Old FastK caches are ignored and rebuilt
   once on the first run after upgrading.
 
-### Assembly (`asm`)
+### Command Summary
 
-* **`pgr asm`** - new top-level command family grouping assembly tools:
-  `contig` (tadpole-compatible seeded assembly) and `unitig` (BCALM-style
-  maximal unitigs), moved out of `pgr fq` so assembly commands live under
-  one roof (future: read mapping, polishing, scaffolding).
-* **`asm contig --no-bubbles`** - keeps parallel-path contigs separate
-  (tadpole `popbubbles=f`) instead of merging bubble branches into a
-  representative path. Bubble popping remains the default (`popbubbles=t`
-  compatible); the flag makes the pre-pop contig set directly observable
-  and deterministic for downstream unitig workflows.
-* **`asm contig` performance** - the k-mer count table is now built with
-  rayon-parallel per-chunk counting (the same pattern as the native `kmer`
-  pipeline) and the multi-pass seeding scans iterate a once-built
-  canonical-k-mer sorted snapshot instead of re-sorting the hash table each
-  pass. Lambda 20k-read benchmark: full assembly 576 ms -> 157 ms (~3.7x),
-  with byte-identical output.
-* **`asm contig --min-count-seed`** - exposes the seeding depth threshold
-  (tadpole `mincountseed`, default 3) so low-coverage data can be assembled
-  with a lower seed cutoff.
-* **`asm contig --min-coverage`** - exposes the minimum mean coverage for a
-  contig (tadpole `mincoverage`, default 1.0).
-* **`pgr asm unitig`** - new command for BCALM-style maximal unitigs: every
-  solid k-mer compresses into its unique non-branching path
-  (order-independent, no bubble popping), best for high-coverage or
-  error-corrected input such as the anchr `unitigs` step's `pe.cor.fa`.
-* **`asm unitig --min-count-seed`** - exposes the solid k-mer count
-  threshold (default 3, the bcalm `-abundance-min` equivalent) so the
-  abundance cutoff can be tuned per dataset.
-* **`asm unitig --links` / `--gfa`** - unitig graph output: `--links`
-  appends BCALM-style `L:` entries to FASTA headers and `--gfa` emits a
-  GFA 1.0 graph, both connecting unitigs that share an endpoint (k-1)-mer
-  (LinkTigs semantics).
-* **`pgr asm map`** - maps reads to a reference requiring perfect matches
-  (no mismatches, no gaps), replacing the bbwrap `perfectmode maxindel=0`
-  call of the anchr `anchors` flow. Seed-and-verify over a canonical k-mer
-  index; outputs mapped/unmapped SAM. Per-base coverage is derived from the
-  mapped SAM (`pgr sam to-rg` + `pgr rg coverage`) instead of an in-memory
-  counter, so mapping memory stays independent of reference size.
-* **`pgr sam to-rg`** - new command converting SAM alignments to `.rg`
-  range lines (`chr:start-end`, 1-based inclusive; M/D/N/=/X CIGAR ops
-  span the range, header and unmapped records are skipped). Bridges the
-  mapped SAM of `pgr asm map` to `pgr rg coverage` for the anchr `anchors`
-  coverage step.
-* **`asm map --paired` / `--max-reads`** - paired mapping mode: the two
-  read files are interleaved as R1/R2 pairs, a pair is mapped only when
-  both ends match perfectly, and the SAM carries pair flags
-  (0x1/0x2/0x40/0x80), mate coordinates and signed TLEN. `--max-reads`
-  stops after N read records (bbmap `reads=` equivalent), matching the
-  anchr `2_insert_size` bbmap calls for insert-size estimation.
-* **`pgr sam ihist`** - new command computing the insert-size histogram
-  from a paired SAM in the BBTools `reformat.sh ihist` text format
-  (`#Mean/#Median/#Mode/#STDev/#PercentOfPairs` + `#InsertSize Count`
-  rows), replacing the `reformat.sh ihist` call of the anchr
-  `2_insert_size` step. Pairs are grouped by normalized read name; only
-  proper FR pairs contribute.
-* **`pgr paf` query output lengths** - PAF columns 2/7
-  (`query_length`/`target_length`) are now populated from per-sequence
-  total lengths retained in the index (format v5; old `.paf.idx` files
-  report a version error and ask for a rebuild). Previously both columns
-  were always emitted as 0.
-* **fq correction commands renamed/split** - `pgr fq ecc` is now
-  `pgr fq ec-kmer` (k-mer-graph correction, tadpole `ecc`), and the
-  overlap-correction mode previously hidden as `fq merge --ecco` is a new
-  `pgr fq ec-overlap` command (bbmerge `ecco`). `fq merge` is now pure
-  overlap merging; the `--ecco`/`--mix`/`--vstrict` flags moved to
-  `ec-overlap` (default mix, `--no-mix` to disable).
+* **Current surface** - 23 top-level command groups, 152 subcommands
+  (see `notes/project-understanding.md` §3).
+* **Added since 0.5.0 (all present)** - `kmer` family
+  (table/profile/hist/gc/qhist/gsize, 6), `plot heat` / `plot
+  spectra` (2), native `rept s-kmer` / `e-kmer` pipeline with `.pkt`
+  repeat-table cache (2 enhanced).
+* **Removed since 0.5.0 (moved to anchr)** - `fq` (15), `asm` (7), `sam`
+  (2): 24 commands, their business libs and tests migrated to the anchr
+  crate after byte-identical golden verification; pgr keeps the base layer
+  (`libs/fmt` FASTA/FASTQ I/O, `fq::qual`/`fq::pairs`, k-mer, PAF,
+  io/ds/loc/sys) and `rg coverage` as a downstream depth tool.
 
-### Removed (`fq` / `asm` moved to anchr)
+### Removed (`fq` / `asm` / `sam` moved to anchr)
 
 * **`fq` and `asm` command groups migrated to anchr** - the read-processing
   (`fq`: clean/clump/ec-kmer/ec-overlap/extend/filter/interleave/merge/norm/
@@ -143,6 +85,14 @@
   depend on; `kmer::base_codes`/`count::count_keys` made public.
 * Design and reference notes for the moved commands follow them to anchr
   (see `notes/design/fq-asm-migrate.md` for the migration archive).
+* **`sam` command group migrated to anchr** - `sam ihist` (insert-size
+  histogram, `reformat.sh ihist` format) and `sam to-rg` (SAM coordinates
+  to `.rg` ranges) plus `libs/fmt/sam.rs` and the `noodles-sam` dependency
+  moved to anchr; they consume the SAM output of anchr `asm map`, and pgr
+  keeps `rg coverage` as the downstream depth tool.
+* **fq correction commands renamed/split before the move** - `fq ecc` ->
+  `fq ec-kmer`, hidden `fq merge --ecco` -> `fq ec-overlap` (bbmerge
+  `ecco`); both moved to anchr with the rest of `fq`.
 
 ## 0.5.0 - 2026-08-08
 
@@ -259,13 +209,18 @@
 
 ### Fixes
 
-* Output-file overwrite protection added across `fa`, `fq`, `fas`, `stat`,
-  `2bit`, `pbit`, `rg`, and `runlist` command families.
+* Output-file overwrite protection added across `fa`, `fas`, `stat`, `2bit`,
+  `pbit`, `rg`, and `runlist` command families.
 * Zero-panic hardening across `pgi`, `paf`, `pbit`, `sd`, `rept`, and `align`
   command families (boundary/overflow/clamping bugs, `i32::MIN` handling).
 * `paf` auxiliary-input protection for all query subcommands.
 * `pbit` multi-reference soft-mask routing restored; reverse-chain routing and
   dead code removed; memory DoS fixes.
+* **`pgr paf` query output lengths** - PAF columns 2/7
+  (`query_length`/`target_length`) are now populated from per-sequence
+  total lengths retained in the index (format v5; old `.paf.idx` files
+  report a version error and ask for a rebuild). Previously both columns
+  were always emitted as 0.
 * `fas to-xlsx` now handles IUPAC ambiguity bases in outgroups.
 * `sd/lastz` resolved decompressed-file collision between target/query.
 

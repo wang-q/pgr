@@ -22,6 +22,5 @@ pub mod psl;
 pub mod rept;
 pub mod rg;
 pub mod runlist;
-pub mod sam;
 pub mod sd;
 pub mod twobit;

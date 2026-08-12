@@ -30,7 +30,6 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::rept::make_subcommand())
         .subcommand(cmd_pgr::rg::make_subcommand())
         .subcommand(cmd_pgr::runlist::make_subcommand())
-        .subcommand(cmd_pgr::sam::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
         .subcommand(cmd_pgr::plot::make_subcommand())
         .subcommand(cmd_pgr::twobit::make_subcommand())
@@ -57,7 +56,6 @@ fn main() -> anyhow::Result<()> {
     * maf   - Convert to Block FA
     * paf   - PAF indexing and querying
     * psl   - PSL statistics, manipulation, and conversion
-    * sam   - SAM tools: ihist, to-rg
 
 * Distance:
     * dist  - Metrics: mini / mash / frac / hv / pgi
@@ -100,7 +98,6 @@ fn main() -> anyhow::Result<()> {
         Some(("rept", sub_matches)) => cmd_pgr::rept::execute(sub_matches),
         Some(("rg", sub_matches)) => cmd_pgr::rg::execute(sub_matches),
         Some(("runlist", sub_matches)) => cmd_pgr::runlist::execute(sub_matches),
-        Some(("sam", sub_matches)) => cmd_pgr::sam::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),
         Some(("plot", sub_matches)) => cmd_pgr::plot::execute(sub_matches),
         Some(("2bit", sub_matches)) => cmd_pgr::twobit::execute(sub_matches),

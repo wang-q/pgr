@@ -423,8 +423,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   FASTQ 格式读取/写出保留（`libs/fmt/fq`），reads 处理命令已迁 anchr
   （见 [[design/fq-asm-migrate.md]]）。
 - **组装（`pgr asm`）**：已迁 anchr（anchr `asm`/`fq` 命令组，双轨 golden
-  核对后从 pgr 移除）；pgr 保留 `sam`（ihist/to-rg，noodles-sam 解析）与
-  `rg coverage` 作为下游覆盖度工具。
+  核对后从 pgr 移除）；`sam`（ihist/to-rg）随迁 anchr（anchr `sam`，
+  处理 anchr `asm map` 的 SAM 输出）；pgr 保留 `rg coverage` 作为下游
+  覆盖度工具。
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
   syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
   精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→tube 链→mid-line wave 扩展→PSL；

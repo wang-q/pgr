@@ -79,7 +79,7 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   必需（保留）→ 详见 Cargo.toml 注释与 §0。
 - **asm 命令族 + SAM 工具**（2026-08-11/12 提交，asm 已迁 anchr）：`pgr asm`
   contig/unitig/map（含 `--min-count-seed`、`--links`/`--gfa`、
-  `--paired`/`--max-reads`）、`pgr sam` ihist/to-rg（noodles-sam 0.81
+  `--paired`/`--max-reads`）、anchr `sam` ihist/to-rg（已随迁 anchr）
   解析）；basecov 移出 map（SAM 派生）；map 流式分块 + 头对称；contig
   计数并行 + 排序快照（576→157 ms）；写出端手写（refname 全头字段与
   noodles 严格字符集冲突）→ anchr 侧 `asm-map.md`、`fq-assemble.md`、

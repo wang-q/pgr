@@ -6,7 +6,6 @@ pub mod gff;
 pub mod lav;
 pub mod maf;
 pub mod psl;
-pub mod sam;
 pub mod seq;
 pub mod twobit;
 pub mod vcf;

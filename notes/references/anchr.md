@@ -80,7 +80,8 @@ pgr 保持"通用基因组数据处理工具集"定位，不吸收 anchr 的流�
   归位组装器，双轨 golden 核对后从 pgr 删除，见 [[design/fq-asm-migrate.md]]）；
   pgr 保留基础层（FASTA/FASTQ 读入、Phred 编码、k-mer、PAF、io/ds/loc/sys），
   anchr 依赖 pgr crate。pgr 仍提供的通用原语：`paf coverage`、`paf graph`
-  （分组/图）、`sam`（ihist/to-rg）、`rg coverage`。
+  （分组/图）、`rg coverage`；anchr 自实现 `sam`（ihist/to-rg，处理
+  `asm map` 的 SAM 输出）。
 - 7_glue/7_fill 的 `dazz group/layout` → anchr 自实现（`paf graph` 分组 +
   anchr `asm layout`，见 §5）。
 
