@@ -123,6 +123,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     opts.require_both_bad = args.get_flag("require_both_bad");
 
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
     let mut out = pgr::libs::io::writer(outfile)
         .with_context(|| format!("failed to open output {outfile}"))?;
     let stats = run(&infiles, &mut out, &opts)?;

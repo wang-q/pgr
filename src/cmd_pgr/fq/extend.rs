@@ -11,7 +11,7 @@ pub fn make_subcommand() -> Command {
             r###"
 This command extends reads in both directions along the k-mer graph, stopping
 at junctions and dead ends, reproducing the BBTools `tadpole.sh mode=extend`
-behavior (k>31 uses the Tadpole2 long-k-mer path). Unlike `fq ecc`, extend
+behavior (k>31 uses the Tadpole2 long-k-mer path). Unlike `fq ec-kmer`, extend
 mode does not run k-mer error correction.
 
 Notes:
@@ -107,6 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opts.extension_rollback = *x;
     }
 
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
     let mut out = pgr::libs::io::writer(outfile)
         .with_context(|| format!("failed to open output {outfile}"))?;
     let stats = run(&infiles, &mut out, &opts)?;

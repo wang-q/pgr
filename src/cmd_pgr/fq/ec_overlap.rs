@@ -227,7 +227,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opts.min_entropy = *x;
     }
     if let Some(x) = args.get_one::<f32>("efilter") {
-        opts.efilter = Some(*x);
+        // `0` disables the filter, matching `fq merge` and the help text.
+        opts.efilter = (*x > 0.0).then_some(*x);
     }
     if let Some(x) = args.get_one::<f32>("pfilter") {
         opts.pfilter = *x;
@@ -237,6 +238,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     if let Some(net) = args.get_one::<String>("net") {
         opts.net = Some(CellNet::load(net).context("failed to load overlap net")?);
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
+    if let Some(p) = &outu {
+        crate::cmd_pgr::args::ensure_outfile_distinct(p, infiles.iter().map(String::as_str))?;
+    }
+    if let Some(p) = &ihist {
+        crate::cmd_pgr::args::ensure_outfile_distinct(p, infiles.iter().map(String::as_str))?;
     }
 
     let mut out = pgr::libs::io::writer(outfile)

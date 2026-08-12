@@ -272,7 +272,11 @@ pub fn process_pair(
             let qual1 = to_phred(&seq1, &raw1);
             let mut v = Vec::with_capacity(23);
             v.push(min_overlap_entropy as f32 * 0.1);
-            let max_bases = (seq1.len().max(seq2.len())).min(seq1.len() + seq2.len() - min_insert);
+            let max_bases = (seq1.len().max(seq2.len())).min(
+                seq1.len()
+                    .saturating_add(seq2.len())
+                    .saturating_sub(min_insert),
+            );
             v.push(expected_tip_errors(&seq1, &qual1, max_bases));
             v.push(expected_tip_errors(&rc2, &qual2, max_bases));
             v.push((seq1.len() as f32 - 100.0) * 0.01);

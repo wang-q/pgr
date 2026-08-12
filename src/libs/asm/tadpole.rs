@@ -352,10 +352,13 @@ fn count_read_kmers(
         if base_defined(b) {
             kmer.push_right(base_code(b));
             if min_prob2 > 0.0 {
-                prob *= prob_correct[quals[i] as usize];
+                // phred can exceed 127 on malformed (non-ASCII) quality bytes;
+                // clamp so `prob_correct` (128 entries) is never indexed OOB.
+                let q = (quals[i] as usize).min(127);
+                prob *= prob_correct[q];
                 if len >= k {
-                    let oldq = quals[i - k];
-                    prob *= prob_correct_inv[oldq as usize];
+                    let oldq = (quals[i - k] as usize).min(127);
+                    prob *= prob_correct_inv[oldq];
                 }
             }
             len += 1;
@@ -685,7 +688,7 @@ fn extend_to_right2(
         return 0;
     }
 
-    let max_len = initial + distance;
+    let max_len = initial.saturating_add(distance);
     let mut added = 0usize;
     // Tadpole1 (k<=31) appends the junction base when the forward k-mer is
     // the canonical maximum; Tadpole2 (k>31) canonicalizes to the minimum,
@@ -1269,14 +1272,15 @@ pub fn extend_read(
     if opts.extension_rollback > 0 {
         let mut left_mod = 0usize;
         let mut right_mod = 0usize;
+        // `+1` guards against `% 0`; saturating guards against the rollback
+        // value `usize::MAX` overflowing on `+1`.
+        let rollback = (opts.extension_rollback as u64).saturating_add(1);
         if extension_left > 0 && extension_left < opts.extend_left {
-            left_mod =
-                extension_left.min((numeric_id % (opts.extension_rollback as u64 + 1)) as usize);
+            left_mod = extension_left.min((numeric_id % rollback) as usize);
             extension_left -= left_mod;
         }
         if extension_right > 0 && extension_right < opts.extend_right {
-            right_mod =
-                extension_right.min((numeric_id % (opts.extension_rollback as u64 + 1)) as usize);
+            right_mod = extension_right.min((numeric_id % rollback) as usize);
             extension_right -= right_mod;
         }
         if left_mod > 0 || right_mod > 0 {
@@ -1463,6 +1467,12 @@ pub fn run<W: Write>(
     anyhow::ensure!(
         opts.k >= 1,
         "k-mer length must be at least 1, got {}",
+        opts.k
+    );
+    anyhow::ensure!(
+        opts.k <= key::Kmer::MAX_K,
+        "k-mer length must be at most {}, got {}",
+        key::Kmer::MAX_K,
         opts.k
     );
     // Pass 1: read all records into memory, canonicalizing qualities.

@@ -250,6 +250,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
              file; use --no-make-vector for the classic overlap filters"
         );
     }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
+    if let Some(p) = &outu {
+        crate::cmd_pgr::args::ensure_outfile_distinct(p, infiles.iter().map(String::as_str))?;
+    }
+    if let Some(p) = &ihist {
+        crate::cmd_pgr::args::ensure_outfile_distinct(p, infiles.iter().map(String::as_str))?;
+    }
 
     let mut out = pgr::libs::io::writer(outfile)
         .with_context(|| format!("failed to open output {outfile}"))?;

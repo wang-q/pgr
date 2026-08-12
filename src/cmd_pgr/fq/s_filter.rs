@@ -110,7 +110,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = args.get_one::<String>("outfile").unwrap();
     let k = *args.get_one::<usize>("kmer").unwrap();
+    // The anchor/extend scan rolls the k-mer in a u128 (2 bits/base), which
+    // supports at most 64 bases; bound k so the 1-based `(2k-2)` shifts and
+    // the quality table stay in range instead of overflowing.
+    anyhow::ensure!(
+        (1..=64).contains(&k),
+        "k-mer length must be in 1..=64 for s-filter, got {k}"
+    );
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str()])?;
+    if let Some(discard) = args.get_one::<String>("discard_file") {
+        crate::cmd_pgr::args::ensure_outfile_distinct(discard, [infile.as_str()])?;
+    }
 
     let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)
         .with_context(|| format!("failed to open {infile}"))?;

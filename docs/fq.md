@@ -11,12 +11,12 @@
 *   `sample`: Subsample reads to a target base count.
 *   `clean`: Adapter k-mer trimming, quality and composition filtering (bbduk).
 *   `filter`: Discard reads matching reference k-mers (bbduk kfilter).
+*   `s-filter`: Discard reads whose own k-mer counts look erroneous (quorum).
 *   `merge`: Overlap-merge paired-end reads (bbmerge-compatible).
 *   `ec-kmer`: Error-correct reads by k-mer reassembly (tadpole ecc).
 *   `ec-overlap`: Error-correct paired reads by overlap without joining
     (bbmerge ecco).
 *   `extend`: Extend reads along the k-mer graph (tadpole-compatible).
-*   `assemble`: Assemble reads into contigs (tadpole-compatible).
 *   `norm`: Filter reads by k-mer depth (bbnorm-style cutoff).
 *   `range`: Extract FASTQ records by name or region.
 *   `trim-qual`: Trim reads by quality score (sickle/cutadapt-style).
@@ -386,7 +386,7 @@ pgr fq s-filter [OPTIONS] <infile>
 | Argument | Description |
 |----------|-------------|
 | `infile` | Input FASTQ file to process (FASTA is rejected) |
-| `-k`, `--kmer` | K-mer size (default: 17) |
+| `-k`, `--kmer` | K-mer size (default: 17; 1..=64, the u128 rolling-key limit) |
 | `-q`, `--qual-thresh` | Table quality threshold (default: detected Phred offset + 5) |
 | `-b`, `--bits` | Table count bits (default: 7, max count 127) |
 | `--skip` / `--good` / `--anchor-count` | Anchor search parameters (defaults 0 / 1 / 1) |
@@ -608,7 +608,8 @@ pgr fq ec-kmer [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound).
+*   `-k, --kmer <int>`: K-mer length (default 31; up to 128, the k-mer key
+    table limit).
 *   `--min-prob <float>`: Ignore k-mers below this error-free probability
     (default 0.5).
 *   `--toss-junk`: Discard reads that cannot be used for assembly.
@@ -695,6 +696,8 @@ pgr fq ec-overlap [OPTIONS] <infiles>...
         --no-mix --no-make-vector
     ```
 
+---
+
 ## extend
 
 Extends reads in both directions along the k-mer graph, stopping at junctions
@@ -709,7 +712,8 @@ pgr fq extend [OPTIONS] <infiles>...
 
 ### Options
 
-*   `-k, --kmer <int>`: K-mer length (default 31; no upper bound).
+*   `-k, --kmer <int>`: K-mer length (default 31; up to 128, the k-mer key
+    table limit).
 *   `--el <int>`: Extend to the left by at most this many bases (default
     100).
 *   `--er <int>`: Extend to the right by at most this many bases (default

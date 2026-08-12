@@ -43,8 +43,9 @@ Examples:
    pgr fq clean R1.fq.gz R2.fq.gz --ref illumina_adapters.fa \
        -o out.fq
 
-2. K-mer filtering mode (match and discard, bbduk filter step):
-   pgr fq clean in.fq --ref illumina_adapters.fa -o out.fq
+2. Mask adapter k-mers instead of trimming:
+   pgr fq clean in.fq --ref illumina_adapters.fa --mask-kmers N \
+       -o out.fq
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(

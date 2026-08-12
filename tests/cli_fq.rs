@@ -275,3 +275,148 @@ fn command_fq_to_fa_ucsc_malformed_no_panic() {
         .assert()
         .success();
 }
+
+#[test]
+fn command_fq_merge_output_same_as_input_rejected() {
+    // Regression: `merge` opened the output writer (truncate) before reading
+    // the inputs, so `-o` pointing at an input silently destroyed it.
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "merge", &path, "-o", &path, "--no-make-vector"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_merge_outu_same_as_input_rejected() {
+    // `--outu` is opened before the inputs are read; it must not overwrite an
+    // input file either.
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "merge",
+            &path,
+            "-o",
+            "out.fq",
+            "--outu",
+            &path,
+            "--no-make-vector",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_ec_overlap_output_same_as_input_rejected() {
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "ec-overlap", &path, "-o", &path])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_ec_kmer_output_same_as_input_rejected() {
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "ec-kmer", &path, "-o", &path])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_extend_output_same_as_input_rejected() {
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "extend", &path, "-o", &path])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_s_filter_kmer_out_of_range_is_friendly_error() {
+    // Regression: the anchor/extend scan rolls the k-mer in a u128 (2
+    // bits/base), so `-k 65` used to panic ("attempt to shift left with
+    // overflow"). It must now return a friendly error.
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIII\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "s-filter", "-k", "65", &path, "-o", "out.fq"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("1..=64"));
+}
+
+#[test]
+fn command_fq_s_filter_discard_file_same_as_input_rejected() {
+    // `--discard-file` is written after the reads are read, but it must not
+    // overwrite the input file (the established `-o` protection).
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    let content = "@SEQ\nACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIII\n";
+    std::fs::write(&path, content).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "s-filter",
+            &path,
+            "-o",
+            "out.fq",
+            "--discard-file",
+            &path,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+}

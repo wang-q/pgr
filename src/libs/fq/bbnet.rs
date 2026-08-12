@@ -109,6 +109,30 @@ impl CellNet {
             layers.push(layer);
             start += size;
         }
+        // The overlap filter is a fixed 23-feature network: the input layer
+        // must be 23, no layer may be empty, and every cell's weight vector
+        // must match the previous layer's size. This keeps `feed_forward`
+        // (which indexes weights by the feature count) from panicking on a
+        // malformed net file.
+        anyhow::ensure!(
+            dims[0] == 23,
+            "net input layer must have 23 dims, got {}",
+            dims[0]
+        );
+        for (l, layer) in layers.iter().enumerate() {
+            if l == 0 {
+                continue;
+            }
+            anyhow::ensure!(!layer.is_empty(), "net layer {l} is empty");
+            for cell in layer {
+                anyhow::ensure!(
+                    cell.weights.len() == dims[l - 1],
+                    "net cell in layer {l} has {} weights, expected {}",
+                    cell.weights.len(),
+                    dims[l - 1]
+                );
+            }
+        }
         Ok(CellNet { layers, cutoff })
     }
 
@@ -214,7 +238,30 @@ mod tests {
 
     #[test]
     fn parse_and_forward_minimal() {
-        // 2 inputs -> 2 hidden -> 1 output.
+        // 23 inputs (the overlap-filter feature count) -> 2 hidden -> 1
+        // output. Hidden cells carry one weight per input (23).
+        let ones = "1.0 ".repeat(23);
+        let negs = "-1.0 ".repeat(23);
+        let text = format!(
+            "\
+##bbnet
+#dims 23 2 1
+##ctf 0.5
+C24 TANH 0.0 {ones}
+C25 SIG 0.0 {negs}
+C26 SIG 0.0 1.0 1.0
+"
+        );
+        let net = CellNet::parse(&text).unwrap();
+        let input = [1.0f32; 23];
+        let out = net.feed_forward(&input);
+        assert!(out > 0.5);
+    }
+
+    #[test]
+    fn parse_rejects_wrong_input_dims() {
+        // The overlap filter is a fixed 23-feature net; a 2-input net must be
+        // rejected instead of feeding a 23-feature vector into it.
         let text = "\
 ##bbnet
 #dims 2 2 1
@@ -223,8 +270,6 @@ C3 TANH 0.0 1.0 1.0
 C4 SIG 0.0 -1.0 -1.0
 C5 SIG 0.0 1.0 1.0
 ";
-        let net = CellNet::parse(text).unwrap();
-        let out = net.feed_forward(&[1.0, 1.0]);
-        assert!(out > 0.5);
+        assert!(CellNet::parse(text).is_err());
     }
 }
