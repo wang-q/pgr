@@ -2,13 +2,11 @@
 
 pub mod align;
 pub mod args;
-pub mod asm;
 pub mod axt;
 pub mod chain;
 pub mod dist;
 pub mod fa;
 pub mod fas;
-pub mod fq;
 pub mod gff;
 pub mod kmer;
 pub mod lav;

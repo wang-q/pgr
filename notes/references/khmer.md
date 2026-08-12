@@ -220,7 +220,7 @@ if not all(read.median_at_least(cutoff) for read in batch):
 6. **当前 pgr 状态核实（2026-08 审计）**：`pgr fq norm` 现走**精确
    canonical KmerTable** + bbnorm 逐 read 判定（truedepth/depthAL 分位数
    + toss），计数表非近似（见 `notes/audit/audit-fq.md`、
-   `notes/design/anchr-trim-replace.md` §M6）；`pgr kmer table` 走精确
+   anchr 侧 `anchr-trim-replace.md` §M6）；`pgr kmer table` 走精确
    `.pkt` 排序表。因此 khmer 的 CMS/median 判定只作为"未来若新增近似路径"
    的参考，当前精确路线下不直接落地——与 §9 结论一致。
 7. **banding 可作为"近似 + 分块"的中间路线**：khmer 的 k-mer banding

@@ -8,7 +8,7 @@ pub fn make_subcommand() -> Command {
         .about("Computes an insert-size histogram from a paired SAM")
         .after_help(
             r###"
-Reads a paired SAM (e.g. the `--paired` output of `pgr asm map`) and writes
+Reads a paired SAM (e.g. the `--paired` output of `anchr asm map`) and writes
 the insert-size histogram in the BBTools `reformat.sh ihist` text format:
 `#Mean`/`#Median`/`#Mode`/`#STDev`/`#PercentOfPairs` lines followed by
 `#InsertSize	Count` rows.

@@ -128,6 +128,22 @@
   overlap merging; the `--ecco`/`--mix`/`--vstrict` flags moved to
   `ec-overlap` (default mix, `--no-mix` to disable).
 
+### Removed (`fq` / `asm` moved to anchr)
+
+* **`fq` and `asm` command groups migrated to anchr** - the read-processing
+  (`fq`: clean/clump/ec-kmer/ec-overlap/extend/filter/interleave/merge/norm/
+  range/s-filter/sample/split/to-fa/trim-qual) and assembly (`asm`:
+  contig/unitig/map/ovlp/layout/cns/olc) commands, their business libs
+  (`libs/fq` except qual/pairs, `libs/asm`, `libs/olc`, `libs/map`) and
+  tests/docs moved to the anchr crate after byte-identical golden
+  verification (22 commands, anchr `scripts/verify-migrate.sh`).
+* **Base layer kept in pgr** - FASTA/FASTQ I/O (`libs/fmt`), Phred encoding
+  (`libs/fq::qual`, `detect_quality_base`), paired FASTQ reading
+  (`libs/fq::pairs`), k-mer, PAF, io/ds/loc/sys remain public for anchr to
+  depend on; `kmer::base_codes`/`count::count_keys` made public.
+* Design and reference notes for the moved commands follow them to anchr
+  (see `notes/design/fq-asm-migrate.md` for the migration archive).
+
 ## 0.5.0 - 2026-08-08
 
 ### New Features

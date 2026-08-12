@@ -11,7 +11,7 @@
 
 ## ihist
 
-Reads a paired SAM (e.g. the `--paired` output of `pgr asm map`) and writes
+Reads a paired SAM (e.g. the `--paired` output of `anchr asm map`) and writes
 the insert-size histogram in the BBTools `reformat.sh ihist` text format:
 `#Mean`/`#Median`/`#Mode`/`#STDev`/`#PercentOfPairs` lines followed by
 `#InsertSize  Count` rows. This replaces the `reformat.sh ihist` call of
@@ -43,7 +43,7 @@ pgr sam ihist [OPTIONS] <infile>
 1.  **Insert-size histogram from a paired mapping (anchr 2_insert_size
     step)**:
     ```bash
-    pgr asm map UT.fasta R1.fq.gz R2.fq.gz --paired \
+    anchr asm map UT.fasta R1.fq.gz R2.fq.gz --paired \
         --outm mapped.sam --outu unmapped.sam --max-reads 1000000
     pgr sam ihist mapped.sam -o insert_size.ihist.txt
     ```
@@ -54,7 +54,7 @@ pgr sam ihist [OPTIONS] <infile>
 
 Extracts alignment coordinates from SAM files and outputs them in `.rg`
 format (`chr:start-end`, 1-based inclusive). This is the bridge for
-deriving per-base coverage from the mapped SAM of `pgr asm map` (anchr
+deriving per-base coverage from the mapped SAM of `anchr asm map` (anchr
 `anchors` step): each mapped record becomes one range, and `pgr rg
 coverage` computes the depth over all ranges.
 
@@ -86,6 +86,6 @@ pgr sam to-rg [OPTIONS] <infile>
 
 2.  **Derive per-base coverage from an `asm map` SAM (anchr anchors step)**:
     ```bash
-    pgr asm map UT.fasta R1.fq.gz R2.fq.gz --outm mapped.sam --outu unmapped.sam
+    anchr asm map UT.fasta R1.fq.gz R2.fq.gz --outm mapped.sam --outu unmapped.sam
     pgr sam to-rg mapped.sam | pgr rg coverage stdin -m 2 -o cov.json
     ```

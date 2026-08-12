@@ -50,7 +50,6 @@ src/
 │   ├── args.rs         #   共享 clap 参数构建器（outfile/infile 等标准参数）
 │   ├── fa/             #   每个模块含 make_subcommand() + execute()
 │   ├── fas/
-│   ├── fq/
 │   ├── twobit/         #   命令名 2bit
 │   ├── gff/
 │   ├── chain/
@@ -155,8 +154,6 @@ src/
 |----------|----------|-------------------------------------------------------|
 | `fa`     | 18       | FASTA 全能操作：统计、筛选、切分、转换、mask、索引    |
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
-| `fq`     | 14       | FASTQ 处理：合并/纠错/延伸/清洗/过滤/归一化/质量修剪等 |
-| `asm`    | 7        | 组装相关：contig（tadpole 兼容种子组装）、unitig（BCALM 式最大 unitig + --links/--gfa 图输出）、ovlp/layout/cns/olc（多 k unitig 层 OLC 四阶段，见 [[design/olc.md]]）、map（完美匹配 reads 回贴，bbwrap perfectmode 替代） |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
 | `pbit`   | 7        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa） |
 | `gff`    | 2        | GFF 注释：rg (提取 feature 区间为 range 列表)、runlist (GFF → runlist JSON) |
@@ -349,12 +346,12 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 k 的上限由表示决定，不是全局统一的（完整记录见 `design/kmer.md` §11）：
 
 * **u128 单字（2 bit/碱基）→ k ≤ 64**：`libs/kmer`（`.pkt`）、`libs/pgi`
-  （`.pgi`）、`libs/map`。命令侧 = `pgr kmer` 全家、`pgr pgi build`/
-  `align pgi`、`pgr asm map`；校验在 `build_table`/`build_from_seqs`/
-  `build_index`（均 `ensure!(1..=64)`）。
-* **tadpole 多字 `Kmer`（`libs/asm/tadpole.rs`）→ 无上限**：`asm contig`/
-  `asm unitig`、`fq extend`/`ec-kmer`、`fq merge` extend2（硬编码 k=81）。
-  项目里唯一为 k>64 设计的表示。
+  （`.pgi`）。命令侧 = `pgr kmer` 全家、`pgr pgi build`/`align pgi`；
+  校验在 `build_table`/`build_from_seqs`/`build_index`
+  （均 `ensure!(1..=64)`）。
+* **tadpole 多字 `Kmer`（anchr `libs/asm/tadpole.rs`）→ 无上限**：anchr
+  `asm contig`/`unitig`、`fq extend`/`ec-kmer`/`merge`（硬编码 k=81）——
+  已随 fq/asm 迁移到 anchr，是项目中唯一为 k>64 设计的表示。
 * **FastK 参考实现：无上限，默认 k=40**（字节打包 `(2k+7)>>3`，不是固定
   字长）。pgr 的 64 上限是移植选型，不是 FastK 约束。
 * **已知缺口**：anchr `2_fastk` 用 `FastK -k<21|51|81>`，k=81 超出
@@ -421,21 +418,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `axt`/`psl`/`lav`/`maf` 六个模块中完整且纯 Rust 实现（不依赖 kent-tools），并与 UCSC
   **字节级一致**（主流程 + `--syn` + medium + SE11 多染色体反向，验证固化于
   `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
-- **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(14) +
-  `twobit`(5) + `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
-- **组装（`pgr asm`）**：`contig`（tadpole 兼容，含 `--no-bubbles`）、
-  `unitig`（BCALM 式最大 unitig：顺序无关、无气泡、`--min-count-seed`/`--links`/`--gfa`/
-  circular 标记）、`map`（完美匹配回贴：anchors 流程 bbwrap `perfectmode` 替代，
-  SAM 输出；覆盖度由 `pgr sam to-rg` + `pgr rg coverage` 派生；`--paired`
-  + `pgr sam ihist` 覆盖 2_insert_size 的 bbmap + reformat ihist）、
-  `sam`（ihist 插入片段直方图 / to-rg 转换，noodles-sam 解析）。
-  **OLC**：`ovlp`/`layout`/`cns`/`olc` 四命令——多 k
-  （默认 21/51/81）unitigs 当伪 reads，精确 seed-verify overlap（canonical
-  k-mer 边界种子 + ± 双向扩展）→ 互惠 best-edge greedy layout（重复交界
-  停止）→ 精确缝合 consensus；合成基因组 30× 重建验证（contigs 全为
-  精确子串），设计见 [[design/olc.md]]。
-  性能：contig 全流程 Lambda 20k 576→157 ms（~3.7×，并行计数 + 排序
-  快照）；基准 `benches/fq_assemble_benchmark.rs` / `asm_map_benchmark.rs`。
+- **FASTA/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `twobit`(5)
+  + `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖；
+  FASTQ 格式读取/写出保留（`libs/fmt/fq`），reads 处理命令已迁 anchr
+  （见 [[design/fq-asm-migrate.md]]）。
+- **组装（`pgr asm`）**：已迁 anchr（anchr `asm`/`fq` 命令组，双轨 golden
+  核对后从 pgr 移除）；pgr 保留 `sam`（ihist/to-rg，noodles-sam 解析）与
+  `rg coverage` 作为下游覆盖度工具。
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
   syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
   精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→tube 链→mid-line wave 扩展→PSL；
@@ -614,8 +603,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 方案 A 已落地；LBYTE/vlcp 定稿不做，变长种子实验否定（§7.3.1/§7.3.2） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
-| [[olc.md]] | 多 k unitig 层 OLC 设计（overlap/layout/consensus 四命令 + `libs/olc/`，承接 canu/celera 参考分析） | 已实现；合成基因组 30× 验证通过；repeat 覆盖度证据与列投票留 v1 |
-| [[fq-asm-migrate.md]] | `fq`/`asm` 命令组迁移到 anchr 方案（业务逻辑迁走，FASTQ 读入与 Phred 编码基础留 pgr，anchr 依赖 pgr crate） | 方案定稿，待实施 |
+| [[fq-asm-migrate.md]] | `fq`/`asm` 命令组迁移到 anchr 档案（业务逻辑迁走，FASTQ 读入与 Phred 编码基础留 pgr，anchr 依赖 pgr crate） | 阶段 1–4 已完成，迁移归档 |
 | [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令 |
 | [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（见 [[audit/audit-runlist-rg.md]]） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
@@ -654,19 +642,10 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[alnfill.md]] | ALNfill（FastGA + LastZ 混合补 gap）源码分析——pgr align fill/rest 参考 |
 | [[app-egaz.md]] | App-Egaz 流程梳理与 pgr 对照（课题组 egaz 旧流程） |
 | [[anchr.md]] | anchr/ovlpr/App-Dazz 工具链盘点与 pgr 边界划分（流程编排留 anchr，通用原语 pgr 覆盖，DALIGNER 生态退役） |
-| [[bcalm.md]] | BCALM 2 紧凑 de Bruijn 图构建源码分析（pgr `asm unitig` 的 graph3 移植来源） |
-| [[canu.md]] | Canu OLC 组装器源码分析（pgr `asm olc` 参考，§8.5 实现后理解回写） |
-| [[celera.md]] | Celera Assembler 8.3rc2 源码分析（pgr `asm olc` 参考） |
-| [[cutadapt.md]] | cutadapt 质量修剪/接头去除源码分析（`fq trim-qual`/clean 参考） |
-| [[fairy.md]] | fairy FracMinHash 稀疏采样 + 宏基因组 coverage 源码分析 |
 | [[khmer.md]] | khmer 固定内存 k-mer 计数 + 数字归一化源码分析 |
 | [[merqury-fk.md]] | MERQURY.FK 基于 FastK 的组装质量评估分析（kmer 生态对照） |
-| [[metaMDBG.md]] | metaMDBG minimizer-space DBG 宏基因组组装源码分析（OLC v1 素材） |
 | [[ntsynt.md]] | ntSynt 多基因组宏观共线性检测（minimizer 图）源码分析 |
-| [[quorum.md]] | quorum k-mer 计数 read 纠错源码分析（fq 纠错参考） |
 | [[repeatmasker.md]] | RepeatMasker 安装与自定义库使用记录（`rept masker` 相关） |
-| [[sickle.md]] | sickle 滑窗质量修剪源码分析（`fq trim-qual` 算法来源） |
-| [[skesa.md]] | SKESA/skesa-rs DBG 短读组装源码分析（OLC v1 素材，含 Rust 移植对照） |
 
 ## 12. 笔记根文件索引（notes/）
 

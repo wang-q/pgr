@@ -11,7 +11,7 @@ pub fn make_subcommand() -> Command {
 Extract alignment coordinates from SAM files and output in .rg format
 (chr:start-end, 1-based inclusive). This is useful for depth calculation
 with `pgr rg coverage`, e.g. deriving per-base coverage from the mapped SAM
-of `pgr asm map`.
+of `anchr asm map`.
 
 Notes:
 * Header lines and unmapped records are skipped.
@@ -23,7 +23,7 @@ Examples:
    pgr sam to-rg mapped.sam > mapped.rg
 
 2. Derive per-base coverage from an asm map SAM (anchr anchors step):
-   pgr asm map UT.fasta R1.fq.gz R2.fq.gz --outm mapped.sam --outu unmapped.sam
+   anchr asm map UT.fasta R1.fq.gz R2.fq.gz --outm mapped.sam --outu unmapped.sam
    pgr sam to-rg mapped.sam | pgr rg coverage stdin -m 2 -o cov.json
 "###,
         )

@@ -8,7 +8,8 @@
 - **输入**：FASTA/蛋白序列文件、`.pgi` 索引、`.hv` 超向量文件。
 - **输出**：Pairwise TSV 格式（`Name1 Name2 Distance ...`），可用于下游分析或矩阵构建。
 - **互补**：
-  - 上游：`pgr fa`/`pgr fq` (序列处理), `pgr fa six-frame` (蛋白翻译)。
+  - 上游：`pgr fa` (序列格式处理), anchr `fq` (reads 处理),
+    `pgr fa six-frame` (蛋白翻译)。
   - 下游：聚类/构树工具。
 
 ## 核心概念（Concepts）

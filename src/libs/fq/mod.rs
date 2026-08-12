@@ -1,13 +1,4 @@
-//! FASTQ read-processing algorithms.
+//! FASTQ base layer (kept in pgr; read-processing algorithms moved to anchr).
 
-pub mod bbnet;
-pub mod clump;
-pub mod merge;
-pub mod norm;
-pub mod overlap;
 pub mod pairs;
 pub mod qual;
-pub mod sample;
-pub mod split;
-pub mod trim;
-pub mod trim_adapter;

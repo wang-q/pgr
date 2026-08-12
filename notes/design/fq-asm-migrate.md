@@ -139,6 +139,28 @@ docs），依赖 pgr crate 的基础模块：
   project-understanding 索引、todo、CHANGELOG；
 - 逐批删除、逐批 `cargo test`，保持剩余命令全绿。
 
+**2026-08-13 已完成**：
+
+- 命令壳：`cmd_pgr/fq`（15 命令）、`cmd_pgr/asm`（8 命令）删除，`pgr.rs`
+  注册/分发/after_help 移除，`cmd_pgr/mod.rs` 移除声明；
+- 业务 libs：`libs/asm`、`libs/olc`、`libs/map` 删除，`libs/fq` 仅留
+  qual.rs/pairs.rs/mod.rs（基础层）；
+- 测试/文档：`tests/cli_fq*.rs`/`cli_asm*.rs`（21 个）删除，docs
+  `fq.md`/`asm.md` 删除，`benches/fq_assemble_benchmark.rs`/
+  `asm_map_benchmark.rs` 及 Cargo.toml bench 定义删除；
+  `tests/bbtools/`（Lambda 数据）**保留**——kmer 命令组测试仍在用
+  （`cli_kmer.rs` 5 个真实数据测试），非 fq/asm 专属；
+- 索引：project-understanding §3.1/§4.5/§6.1/§10/§11 移除 fq/asm 内容；
+  todo/khmer 引用改指向 anchr；CHANGELOG 记录；docs/sam.md、dist.md、
+  usage_examples.md、sam to_rg/ihist doc comment 的 `pgr fq/asm` 示例改
+  `anchr`；
+- 参考笔记随迁：references 9 个（bcalm/canu/celera/cutadapt/fairy/
+  metaMDBG/quorum/sickle/skesa）+ design 6 个（anchr-trim/merge-replace、
+  fq-assemble/asm-map/fq-index/olc）从 pgr 移除；
+- 验证：`cargo test` 全绿，`rg libs::(asm|olc|map)|cmd_pgr::(fq|asm)`
+  无残留，fmt/clippy 干净；阶段 1 pub 化基础层（fmt/fq::qual/pairs/kmer/
+  paf/io/ds/loc/sys）保留供 anchr 依赖。
+
 ### 阶段 5：收尾
 
 - 更新 `references/anchr.md` 边界划分（fq/asm 业务已在 anchr）、todo 状态；

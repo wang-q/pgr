@@ -82,24 +82,24 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   `--paired`/`--max-reads`）、`pgr sam` ihist/to-rg（noodles-sam 0.81
   解析）；basecov 移出 map（SAM 派生）；map 流式分块 + 头对称；contig
   计数并行 + 排序快照（576→157 ms）；写出端手写（refname 全头字段与
-  noodles 严格字符集冲突）→ `design/asm-map.md`、`design/fq-assemble.md`、
+  noodles 严格字符集冲突）→ anchr 侧 `asm-map.md`、`fq-assemble.md`、
   `design/kmer.md` §11。
 - **fq 纠错命令拆分**（2026-08-11 提交）：`fq ecc`→`ec-kmer`、
-  `merge --ecco`→`ec-overlap`，golden 对照逐字节一致 →
-  `design/anchr-merge-replace.md`。
+  `merge --ecco`→`ec-overlap`，golden 对照逐字节一致 → anchr 侧
+  `anchr-merge-replace.md`。
 - **trim 8 步 M0-M8 全部移植**（fq sample/clump/split/clean/filter/norm/
   trim-adapter/kmer hist），与 BBTools 39.38 逐字节一致 →
-  `design/anchr-trim-replace.md`。
+  anchr 侧 `anchr-trim-replace.md`。
 - **anchr merge 流程 7 步全部移植**（fq merge/ec-kmer/ec-overlap/extend/
   assemble + split --repair + s-filter），golden/统计对照完成；clumpify ecc
-  按计划跳过 → `design/anchr-merge-replace.md`、`design/fq-assemble.md`。
+  按计划跳过 → anchr 侧 `anchr-merge-replace.md`、`fq-assemble.md`。
 - **`pgr kmer` 七子命令全量交付**（2026-08-09）：table/profile/hist/gc/
   qhist/qcheck/gsize，含 GenomeScope 2.0 原生迁移 `--model`、plot
   heat/spectra 拆分、`.pkt`/`.pkp`/`.hist` 三格式定稿，测试 1544 全绿
   → `design/kmer.md` §10。
 - **fq 系列**（2026-08）：`trim-qual`（sickle 替代）、`range`（FASTQ
   `.loc` 索引一期 + 双端二期）、BGZF 写侧基准、FAFQ reader 笔记 →
-  `design/anchr-trim-replace.md`（含 trim-qual）、`design/fq-index.md`、
+  anchr 侧 `anchr-trim-replace.md`（含 trim-qual）、`fq-index.md`、
   `design/seq-reader.md`。
 - **spanr cover 名字截断**（2026-08-09）：pgr 内建 runlist 区间操作替代
   外部 spanr；`rept/trf.rs` 带点 contig 名映射规避 →
@@ -182,25 +182,19 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 
 ## 2. 待实现
 
-- [ ] **fq/asm 命令组迁移到 anchr**（2026-08-12 方案定稿；**阶段 1
-      （pgr libs pub 化）已完成**——detect_quality_base 抽到 qual 基础层、
-      base_codes/count_keys 转 pub、`tests/migrate_api.rs` 外部 API 验证、
-      1755 测试全绿；**参考笔记随迁清单已定**（9 references + 6 design +
-      audit-fq 迁 anchr，见 `design/fq-asm-migrate.md` §8）；待阶段 2
-      anchr 侧迁移）：
-      业务逻辑（`libs/fq` 除 qual/pairs、`libs/asm`、`libs/olc` + 对应 cmd +
-      21 测试 + docs）迁 anchr；FASTA/FASTQ 读入与 Phred 编码基础留 pgr
-      （与 FA 读取不迁移同理），anchr 依赖 pgr crate。**双轨迁移**：
-      ① pgr libs pub 化（不删代码）→ ② anchr 逐步迁移（pgr 原样保留）→
-      ③ 两目录核对（golden 逐字节一致）→ ④ 仅核对通过的从 pgr 删除。
-      实施步骤、成本与参考笔记迁移见 `design/fq-asm-migrate.md`。
+- [x] **fq/asm 命令组迁移到 anchr**（2026-08-12 方案定稿，2026-08-13
+      阶段 1–4 全部完成）：pgr libs pub 化（fmt/fq::qual/pairs/kmer/paf/
+      io/ds/loc/sys 公开 + detect_quality_base 抽基础层）→ anchr 侧迁移
+      + 双轨 golden 核对（22 命令逐字节一致）→ pgr 删除命令壳/业务 libs/
+      测试/docs/随迁笔记 → `cargo test` 全绿、无残留。档案见
+      `design/fq-asm-migrate.md`。
 
 ## 3. 挂账 / 待决
 
 - **`paf query --end-trim` 推迟**：需 per-interval 修剪 CIGAR 两端，与当前
   "区间整体投影"的输出模型不兼容，待序列输出引入时一并处理
   （来源：`paf-pangenome.md` §6.4）。
-- **norm 精确 vs 近似定稿**（`anchr-trim-replace.md` §4.8 未定）：pgr 走
+- **norm 精确 vs 近似定稿**（anchr 侧 `anchr-trim-replace.md` §4.8 未定）：pgr 走
   精确表 + 外部桶（1TB 答案）；bbnorm bits=16 近似表结果依赖 -Xmx。
   差异 = 定义差异不是 bug。
 - **anchr 模板替换**（用户自己处理，命令已齐）：trim.era.sh 的 bbtools
@@ -214,7 +208,7 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   含 0_cleanup 文件名同步）；anchors bbwrap → `asm map` + `sam to-rg` +
   `rg coverage`；2_insert_size bbmap ×2 → `asm map --paired --max-reads
   {{opt.reads}}` + `sam ihist`（reformat ihist 替代，Picard 保留外部；
-  完美匹配对足以估计插入长度，见 `asm-map.md` §2.6）。已知偏差：contig
+  完美匹配对足以估计插入长度，见 anchr 侧 `asm-map.md` §2.6）。已知偏差：contig
   的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
   **边界划分已定稿（2026-08-12）**：anchr 留"流程 + 策略"（template/
   anchors/quorum/mergeread/ena/dep + 0–9 模板），通用原语由 pgr 覆盖
@@ -225,8 +219,8 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   anchr（Rust 重写替换 Perl App-Dazz），pgr 只供底层原语（asm ovlp/
   paf coverage/paf graph），pgr 侧无需新增命令——详见 `references/anchr.md`
   §5。
-- **多 k unitig 的 OLC 拼接**：**已实现**（2026-08-12，`pgr asm olc`
-  等四命令，`design/olc.md`，承接 `references/canu.md` §8）。剩余待真实
+- **多 k unitig 的 OLC 拼接**：**已实现**（2026-08-12，anchr `asm olc`
+  等四命令，anchr 侧 `olc.md`，承接 anchr 侧 `canu.md` §8）。剩余待真实
   宏基因组数据验证：overlap 是否允许少量错配、不同 k unitig 冗余去重、
   repeat breaking 覆盖度证据阈值（Canu 6/15 的单元化版本）、列投票
   consensus（v1）。
@@ -269,22 +263,23 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 - [x] **pgr asm unitig 真实数据验证**（2026-08-12）：MG1655 1M 纠错 reads
       （`/home/wangq/data/anchr/mg1655/2_illumina/merge/pe.cor.fa.gz` 采样）
       × k=31，与 `/home/wangq/.cbp/bin/bcalm` 对照——**unitig 序列 100%
-      一致**（2403/2403 canonical 归一后逐条相同）。→ `fq-assemble.md` §8.1。
+      一致**（2403/2403 canonical 归一后逐条相同）。→ anchr 侧
+      `fq-assemble.md` §8.1。
 - [x] **pgr asm unitig L: 边/GFA 真实对照**（2026-08-12）：无向边集 pgr
       3801 vs bcalm 3331，共同 2577（bcalm 的 77%）、pgr 多 1224/缺 754
       ——bcalm 边 = canonical 端点共享图（5019）的子集，过滤条件不在
       README/本地源码；尝试按 README 语义重写后边集未对齐且回归真实
       边，已回退。**结论：保持简化语义，逐边对齐需 bcalm 链接实现
-      源码，暂不立项**（`fq-assemble.md` §8.1 已记录）。
+      源码，暂不立项**（anchr 侧 `fq-assemble.md` §8.1 已记录）。
 - [x] **pgr asm map 真实数据验证（自一致性，2026-08-12）**：MG1655 参考 ×
       1M 纠错 reads（anchr `pe.cor.fa` 采样）——完美贴回 505,305/1M
       （50.5%，539,045 hits，1.5% 多映射）；**mapped reads 坐标抽查
       10/10 与参考区间逐碱基一致**；mapped 子集平均覆盖 38.4×。50%
       贴回率是设计使然（完美匹配拒绝任何带错 reads；anchr bwa 容错映射
       mosdepth 271× 佐证 reads 来自该参考）。⚠️ bbmap 黑盒对照仍暂缓
-      （本机 Java 配对读 gz 失败）→ `asm-map.md` §4。
+      （本机 Java 配对读 gz 失败）→ anchr 侧 `asm-map.md` §4。
 - [ ] **OLC 宏基因组/长读真实数据验证**：Lambda（Illumina 108bp）已验证
-      （`design/olc.md` §12，含 40× 原始与 9× 纠错两种路径）；长读
+      （anchr 侧 `olc.md` §12，含 40× 原始与 9× 纠错两种路径）；长读
       （HiFi/ONT）与宏基因组数据到位后调 v1 参数（overlap 错配容忍、
       repeat breaking 覆盖度阈值、多 k 反馈）。
 - [x] chain 算法验证（2026-08-12）：**KD-tree 已由 UCSC 管线字节级验证
