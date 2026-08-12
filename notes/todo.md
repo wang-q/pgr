@@ -197,6 +197,12 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   {{opt.reads}}` + `sam ihist`（reformat ihist 替代，Picard 保留外部；
   完美匹配对足以估计插入长度，见 `asm-map.md` §2.6）。已知偏差：contig
   的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
+  **边界划分已定稿（2026-08-12）**：anchr 留"流程 + 策略"（template/
+  anchors/quorum/mergeread/ena/dep + 0–9 模板），通用原语由 pgr 覆盖
+  （asm 系列/paf coverage/paf graph/fq 系列，大部分已就位），DALIGNER 生态
+  （dazzname/show2ovlp/paf2ovlp/restrict + 7_glue/7_fill 的 App-Dazz
+  依赖）退役——详见 `references/anchr.md`。7_glue/7_fill 的
+  `dazz group/layout` → `paf graph` + `asm layout` 替换前需先对照语义。
 - **多 k unitig 的 OLC 拼接**：**已实现**（2026-08-12，`pgr asm olc`
   等四命令，`design/olc.md`，承接 `references/canu.md` §8）。剩余待真实
   宏基因组数据验证：overlap 是否允许少量错配、不同 k unitig 冗余去重、
@@ -222,8 +228,11 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   geometric blocks**（帮助文档明示，每个种子链管一个粗 block），不能当
   精化比对用；本项首次量化误用了该路径，数字作废重测
   （来源：`design/pgi-align.md` §7.4.1）。
-- [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项
-      （来源：`design/pgi-query-layer.md`）。
+- [x] 完整 adaptamer（变长种子 >k）：**实验否定，不做**——E. coli + 酵母
+      实测：短端（12–40 bp 匹配）位置命中确有增量（31–35%），但端到端 PSL
+      覆盖仅 +0.009–0.15%（链化 + 波扩展已吸收），长端（>40 bp）全部落在
+      40-mer 已命中位置、对发现同源零增量；降 k 反而略降覆盖。若人类规模
+      显示新场景再评估（`design/pgi-align.md` §7.3.1）。
 - [ ] `dist mash` 序列级并行：等单文件多 contig 大规模场景（文件级并行
       已覆盖多文件，见 `design/hv.md` 性能节）。
 - [ ] 物种内聚类选参考 + PBit 归档（核心用例，UI 待讨论）：场景工作流见
@@ -267,6 +276,9 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 
 ## 5. 低风险审计记录项（可顺手修）
 
+- [ ] `paf coverage` 支持无 `cg:Z` 的 PAF（退回用 start/end 算覆盖）——
+      ovlpr `covered` 不依赖 CIGAR，pgr 当前无标签记录不贡献；minimap2
+      默认 PAF 无 cg:Z 时覆盖算不出（来源：`references/anchr.md` §5）。
 - [x] `pgr align pgi` 不带序列路径（geometric blocks，未精化）易被误当
       精化比对使用——已加运行时 `log::warn!` 显式警告（2026-08-12：
       "writing unrefined geometric blocks ... pass --ref-seq/--query-seq"），
@@ -281,6 +293,12 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 
 ## 7. 明确不做（避免重复立项）
 
+- **完整 adaptamer（变长种子 >k）：明确不做**（2026-08-12 实验否定——覆盖
+  维度：短端/长端位置命中增量已被链化 + 波扩展吸收，端到端 PSL 覆盖仅
+  +0.009–0.15%；性能维度：自比对（极长相似片段）FastGA 快 2.1× 但来源是
+  C 实现效率（波扩展/索引构建），种子 94.8–97.9% 已唯一、变长种子最多省
+  ~4% hits、总耗时加速 ≤3%，见 §4 与 `design/pgi-align.md` §7.3.1/§7.3.2；
+  人类规模显示新场景再评估）。
 - Gap_Improver、完整 LCP、`.1aln`、trace points、ALNchain、GDB/GIX 分片
   （`design/pgi-align.md` §6）；多 mask union（§7.5）；`-S` 对称 adaptamer
   （§7.4.1）；hybrid 逻辑留 `cmd_pgr/`（commit `d5281bc`，有意为之）。

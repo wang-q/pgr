@@ -118,5 +118,7 @@ FastGA **~3.3×**。
   ~22% 是株系特异序列（O157/Nissle 特有岛），任何比对器都无法映射到
   MG1655。**lcp/adaptamer 变长种子因此不是当前优先级**；剩余小差距
   （sakai +2.4%）来自分歧区的 wave 式补齐（banded 窗口对低分区间跳过）。
+  （2026-08-12 已实验否定：E. coli + 酵母实测变长种子对端到端 PSL 覆盖
+  无收益，见 `design/pgi-align.md` §7.3.1。）
 - 时间可比：两流程均从 FASTA 开始（pgr 建索引 ×2 + 比对；FastGA 内部
   FAtoGDB + GIXmake + 比对）。

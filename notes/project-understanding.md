@@ -695,6 +695,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[wgatools.md]] | wgatools（Rust PAF/MAF 工具库）源码分析——pgr `paf` 模块对照（filter/trimovp/pafcov 缺口） |
 | [[alnfill.md]] | ALNfill（FastGA + LastZ 混合补 gap）源码分析——pgr align fill/rest 参考 |
 | [[app-egaz.md]] | App-Egaz 流程梳理与 pgr 对照（课题组 egaz 旧流程） |
+| [[anchr.md]] | anchr/ovlpr/App-Dazz 工具链盘点与 pgr 边界划分（流程编排留 anchr，通用原语 pgr 覆盖，DALIGNER 生态退役） |
 | [[bcalm.md]] | BCALM 2 紧凑 de Bruijn 图构建源码分析（pgr `asm unitig` 的 graph3 移植来源） |
 | [[canu.md]] | Canu OLC 组装器源码分析（pgr `asm olc` 参考，§8.5 实现后理解回写） |
 | [[celera.md]] | Celera Assembler 8.3rc2 源码分析（pgr `asm olc` 参考） |
