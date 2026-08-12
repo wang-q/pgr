@@ -152,7 +152,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // S2: greedy layouts.
-    let layouts = build_layouts(&unitigs, &overlaps);
+    let layouts = build_layouts(&unitigs, &overlaps)?;
     if let Some(dir) = keep_dir {
         dump_layouts(dir, &unitigs, &layouts)?;
     }

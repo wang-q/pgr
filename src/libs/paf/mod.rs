@@ -1,4 +1,5 @@
 pub mod cigar;
+pub mod cov;
 pub mod fasta;
 pub mod graph;
 pub mod index;

@@ -5,6 +5,9 @@
 > （overlap / layout / consensus）。合成基因组端到端验证通过
 > （30× 无错 reads → contigs 全部为基因组精确子串，最长覆盖 97.5%；
 > 低覆盖 6× 出现重复区经典错装，符合预期）。
+> **真实数据验证（Lambda，2026-08-12）**：见 §12——抓出并修复左向延伸
+> 坐标下溢 bug；多 k 冗余 2.4×（v1 待消减）；参考菌株差异会误报
+> "嵌合"，需 reads 侧验证。
 > 需求来源：用户裁定"不对 reads 做 OLC，把不同 k 各自生成的 unitigs 当
 > 伪 reads，在 unitig 层做 OLC 拼接"（`todo.md` §3、`references/canu.md` §8）。
 > 参考源码：`canu-2.3/`（bogart + utgcns）、`wgs-8.3rc2/`（AS_BAT + AS_CNS），
@@ -254,3 +257,56 @@ overlap（第 0 步恒 0）。同 contig 内区间连续（`q_end[i] == q_start[
 * `design/kmer.md` §11/§12（k 范围、FastK 字节键唯一表示）
 * `design/fq-assemble.md` §8（`asm unitig` 语义与 L: 边）
 * `todo.md` §3（多 k unitig OLC 挂账项，本项目承接）
+
+## 12. 真实数据验证：Lambda（2026-08-12）
+
+数据：`tests/bbtools/Lambda/R1.fq.gz` + `R2.fq.gz`（SRR5042715，108 bp ×
+20k 对 = 40×，Illumina PE）；参考 `BBTools-40.01/resources/lambda.fa.gz`
+（NC_001416.1，48,502 bp）；基线 golden `tadpole_contigs31.fasta.gz`
+（BBTools 同 reads 组装，48,214 bp / N50 1199 / 最长 4258）。
+
+### 12.1 抓出的 bug（已修复）
+
+**左向延伸坐标下溢**：layout 坐标回填对 prepend 的首个 step 用占位
+`q_end=0`，`prev_end − overlap_len` 下溢 panic（真实数据触发，合成数据
+只测了右向延伸）。修复：首步坐标从自身长度算起；overlap > 前步末端改为
+友好报错（零 panic 策略）。回归测试 `seed_extends_both_directions` /
+`inconsistent_overlap_is_error`。
+
+### 12.2 结果
+
+| 实验 | 输入 | k | contigs | N50 | 最长 | 完美贴回参考 | 参考覆盖（正链） |
+|---|---|---|---|---|---|---|---|
+| A | 原始 reads 40× | 21,51,81 | 52 | 3409 | 19035 | 40/52 | 65.5% |
+| B | 纠错 reads 9×（merge.ecco） | 21,51,81 | 202 | 459 | 2129 | 187/202 (92.6%) | 86.0% |
+| C | 纠错 reads 9× | 21,31,41 | 248 | 469 | 2129 | 228/248 (91.9%) | 82.6% |
+| D | 原始 reads 40× | 21,31,41 | 67 | 2233 | 8282 | 51/67 (76%) | 62.8% |
+
+### 12.3 结论与教训
+
+1. **长 contig ≠ 嵌合**：A 的最长 contig（19,035 bp）是**单个 k81 unitig**
+   （cov=1.0），前 1708 bp 匹配参考（ref 29307–31015），随后跳出的序列
+   **在 reads 中实锤存在**（100 bp 探针 fwd/rc 均命中）且两侧都是参考
+   匹配区——是相对 NC_001416 的**菌株插入变异**（~1.3 kb at ref 31015），
+   不是错装。教训：参考菌株与 reads 不同源时，"完美贴回"是错误判据，
+   验证需 reads 侧证据（unitig 由 solid k-mer 建成本身即内部一致性证据）。
+2. **多 k 冗余 2.4×**（A 总长 116 kb vs 基因组 48.5 kb）：不同 k 的 unitigs
+   覆盖同一区域、contain 重叠被排除在延伸外 → 输出重复。v1 需消减
+   （contain 去重，见 §13）。
+3. **覆盖度 vs 纯度权衡**：40× 原始 reads 出长 contig 但变异区/重复区
+   干扰贴回；9× 纠错 reads 纯度更高（92.6% 贴回）但碎片化（N50 459）。
+   宏基因组真实数据的推荐路径待定（等数据）。
+4. **k 选择**：108 bp reads 下 21/51/81 优于 21/31/41（原始 40×）——
+   大 k 特异性在重复区更稳；k 应随读长自适应（设计默认 21/51/81 面向
+   更长 reads）。
+5. **合成数据验证的盲区**：合成测试全部是右向延伸链，漏了左向——真实
+   数据验证的价值再次体现。
+
+## 13. v1 待办（真实数据驱动）
+
+* **多 k 冗余消减**：contain 去重（输出级：丢弃完全包含于更长 contig 的
+  contig；unitig 级：布局前剔除被更长 unitig 包含的 unitig）。
+* **repeat breaking 覆盖度证据**：桥接 reads 回放（`asm map` + `sam
+  to-rg` + `rg coverage`），阈值参考 SKESA fraction / metaMDBG 语义；
+  需 reads 侧验证口径（参考菌株不匹配时不能只用贴回率）。
+* 真实宏基因组数据验证 + 调参。

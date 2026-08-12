@@ -693,6 +693,21 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
 | [[spoa.md]] | Spoa (SIMD POA) C++ 源码分析（偏序图 + SIMD DP，pgr `libs/poa` 参考） |
 | [[wgatools.md]] | wgatools（Rust PAF/MAF 工具库）源码分析——pgr `paf` 模块对照（filter/trimovp/pafcov 缺口） |
+| [[alnfill.md]] | ALNfill（FastGA + LastZ 混合补 gap）源码分析——pgr align fill/rest 参考 |
+| [[app-egaz.md]] | App-Egaz 流程梳理与 pgr 对照（课题组 egaz 旧流程） |
+| [[bcalm.md]] | BCALM 2 紧凑 de Bruijn 图构建源码分析（pgr `asm unitig` 的 graph3 移植来源） |
+| [[canu.md]] | Canu OLC 组装器源码分析（pgr `asm olc` 参考，§8.5 实现后理解回写） |
+| [[celera.md]] | Celera Assembler 8.3rc2 源码分析（pgr `asm olc` 参考） |
+| [[cutadapt.md]] | cutadapt 质量修剪/接头去除源码分析（`fq trim-qual`/clean 参考） |
+| [[fairy.md]] | fairy FracMinHash 稀疏采样 + 宏基因组 coverage 源码分析 |
+| [[khmer.md]] | khmer 固定内存 k-mer 计数 + 数字归一化源码分析 |
+| [[merqury-fk.md]] | MERQURY.FK 基于 FastK 的组装质量评估分析（kmer 生态对照） |
+| [[metaMDBG.md]] | metaMDBG minimizer-space DBG 宏基因组组装源码分析（OLC v1 素材） |
+| [[ntsynt.md]] | ntSynt 多基因组宏观共线性检测（minimizer 图）源码分析 |
+| [[quorum.md]] | quorum k-mer 计数 read 纠错源码分析（fq 纠错参考） |
+| [[repeatmasker.md]] | RepeatMasker 安装与自定义库使用记录（`rept masker` 相关） |
+| [[sickle.md]] | sickle 滑窗质量修剪源码分析（`fq trim-qual` 算法来源） |
+| [[skesa.md]] | SKESA/skesa-rs DBG 短读组装源码分析（OLC v1 素材，含 Rust 移植对照） |
 
 ## 12. 笔记根文件索引（notes/）
 

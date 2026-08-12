@@ -36,6 +36,41 @@ q2\t300\t10\t60\t-\tt1\t200\t10\t60\t45\t50\t255\tcg:Z:50M
     assert!(stderr.contains("targets:   1"));
 }
 
+// ── paf coverage ───────────────────────────────────────────────
+
+#[test]
+fn command_paf_coverage_segments() {
+    let paf = "\
+q1\t100\t0\t20\t+\tt\t100\t0\t20\t20\t20\t255\tcg:Z:20M
+q2\t100\t0\t10\t+\tt\t100\t5\t15\t10\t10\t255\tcg:Z:10M
+q3\t100\t0\t15\t+\tt\t100\t10\t25\t10\t15\t255\tcg:Z:5I10M
+q4\t100\t0\t20\t+\tt\t100\t25\t35\t10\t10\t255\tcg:Z:5D5M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "coverage", "stdin", "-m", "1"])
+        .stdin(paf)
+        .run();
+    // 0..5 depth1, 5..10 depth2, 10..15 depth3, 15..20 depth2,
+    // 25..35 depth1 (D covers 25..30, I skips no target).
+    assert_eq!(
+        stdout.trim(),
+        "t\t0\t5\t1\nt\t5\t10\t2\nt\t10\t15\t3\nt\t15\t20\t2\nt\t25\t35\t1"
+    );
+}
+
+#[test]
+fn command_paf_coverage_minimum_filters() {
+    let paf = "\
+q1\t100\t0\t20\t+\tt\t100\t0\t20\t20\t20\t255\tcg:Z:20M
+q2\t100\t0\t10\t+\tt\t100\t5\t15\t10\t10\t255\tcg:Z:10M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "coverage", "stdin", "-m", "2"])
+        .stdin(paf)
+        .run();
+    assert_eq!(stdout.trim(), "t\t5\t15\t2");
+}
+
 #[test]
 fn command_paf_index_no_cigar() {
     let paf = "\

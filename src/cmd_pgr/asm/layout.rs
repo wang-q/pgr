@@ -102,7 +102,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         });
     }
 
-    let layouts = build_layouts(&unitigs, &overlaps);
+    let layouts = build_layouts(&unitigs, &overlaps)?;
     let mut out = pgr::libs::io::writer(outfile)
         .with_context(|| format!("failed to open output {outfile}"))?;
     super::common::write_layout_tsv(&mut out, &unitigs, &layouts)?;

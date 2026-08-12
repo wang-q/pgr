@@ -167,6 +167,27 @@ pgr paf query <infile> -b <bed> [options]
 输出为 PAF（12 列加 `gi`/`bi`/`cg` tags）。要输出 BED / MAF / GFA / VCF，请分别使用 `to-bed` /
 `to-maf` / `to-gfa` / `to-vcf`。
 
+### `coverage` — 计算 PAF 覆盖度
+
+```bash
+pgr paf coverage <infiles>... [-o <tsv>] [-m <int>]
+```
+
+根据每条 PAF 记录的 `cg:Z` CIGAR 标签累计每个 target 的比对深度
+（`M`/`=`/`X`/`D` 操作覆盖 target，插入不覆盖），输出深度不低于
+`--minimum`（默认 1）的**恒定深度极大段**为 TSV：
+`target<TAB>start<TAB>end<TAB>depth`（0-based 半开区间，按 target 与
+start 排序）。
+
+- 无 `cg:Z` 标签的记录不贡献覆盖度（如 `pgr psl to-paf` 输出）；带标签的
+  链路如 `pgr pl chainnet` → `pgr maf to-paf`。
+- 与 `pgr rg coverage`（`.rg` 区间扫描线）互补：这里直接消费 PAF，无需
+  经 SAM 中转。
+
+```bash
+pgr paf coverage ovlp.paf -m 5 -o cov.tsv
+```
+
 ```bash
 # 从 PAF 文件单跳查询（索引即时构建）
 pgr paf query aln.paf A:0-30
@@ -408,4 +429,3 @@ C    /data/genomes/C.fa.gz
 - [`pgr maf to-paf`](maf.md)：把 MAF 转成 PAF 作为 `pgr paf` 的输入。
 - [`pgr fa gz`](fa.md)：BGZF 压缩 FASTA（`-f` TSV 要求）。
 - [`pgr fa range`](fa.md)：按坐标从 BGZF FASTA 提取子序列。
-

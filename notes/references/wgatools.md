@@ -14,7 +14,7 @@
 | `stat` | PAF 统计 | ✅ `paf stat` |
 | `validate` | PAF 校验/修复 | ✅ `paf validate`（2026-08-06） |
 | `index` | PAF 索引 | ✅ `paf index`（区间树 + `.paf.idx`） |
-| `pafcov` | PAF → 覆盖度 | ⚠️ pgr 走 `asm map` → `sam to-rg` → `rg coverage`（更长链路） |
+| `pafcov` | PAF → 覆盖度 | ✅ `pgr paf coverage`（2026-08-12 新增，cg:Z 扫描线） |
 | `filter` | 按长度/身份过滤 PAF | ❌ pgr 无 PAF 过滤子命令 |
 | `trimovp` | 修剪 overlap 末端 | ❌ pgr 无（`paf to-fas`/query 未做 per-interval 修剪，`todo.md` §2） |
 | `rename` / `chunk` / `tview` / `mafextra` / `pileup` / `caller` | 命名/分块/查看/MAF 提取/堆叠/变异 | 部分与 `paf to-fas/to-maf/to-vcf`、`plot dot` 重叠 |
@@ -22,9 +22,9 @@
 ## 2. 借鉴点
 
 - **`pafcov` 的 CIGAR → 覆盖度扫描线**（`tools/pafcov.rs` + `parser/cigar.rs`
-  `update_cov_vec`）：PAF 带 `cg:Z` 时直接累积覆盖度向量。pgr 现在要经
-  SAM 中转；若 pgr 的 PAF 链路（`chainnet → maf to-paf` 自带 cg:Z）需要
-  覆盖度，可参考此实现（与 `rg coverage` 的扫描线同思路）。
+  `update_cov_vec`）：PAF 带 `cg:Z` 时直接累积覆盖度向量——已落地为
+  `pgr paf coverage`（2026-08-12，`libs/paf/cov.rs` 扫描线 + 恒定深度段
+  合并），无需再经 SAM 中转。
 - **`trimovp`**：overlap 末端修剪正是 `paf-pangenome.md` §"`--end-trim`
   推迟（需 per-interval 修剪 CIGAR）"的待办——wgatools 有现成语义可对照。
 - **`filter`**：pgr `paf` 模块缺通用过滤子命令，`paf query`/`to-bed` 的

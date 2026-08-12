@@ -24,6 +24,8 @@ pub struct Contig {
 /// Layouts shorter than `min_contig_len` are dropped. A layout whose
 /// overlapping bases disagree with the already-stitched contig is an error
 /// (exact overlaps must agree); the contig index is reported for debugging.
+/// Multi-k redundancy is reduced by dropping contigs fully contained (as an
+/// exact substring, either strand) in a longer contig.
 pub fn consensus(
     unitigs: &[Unitig],
     layouts: &[Layout],
@@ -64,7 +66,32 @@ pub fn consensus(
             contigs.push(Contig { seq, coverage });
         }
     }
-    Ok(contigs)
+    Ok(dedup_contained(contigs))
+}
+
+/// Drops contigs fully contained in a longer kept contig (either strand).
+///
+/// Different k values produce near-duplicate contigs for the same genomic
+/// region; exact containment means the shorter one adds no sequence. Kept
+/// contigs stay sorted longest-first (stable).
+fn dedup_contained(mut contigs: Vec<Contig>) -> Vec<Contig> {
+    contigs.sort_by_key(|c| std::cmp::Reverse(c.seq.len()));
+    let mut kept: Vec<Contig> = Vec::with_capacity(contigs.len());
+    for c in contigs {
+        let rc = rev_comp(&c.seq).collect::<Vec<u8>>();
+        let contained = kept
+            .iter()
+            .any(|k| contains(&k.seq, &c.seq) || contains(&k.seq, &rc));
+        if !contained {
+            kept.push(c);
+        }
+    }
+    kept
+}
+
+/// Exact substring test.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 #[cfg(test)]
@@ -190,5 +217,84 @@ mod tests {
         // u1 prefix "CCCCGG"): the stitch must fail cleanly.
         let err = consensus(&us, &layouts, 1).unwrap_err();
         assert!(err.to_string().contains("disagree"), "{err}");
+    }
+
+    /// Contigs fully contained in a longer contig are dropped.
+    #[test]
+    fn dedups_contained_contigs() {
+        let us = unitigs(&["u0", "u1"], &["AAAACCCCGGGGTTTT", "CCCCGGGG"]);
+        let layouts = vec![
+            layout(vec![LayoutStep {
+                unitig: 0,
+                strand: '+',
+                q_start: 0,
+                q_end: 16,
+                overlap_len: 0,
+            }]),
+            layout(vec![LayoutStep {
+                unitig: 1,
+                strand: '+',
+                q_start: 0,
+                q_end: 8,
+                overlap_len: 0,
+            }]),
+        ];
+        let contigs = consensus(&us, &layouts, 1).unwrap();
+        assert_eq!(contigs.len(), 1);
+        assert_eq!(contigs[0].seq, b"AAAACCCCGGGGTTTT");
+    }
+
+    /// Reverse-complement containment also drops the shorter contig.
+    #[test]
+    fn dedups_rc_contained_contigs() {
+        let us = unitigs(
+            &["u0", "u1"],
+            &["AAAATACGTACGTTTT", "CGTACGTA"], // rc(CGTACGTA) = TACGTACG
+        );
+        let layouts = vec![
+            layout(vec![LayoutStep {
+                unitig: 0,
+                strand: '+',
+                q_start: 0,
+                q_end: 16,
+                overlap_len: 0,
+            }]),
+            layout(vec![LayoutStep {
+                unitig: 1,
+                strand: '+',
+                q_start: 0,
+                q_end: 8,
+                overlap_len: 0,
+            }]),
+        ];
+        let contigs = consensus(&us, &layouts, 1).unwrap();
+        assert_eq!(contigs.len(), 1);
+        assert_eq!(contigs[0].seq, b"AAAATACGTACGTTTT");
+    }
+
+    /// Distinct contigs are all kept, longest first.
+    #[test]
+    fn keeps_distinct_contigs() {
+        let us = unitigs(&["u0", "u1"], &["AAAACCCCGGGG", "TTTTCCCCAAAA"]);
+        let layouts = vec![
+            layout(vec![LayoutStep {
+                unitig: 0,
+                strand: '+',
+                q_start: 0,
+                q_end: 12,
+                overlap_len: 0,
+            }]),
+            layout(vec![LayoutStep {
+                unitig: 1,
+                strand: '+',
+                q_start: 0,
+                q_end: 12,
+                overlap_len: 0,
+            }]),
+        ];
+        let contigs = consensus(&us, &layouts, 1).unwrap();
+        assert_eq!(contigs.len(), 2);
+        assert_eq!(contigs[0].seq, b"AAAACCCCGGGG");
+        assert_eq!(contigs[1].seq, b"TTTTCCCCAAAA");
     }
 }

@@ -48,7 +48,7 @@ struct Edge {
 /// two best edges are near-equal and go to different targets is treated as
 /// a repeat junction and blocks extension. Output layouts are sorted by
 /// total length descending.
-pub fn build_layouts(unitigs: &[Unitig], overlaps: &[Overlap]) -> Vec<Layout> {
+pub fn build_layouts(unitigs: &[Unitig], overlaps: &[Overlap]) -> anyhow::Result<Vec<Layout>> {
     let n = unitigs.len();
     let mut ends: Vec<Vec<Edge>> = vec![Vec::new(); 2 * n];
     for ov in overlaps {
@@ -114,9 +114,18 @@ pub fn build_layouts(unitigs: &[Unitig], overlaps: &[Overlap]) -> Vec<Layout> {
         let mut pos = 0usize;
         for (i, step) in layout.steps.iter_mut().enumerate() {
             if i == 0 {
+                step.q_start = 0;
+                step.q_end = unitigs[step.unitig].seq.len();
                 pos = step.q_end;
             } else {
                 let prev_end = pos;
+                anyhow::ensure!(
+                    step.overlap_len <= prev_end,
+                    "layout {}: overlap {} exceeds the previous contig end {}",
+                    i,
+                    step.overlap_len,
+                    prev_end
+                );
                 step.q_start = prev_end - step.overlap_len;
                 step.q_end = step.q_start + unitigs[step.unitig].seq.len();
                 pos = step.q_end;
@@ -128,7 +137,7 @@ pub fn build_layouts(unitigs: &[Unitig], overlaps: &[Overlap]) -> Vec<Layout> {
         let lb: usize = b.steps.iter().map(|s| s.q_end - s.q_start).sum();
         lb.cmp(&la).then(a.steps[0].unitig.cmp(&b.steps[0].unitig))
     });
-    layouts
+    Ok(layouts)
 }
 
 /// Extends the layout from `cur` through its free end `cur_end`.
@@ -168,16 +177,22 @@ fn extend(
         } else {
             cur_strand
         };
-        let step = LayoutStep {
+        let mut step = LayoutStep {
             unitig: e.to,
             strand,
             q_start: 0,
             q_end: 0,
-            overlap_len: e.length,
+            overlap_len: 0,
         };
         if right {
+            step.overlap_len = e.length;
             steps.push(step);
         } else {
+            // The new leftmost step has no previous overlap; the former
+            // first step now overlaps it by `e.length`.
+            if let Some(first) = steps.first_mut() {
+                first.overlap_len = e.length;
+            }
             steps.insert(0, step);
         }
         cur = e.to;
@@ -279,7 +294,7 @@ mod tests {
             &["u0", "u1", "u2"],
             &["AAAAAAAAACGTACGT", "ACGTACGTCCCCCCCC", "CCCCCCCCGGGGGGGG"],
         );
-        let layouts = build_layouts(&us, &overlaps(&us, 5, 8));
+        let layouts = build_layouts(&us, &overlaps(&us, 5, 8)).unwrap();
         assert_eq!(layouts.len(), 1, "one linear chain");
         let l = &layouts[0];
         assert_eq!(l.steps.len(), 3);
@@ -302,7 +317,7 @@ mod tests {
         // rc(u1) = "ACGTAC" + "CCCC" so u1 = rc("ACGTACCCCC").
         let u1 = String::from_utf8(rev_comp(b"ACGTACCCCC").collect()).unwrap();
         let us = unitigs(&["u0", "u1"], &[u0, &u1]);
-        let layouts = build_layouts(&us, &overlaps(&us, 5, 6));
+        let layouts = build_layouts(&us, &overlaps(&us, 5, 6)).unwrap();
         assert_eq!(layouts.len(), 1, "one reverse chain");
         let l = &layouts[0];
         assert_eq!(l.steps.len(), 2);
@@ -322,7 +337,7 @@ mod tests {
             &["u0", "u1", "u2"],
             &["AAAAACGTACGT", "ACGTACGTCCCC", "ACGTACGTGGGG"],
         );
-        let layouts = build_layouts(&us, &overlaps(&us, 5, 8));
+        let layouts = build_layouts(&us, &overlaps(&us, 5, 8)).unwrap();
         assert_eq!(layouts.len(), 3, "no chain through the branch");
         assert!(layouts.iter().all(|l| l.steps.len() == 1));
     }
@@ -347,7 +362,7 @@ mod tests {
         assert!(ovs
             .iter()
             .any(|o| o.qid == 2 && o.tid == 1 && o.length == 12));
-        let layouts = build_layouts(&us, &ovs);
+        let layouts = build_layouts(&us, &ovs).unwrap();
         // u2 (16 bp) joins u1; u0 (12 bp) cannot join u1 and stays alone.
         assert_eq!(layouts.len(), 2);
         let big = &layouts[0];
@@ -369,7 +384,55 @@ mod tests {
         assert!(ovs
             .iter()
             .any(|o| o.otype == super::super::overlap::OverlapType::Contain));
-        let layouts = build_layouts(&us, &ovs);
+        let layouts = build_layouts(&us, &ovs).unwrap();
         assert!(layouts.iter().all(|l| l.steps.len() == 1));
+    }
+
+    /// The seed is the longest unitig and extends in both directions; the
+    /// prepended (left) step's coordinates must be filled from its own
+    /// length, not the seed's placeholder (regression: overflow panic).
+    #[test]
+    fn seed_extends_both_directions() {
+        let us = unitigs(
+            &["u0", "u1", "u2"],
+            &[
+                "AAAAACGTACGT",     // suffix 8 = ACGTACGT
+                "ACGTACGTCCCCCCCC", // prefix 8 = ACGTACGT, suffix 8 = CCCCCCCC
+                "CCCCCCCCGGGGGGGG", // prefix 8 = CCCCCCCC
+            ],
+        );
+        let layouts = build_layouts(&us, &overlaps(&us, 5, 8)).unwrap();
+        assert_eq!(layouts.len(), 1);
+        let l = &layouts[0];
+        assert_eq!(l.steps.len(), 3);
+        assert_eq!(l.steps[0].unitig, 0);
+        assert_eq!((l.steps[0].q_start, l.steps[0].q_end), (0, 12));
+        assert_eq!(l.steps[0].overlap_len, 0);
+        assert_eq!(l.steps[1].unitig, 1);
+        assert_eq!((l.steps[1].q_start, l.steps[1].q_end), (4, 20));
+        assert_eq!(l.steps[1].overlap_len, 8);
+        assert_eq!(l.steps[2].unitig, 2);
+        assert_eq!((l.steps[2].q_start, l.steps[2].q_end), (12, 28));
+        assert_eq!(l.steps[2].overlap_len, 8);
+    }
+
+    /// An overlap longer than the previous step (malformed user PAF) is a
+    /// friendly error, not a panic (zero-panic policy).
+    #[test]
+    fn inconsistent_overlap_is_error() {
+        let us = unitigs(&["u0", "u1"], &["AAAACCCC", "CCCCGGGG"]);
+        let ovs = vec![Overlap {
+            qid: 0,
+            tid: 1,
+            strand: '+',
+            q_start: 0,
+            q_end: 8,
+            t_start: 0,
+            t_end: 8,
+            length: 20,
+            otype: crate::libs::olc::overlap::OverlapType::Dovetail,
+        }];
+        let err = build_layouts(&us, &ovs).unwrap_err();
+        assert!(err.to_string().contains("exceeds"), "{err}");
     }
 }

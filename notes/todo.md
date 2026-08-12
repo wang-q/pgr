@@ -19,6 +19,17 @@
 `d2c422a`（k-mer 统一 FastK 字节格式 + 长 k）。
 
 **本会话成果**：
+- **OLC 真实数据验证（Lambda）+ 两个 v1 改进（2026-08-12）**：用
+  `tests/bbtools/Lambda`（40× 原始 reads）验证 `asm olc`——抓出并修复
+  左向延伸坐标下溢 bug（真实数据触发，合成数据漏测）；参考菌株差异
+  （reads 与 NC_001416 不同源）修正"未贴回≠嵌合"判据；多 k 冗余 2.4×
+  经 contain 去重降到 1.22×（N50 3409→6537）。详见 `design/olc.md` §12/§13。
+- **`pgr paf coverage` 新增（2026-08-12）**：PAF `cg:Z` → 每 target
+  恒定深度段（TSV），补 wgatools 对照的 pafcov 缺口；`libs/paf/cov.rs`
+  扫描线 + 3 单测 + 2 集成测试。
+- **参考笔记索引一致性测试**（2026-08-12）：`tests/cli_notes_consistency.rs`
+  强制 `notes/references/*.md` ↔ `project-understanding.md` §11 一一对应
+  （hv.md 漏索引教训）；§11 补齐缺失的 15 行。
 - **OLC 组装落地（2026-08-12，新）**：`pgr asm ovlp`/`layout`/`cns`/
   `olc` 四命令 + `libs/olc/`（overlap/layout/consensus），设计
   `design/olc.md`；精确 seed-verify overlap、互惠 best-edge greedy layout、
@@ -37,12 +48,14 @@
 - k-mer 只保留一套，以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做
   定长对象键）——**已落地（M1–M5 完成）**；存储 = FastK 式连续打包；
   u128 仅剩算法中间量（pgi 构建滚动、qcheck 判定、FastGA 移植位运算）
-- OLC 不急，挂起；多 k unitig OLC 挂账待决（见 §3，等真实宏基因组数据）
+- OLC 已落地（见 §1/§3）；v1 覆盖度 repeat breaking 待真实宏基因组数据调参
 - 气泡处理不做（明确不做区）
 
-**下一步（按优先级）**：1) 提交未提交变更（pgi 分组/pack + 笔记）；
-2) pgi build 剩余差距（collect/sort，1.62× vs GIXmake）或转向
-repeat masking 标定（等真核数据）/ paf 查询层扩展；3) OLC 挂账。
+**下一步（按优先级）**：1) 提交本会话变更（OLC 四命令 + paf coverage +
+验证修复 + 笔记）；2) pgi build 剩余差距（collect/sort，1.62× vs
+GIXmake）或转向 repeat masking 标定（等真核数据）/ paf 查询层扩展
+（`--min-tree-coverage`/`--end-trim`）；3) OLC v1 的覆盖度 repeat
+breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
 
 **参考源码（本地，gitignore 参考目录）**：`FASTK-master/`（长 k 第一参考）、
 `FASTGA-main/`（pgi 参考，k-mer 与 FastK 同套）、`canu-2.3/`、`wgs-8.3rc2/`、
@@ -181,6 +194,10 @@ repeat masking 标定（等真核数据）/ paf 查询层扩展；3) OLC 挂账�
       `asm-map.md`）；待用真实 UT.fasta + reads 与 bbmap 输出对照 mapped
       比例与覆盖度（`sam to-rg` + `rg coverage`，本机 Java 配对读 gz 失败，
       黑盒对照暂缓）。
+- [ ] **OLC 宏基因组/长读真实数据验证**：Lambda（Illumina 108bp）已验证
+      （`design/olc.md` §12，含 40× 原始与 9× 纠错两种路径）；长读
+      （HiFi/ONT）与宏基因组数据到位后调 v1 参数（overlap 错配容忍、
+      repeat breaking 覆盖度阈值、多 k 反馈）。
 - [ ] chain 算法待验证（低优先）：KD-tree 已实现并用于 `psl chain`
       （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
       （`libs/ds/crossover.rs`）——两者的真实数据验证待做；KD-tree 用于
