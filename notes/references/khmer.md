@@ -3,7 +3,7 @@
 > 2026-08 整理，纯源码分析（`khmer-master/`，2019-03-13 快照，3.0/oxli 重构
 > 后的 master 未发布版）。khmer 是 DIB Lab 的 k-mer 工具集，代表作品是
 > **数字归一化（diginorm）**：用 Count-Min Sketch 计数表做流式 read 归一化。
-> 对应 pgr 需求：为 `pgr fq norm` 的"大数据量近似哈希路径"找一个现成的
+> 对应需求：为 anchr `fq norm` 的"大数据量近似哈希路径"找一个现成的
 > 参考实现（此前只调研过 bbnorm `bits=16`/prefilter，没有源码级对照）。
 
 ## 1. 概况
@@ -217,9 +217,9 @@ if not all(read.median_at_least(cutoff) for read in batch):
    **告诫**：该同族关系**仅对 2-bit/graph 类成立**；khmer 的 murmur 表类
    （`Counttable` 等）canonical 走 `f ^ r`，与 pgr `.pkt` 的字典序取小
    **不是同一逻辑**，若拿 murmur 类表作对照需单独核对。
-6. **当前 pgr 状态核实（2026-08 审计）**：`pgr fq norm` 现走**精确
+6. **当前状态核实（2026-08 审计）**：anchr `fq norm` 现走**精确
    canonical KmerTable** + bbnorm 逐 read 判定（truedepth/depthAL 分位数
-   + toss），计数表非近似（见 `notes/audit/audit-fq.md`、
+   + toss），计数表非近似（见 anchr 侧 `audit-fq.md`、
    anchr 侧 `anchr-trim-replace.md` §M6）；`pgr kmer table` 走精确
    `.pkt` 排序表。因此 khmer 的 CMS/median 判定只作为"未来若新增近似路径"
    的参考，当前精确路线下不直接落地——与 §9 结论一致。

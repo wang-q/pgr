@@ -1,12 +1,12 @@
 # pgr fa / 2bit 命令族代码审核记录（2026-08-05）
 
-> 原 `audit-fa-fq-2bit.md`。`fq` 部分已拆分至独立记录 `audit-fq.md`，
-> 本文件现仅覆盖 fa / 2bit。
+> 原 `audit-fa-fq-2bit.md`。`fq` 部分已拆分至独立记录 `audit-fq.md`
+> （已随 fq 命令组迁到 anchr），本文件现仅覆盖 fa / 2bit。
 
 对 `pgr fa`（18 个子命令）与 `pgr 2bit`（5 个子命令）命令族及相关库文件
 （`libs/fmt/fa`、`libs/fmt/twobit`、`libs/translate`、`libs/io`、
 `libs/ds/range`、`libs/nt`、`libs/loc`、`libs/fasta/{chunk,stat,dedup,filter}`）
-和全部测试/文档进行审核。`pgr fq` 命令族已拆分为独立记录 `audit-fq.md`。
+和全部测试/文档进行审核。`fq` 命令族审计已随迁 anchr（`audit-fq.md`）。
 以下仅保留有借鉴意义的结论；验证过程已精简。
 
 ## 与外部参考实现的语义一致性核对

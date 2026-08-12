@@ -604,12 +604,12 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
 ### 11.2 实际场景对照（为什么重要）
 
 * anchr `unitigs.tera.sh`：tadpole `k ∈ opt.kmer`（如 "31 81"）→
-  `pgr asm contig`/`asm unitig` 已覆盖（多字 Kmer，k=81 OK）。
+  anchr `asm contig`/`unitig` 已覆盖（多字 Kmer，k=81 OK）。
 * anchr `2_fastk.tera.sh`：`FastK -t1 -k<21|51|81>` → **k=81 超出
   `pgr kmer table` 当前能力（u128 上限 64）**，是已知缺口（k=21/51
   没问题）。若将来替代 2_fastk 需要 k=81，得给 `libs/kmer` 扩表示
   （参考 FastK 字节打包，或 u128 双字），当前未做。
-* `pgr asm map`/`pgr pgi`：默认 31/40，均 ≤64，anchors/GIX 场景无缺口。
+* anchr `asm map`/`pgr pgi`：默认 31/40，均 ≤64，anchors/GIX 场景无缺口。
 
 ## 12. 长 k-mer 落地：统一到 FastK 表示（2026-08-12 修改版，**已实施**）
 

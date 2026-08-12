@@ -347,7 +347,7 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   坐标质量过滤（trim `--tile`，默认关）与光学去重同源，需坐标解析且无
   真实坐标数据可验证；`design/anchr-trim-replace.md` §3/§4 已记录。
   另注：8_spades/8_mr_spades 的 `repair.sh`（hnsm filter 管道）由
-  `pgr fq split --repair` 覆盖，模板改写时验证 stdin/interleaved 形态。
+  anchr `fq split --repair` 覆盖，模板改写时验证 stdin/interleaved 形态。
 - **asm contig 计数表 radix 化：已评估不做**（2026-08-11 基准：Lambda
   20k 下 radix 比 `cmp_bases` 比较排序慢，几十万 k-mer 规模不划算；
   数百万级再评估，见 `fq-assemble.md` §7）。

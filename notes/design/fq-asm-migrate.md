@@ -341,5 +341,7 @@ chainnet）、`biser`（SD）、`cactus`/`cactus_lastz`（泛基因组）、`fas
   条目（8.1/8.2/8.3），保留 §7 本迁移方案档案；
 - `todo.md` 中引用迁走文档的条目改指向 anchr（如 anchr 模板替换的 golden
   对照流程引用 `anchr-trim-replace.md` → 在 anchr 侧）；
-- 基准（benchmarks/）均为 pgr 通用（kmer-throughput 属 kmer 命令，留）；
+- 基准：`benchmarks/bbtools-vs-pgr.md`（fq 专属 CLI 对照）随迁 anchr
+  （`notes/benchmarks/bbtools-vs-anchr.md`），pgr 其余基准通用
+  （kmer-throughput 属 kmer 命令，留）；
   `fq-asm-migrate.md` 本身作为迁移档案留在 pgr，迁移完成后归档。
