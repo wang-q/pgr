@@ -77,27 +77,27 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   → dev-deps，-0.48MB 实测）、probminhash/isal-rs（零引用）；生产依赖全量
   审计无死依赖；`sqlite3-ext-vtab` bundled 特性为 sqlite-vector-rs 基准
   必需（保留）→ 详见 Cargo.toml 注释与 §0。
-- **asm 命令族 + SAM 工具**（2026-08-11/12 提交）：`pgr asm`
+- **asm 命令族 + SAM 工具**（2026-08-11/12 提交，asm 已迁 anchr）：`pgr asm`
   contig/unitig/map（含 `--min-count-seed`、`--links`/`--gfa`、
   `--paired`/`--max-reads`）、`pgr sam` ihist/to-rg（noodles-sam 0.81
   解析）；basecov 移出 map（SAM 派生）；map 流式分块 + 头对称；contig
   计数并行 + 排序快照（576→157 ms）；写出端手写（refname 全头字段与
   noodles 严格字符集冲突）→ anchr 侧 `asm-map.md`、`fq-assemble.md`、
   `design/kmer.md` §11。
-- **fq 纠错命令拆分**（2026-08-11 提交）：`fq ecc`→`ec-kmer`、
+- **fq 纠错命令拆分**（2026-08-11 提交，已迁 anchr）：`fq ecc`→`ec-kmer`、
   `merge --ecco`→`ec-overlap`，golden 对照逐字节一致 → anchr 侧
   `anchr-merge-replace.md`。
-- **trim 8 步 M0-M8 全部移植**（fq sample/clump/split/clean/filter/norm/
+- **trim 8 步 M0-M8 全部移植**（2026-08，已迁 anchr：fq sample/clump/split/clean/filter/norm/
   trim-adapter/kmer hist），与 BBTools 39.38 逐字节一致 →
   anchr 侧 `anchr-trim-replace.md`。
-- **anchr merge 流程 7 步全部移植**（fq merge/ec-kmer/ec-overlap/extend/
+- **anchr merge 流程 7 步全部移植**（2026-08，已迁 anchr：fq merge/ec-kmer/ec-overlap/extend/
   assemble + split --repair + s-filter），golden/统计对照完成；clumpify ecc
   按计划跳过 → anchr 侧 `anchr-merge-replace.md`、`fq-assemble.md`。
 - **`pgr kmer` 七子命令全量交付**（2026-08-09）：table/profile/hist/gc/
   qhist/qcheck/gsize，含 GenomeScope 2.0 原生迁移 `--model`、plot
   heat/spectra 拆分、`.pkt`/`.pkp`/`.hist` 三格式定稿，测试 1544 全绿
   → `design/kmer.md` §10。
-- **fq 系列**（2026-08）：`trim-qual`（sickle 替代）、`range`（FASTQ
+- **fq 系列**（2026-08，已迁 anchr）：`trim-qual`（sickle 替代）、`range`（FASTQ
   `.loc` 索引一期 + 双端二期）、BGZF 写侧基准、FAFQ reader 笔记 →
   anchr 侧 `anchr-trim-replace.md`（含 trim-qual）、`fq-index.md`、
   `design/seq-reader.md`。
@@ -194,36 +194,10 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 - **`paf query --end-trim` 推迟**：需 per-interval 修剪 CIGAR 两端，与当前
   "区间整体投影"的输出模型不兼容，待序列输出引入时一并处理
   （来源：`paf-pangenome.md` §6.4）。
-- **norm 精确 vs 近似定稿**（anchr 侧 `anchr-trim-replace.md` §4.8 未定）：pgr 走
-  精确表 + 外部桶（1TB 答案）；bbnorm bits=16 近似表结果依赖 -Xmx。
-  差异 = 定义差异不是 bug。
-- **anchr 模板替换**（用户自己处理，命令已齐）：trim.era.sh 的 bbtools
-  调用换成 pgr 命令 + 管道串联（原语路线，pgr 不内置 pl trim）：
-  clumpify dedupe → `fq clump --dedupe`；bbduk trim/filter → `fq clean`/
-  `fq filter`；bbduk 纯 qtrim（merge）→ `fq trim-adapter --no-ktrim
-  --no-tbo --no-tpe --max-ns=-1 --force-trim-mod 0 --trim-quality <qual>
-  --minlen <len>`；reformat sample → `fq sample`；kmercountexact →
-  `kmer hist`；repair → `fq split --repair`（含 8_spades/8_mr_spades 的
-  hnsm 管道形态）；tadpole contig → `asm contig`（unitigs/2_insert_size，
-  含 0_cleanup 文件名同步）；anchors bbwrap → `asm map` + `sam to-rg` +
-  `rg coverage`；2_insert_size bbmap ×2 → `asm map --paired --max-reads
-  {{opt.reads}}` + `sam ihist`（reformat ihist 替代，Picard 保留外部；
-  完美匹配对足以估计插入长度，见 anchr 侧 `asm-map.md` §2.6）。已知偏差：contig
-  的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
-  **边界划分已定稿（2026-08-12）**：anchr 留"流程 + 策略"（template/
-  anchors/quorum/mergeread/ena/dep + 0–9 模板），通用原语由 pgr 覆盖
-  （asm 系列/paf coverage/paf graph/fq 系列，大部分已就位），DALIGNER 生态
-  （dazzname/show2ovlp/paf2ovlp/restrict + 7_glue/7_fill 的 App-Dazz
-  依赖）退役——详见 `references/anchr.md`。7_glue/7_fill 的
-  `dazz group/layout` 替换评估已做（2026-08-12）：分层策略逻辑留在
-  anchr（Rust 重写替换 Perl App-Dazz），pgr 只供底层原语（asm ovlp/
-  paf coverage/paf graph），pgr 侧无需新增命令——详见 `references/anchr.md`
-  §5。
-- **多 k unitig 的 OLC 拼接**：**已实现**（2026-08-12，anchr `asm olc`
-  等四命令，anchr 侧 `olc.md`，承接 anchr 侧 `canu.md` §8）。剩余待真实
-  宏基因组数据验证：overlap 是否允许少量错配、不同 k unitig 冗余去重、
-  repeat breaking 覆盖度证据阈值（Canu 6/15 的单元化版本）、列投票
-  consensus（v1）。
+- **anchr 侧待办（已移交 anchr `notes/todo.md`）**：anchr 模板替换
+  （trim.era.sh → anchr fq/asm 命令链）、fq norm 精确 vs 近似定稿、
+  asm olc 参数验证（overlap 错配容忍、多 k 冗余去重、repeat breaking
+  阈值、列投票 consensus v1）、OLC 宏基因组/长读真实数据验证。
 
 ## 4. 待验证 / 等数据或场景到位
 
@@ -260,28 +234,24 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
       `benchmarks/bench-scale-and-pbit.md` #8b）；pbit **多参考**样本验证待做
       （高分歧已在 #14g 实测：E. albertii ANI≈90%，delta/gzip 78–81%）；
       §7.4 #10/#9/#14/#19 状态见 `genome-nn-query.md`。
-- [x] **pgr asm unitig 真实数据验证**（2026-08-12）：MG1655 1M 纠错 reads
+- [x] **pgr asm unitig 真实数据验证**（2026-08-12，已迁 anchr）：MG1655 1M 纠错 reads
       （`/home/wangq/data/anchr/mg1655/2_illumina/merge/pe.cor.fa.gz` 采样）
       × k=31，与 `/home/wangq/.cbp/bin/bcalm` 对照——**unitig 序列 100%
       一致**（2403/2403 canonical 归一后逐条相同）。→ anchr 侧
       `fq-assemble.md` §8.1。
-- [x] **pgr asm unitig L: 边/GFA 真实对照**（2026-08-12）：无向边集 pgr
+- [x] **pgr asm unitig L: 边/GFA 真实对照**（2026-08-12，已迁 anchr）：无向边集 pgr
       3801 vs bcalm 3331，共同 2577（bcalm 的 77%）、pgr 多 1224/缺 754
       ——bcalm 边 = canonical 端点共享图（5019）的子集，过滤条件不在
       README/本地源码；尝试按 README 语义重写后边集未对齐且回归真实
       边，已回退。**结论：保持简化语义，逐边对齐需 bcalm 链接实现
       源码，暂不立项**（anchr 侧 `fq-assemble.md` §8.1 已记录）。
-- [x] **pgr asm map 真实数据验证（自一致性，2026-08-12）**：MG1655 参考 ×
+- [x] **pgr asm map 真实数据验证（自一致性，2026-08-12，已迁 anchr）**：MG1655 参考 ×
       1M 纠错 reads（anchr `pe.cor.fa` 采样）——完美贴回 505,305/1M
       （50.5%，539,045 hits，1.5% 多映射）；**mapped reads 坐标抽查
       10/10 与参考区间逐碱基一致**；mapped 子集平均覆盖 38.4×。50%
       贴回率是设计使然（完美匹配拒绝任何带错 reads；anchr bwa 容错映射
       mosdepth 271× 佐证 reads 来自该参考）。⚠️ bbmap 黑盒对照仍暂缓
       （本机 Java 配对读 gz 失败）→ anchr 侧 `asm-map.md` §4。
-- [ ] **OLC 宏基因组/长读真实数据验证**：Lambda（Illumina 108bp）已验证
-      （anchr 侧 `olc.md` §12，含 40× 原始与 9× 纠错两种路径）；长读
-      （HiFi/ONT）与宏基因组数据到位后调 v1 参数（overlap 错配容忍、
-      repeat breaking 覆盖度阈值、多 k 反馈）。
 - [x] chain 算法验证（2026-08-12）：**KD-tree 已由 UCSC 管线字节级验证
       覆盖**——`verify-ucsc-pipeline.sh:71` 跑 `pgr psl chain`（KD-tree
       链式化，`libs/chain/connect.rs`）并与 axtChain 逐字节一致（E. coli
@@ -322,7 +292,8 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 - Gap_Improver、完整 LCP、`.1aln`、trace points、ALNchain、GDB/GIX 分片
   （`design/pgi-align.md` §6）；多 mask union（§7.5）；`-S` 对称 adaptamer
   （§7.4.1）；hybrid 逻辑留 `cmd_pgr/`（commit `d5281bc`，有意为之）。
-- **bbnorm 深度分箱：暂不做**（`anchr-trim-replace.md` §4.9，未定、暂不实现）。
+- **bbnorm 深度分箱：暂不做**（anchr 侧 `anchr-trim-replace.md` §4.9，
+  未定、暂不实现；fq norm 已迁 anchr）。
 - sd 边界扩展（BISER MAX_EXTEND）：已评估不做（`design/sd.md` §4.8/§4.9）。
 - `dist mash` murmur3 SIMD：已评估不做（1.3× 差距可接受，风险大于收益）。
 - 命令树 dispatch 宏简化：已评估不做（用户裁定——宏抹消对注册/分发代码
@@ -341,11 +312,11 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 - **gzip 并行解压 / zlib-ng / libdeflate：明确不做**（2026-08-09 用户裁定——
   程序常被 shell 包裹并行执行，pgr 侧 `fa` 保持单线程；inflate 内部已是
   zlib-rs AVX2，见 `benchmarks/bench-profile-hotspots.md` 场景 1）。
-- `fq clump` 多参数 golden 验证：**不做**（体积控制，见
-  `design/anchr-trim-replace.md` §4.4 M1 注）。
-- **filterbytile.sh / 光学去重：不做**（2026-08-10/12）——flowcell tile
+- `fq clump` 多参数 golden 验证：**不做**（体积控制，见 anchr 侧
+  `anchr-trim-replace.md` §4.4 M1 注；已迁 anchr）。
+- **filterbytile.sh / 光学去重：不做**（2026-08-10/12，已迁 anchr）——flowcell tile
   坐标质量过滤（trim `--tile`，默认关）与光学去重同源，需坐标解析且无
-  真实坐标数据可验证；`design/anchr-trim-replace.md` §3/§4 已记录。
+  真实坐标数据可验证；anchr 侧 `anchr-trim-replace.md` §3/§4 已记录。
   另注：8_spades/8_mr_spades 的 `repair.sh`（hnsm filter 管道）由
   anchr `fq split --repair` 覆盖，模板改写时验证 stdin/interleaved 形态。
 - **asm contig 计数表 radix 化：已评估不做**（2026-08-11 基准：Lambda

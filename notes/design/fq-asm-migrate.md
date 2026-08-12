@@ -157,6 +157,10 @@ docs），依赖 pgr crate 的基础模块：
 - 参考笔记随迁：references 9 个（bcalm/canu/celera/cutadapt/fairy/
   metaMDBG/quorum/sickle/skesa）+ design 6 个（anchr-trim/merge-replace、
   fq-assemble/asm-map/fq-index/olc）从 pgr 移除；
+- todo 条目移交：pgr `notes/todo.md` 中 anchr 侧待办已移交 anchr todo
+  （anchr 模板替换、fq norm 精确 vs 近似定稿、asm olc 参数验证、OLC
+  宏基因组/长读验证），pgr 保留指针条目；fq/asm 已完成记录与"明确不做"
+  决策标注"已迁 anchr"；
 - 验证：`cargo test` 全绿，`rg libs::(asm|olc|map)|cmd_pgr::(fq|asm)`
   无残留，fmt/clippy 干净；阶段 1 pub 化基础层（fmt/fq::qual/pairs/kmer/
   paf/io/ds/loc/sys）保留供 anchr 依赖。
