@@ -287,6 +287,72 @@ impl Overlap {
     }
 }
 
+/// Drops unitigs fully contained in a longer (or equal-length, lower-id)
+/// unitig and remaps the surviving ids.
+///
+/// Containment is read from `ov:A:C` overlaps that cover the whole shorter
+/// sequence. A contained unitig's sequence and every exact overlap it has
+/// are also present in its container, so no sequence content is lost; the
+/// overlap graph shrinks and greedy path selection changes (multi-k
+/// redundancy is the main thing that used to break chains — Lambda: 90 ->
+/// 22 unitigs, 16 fragments -> 1 full-genome contig containing all 16).
+pub fn filter_contained(unitigs: &[Unitig], overlaps: &[Overlap]) -> (Vec<Unitig>, Vec<Overlap>) {
+    let n = unitigs.len();
+    let mut contained = vec![false; n];
+    for ov in overlaps {
+        if ov.otype != OverlapType::Contain {
+            continue;
+        }
+        let qlen = unitigs[ov.qid].seq.len();
+        let tlen = unitigs[ov.tid].seq.len();
+        if ov.q_start == 0 && ov.q_end == qlen {
+            mark_contained(&mut contained, ov.qid, ov.tid, qlen, tlen);
+        }
+        if ov.t_start == 0 && ov.t_end == tlen {
+            mark_contained(&mut contained, ov.tid, ov.qid, tlen, qlen);
+        }
+    }
+
+    let mut new_id = vec![usize::MAX; n];
+    let mut filtered = Vec::with_capacity(n);
+    for (i, u) in unitigs.iter().enumerate() {
+        if !contained[i] {
+            new_id[i] = filtered.len();
+            filtered.push(Unitig {
+                name: u.name.clone(),
+                seq: u.seq.clone(),
+            });
+        }
+    }
+    let filtered_overlaps = overlaps
+        .iter()
+        .filter_map(|ov| {
+            let qid = new_id[ov.qid];
+            let tid = new_id[ov.tid];
+            (qid != usize::MAX && tid != usize::MAX).then_some(Overlap {
+                qid,
+                tid,
+                strand: ov.strand,
+                q_start: ov.q_start,
+                q_end: ov.q_end,
+                t_start: ov.t_start,
+                t_end: ov.t_end,
+                length: ov.length,
+                otype: ov.otype,
+            })
+        })
+        .collect();
+    (filtered, filtered_overlaps)
+}
+
+/// Marks `c` as contained in `d` when `d` is longer (or equal with a lower
+/// id, so identical duplicates keep the first one).
+fn mark_contained(contained: &mut [bool], c: usize, d: usize, clen: usize, dlen: usize) {
+    if !contained[c] && (dlen > clen || (dlen == clen && d < c)) {
+        contained[c] = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +468,33 @@ mod tests {
         assert_eq!(ov.t_start, 0);
         assert_eq!(ov.t_end, 20);
         assert_eq!(ov.otype, OverlapType::Contain);
+    }
+
+    /// Contained unitigs are dropped, ids remapped, overlaps filtered.
+    #[test]
+    fn filter_contained_drops_and_remaps() {
+        let us = unitigs(
+            &["u0", "u1", "u2"],
+            &["AAAACCCCGGGGTTTT", "CCCCGGGG", "AAAACCCCAAAA"],
+        );
+        let ovs = find(&us, 5, 8);
+        let (fu, fo) = filter_contained(&us, &ovs);
+        assert_eq!(fu.len(), 2);
+        assert_eq!(fu[0].name, "u0");
+        assert_eq!(fu[1].name, "u2");
+        assert!(fo.iter().all(|o| o.qid < 2 && o.tid < 2));
+        assert!(fo.iter().all(|o| o.otype != OverlapType::Contain));
+    }
+
+    /// Identical unitigs: the lower id wins.
+    #[test]
+    fn filter_contained_equal_duplicates() {
+        let seq = "AAAACCCCGGGGTTTT";
+        let us = unitigs(&["a", "b", "c"], &[seq, seq, "TTTTGGGGCCCCAAAA"]);
+        let ovs = find(&us, 5, 8);
+        let (fu, _) = filter_contained(&us, &ovs);
+        assert_eq!(fu.len(), 2);
+        assert_eq!(fu[0].name, "a");
+        assert_eq!(fu[1].name, "c");
     }
 }

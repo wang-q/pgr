@@ -304,8 +304,14 @@ overlap（第 0 步恒 0）。同 contig 内区间连续（`q_end[i] == q_start[
 
 ## 13. v1 待办（真实数据驱动）
 
-* **多 k 冗余消减**：contain 去重（输出级：丢弃完全包含于更长 contig 的
-  contig；unitig 级：布局前剔除被更长 unitig 包含的 unitig）。
+* **多 k 冗余消减：已完成（2026-08-12）**——两级：
+  * 输出级：consensus 丢弃完全包含于更长 contig 的 contig（含 rc）；
+  * unitig 级（`filter_contained`，布局前）：剔除被更长 unitig 完全包含
+    的 unitig。Lambda 实测：unitigs 90→22（-76%），overlaps 386→50，
+    layout 从 16 条碎片**合并为 1 条全长基因组 contig**（48,387 bp ≈
+    48,502），16 条旧 contig 全部是它的子串（内容零丢失）。注意：
+    过滤会改变 greedy 路径选择（这正是目的——多 k 冗余曾打断互惠链），
+    "内容保留"而非"布局不变"。
 * **repeat breaking 覆盖度证据**：桥接 reads 回放（`asm map` + `sam
   to-rg` + `rg coverage`），阈值参考 SKESA fraction / metaMDBG 语义；
   需 reads 侧验证口径（参考菌株不匹配时不能只用贴回率）。

@@ -369,3 +369,92 @@ fn command_asm_olc_empty_unitigs_friendly_error() {
         "expected friendly error, got: {stderr}"
     );
 }
+
+/// The driver (with unitig-level contain pre-filtering) and the explicit
+/// stage pipeline (unitig -> ovlp -> layout -> cns, unfiltered) produce the
+/// same contig sequences on unambiguous graphs (regression guard; on real
+/// data the filtered driver additionally merges redundant paths).
+#[test]
+fn command_asm_olc_matches_stage_pipeline() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let mut rng = Rng(0xABCD_EF01_2345_6789);
+    let bases = *b"ACGT";
+    let genome: Vec<u8> = (0..2400).map(|_| bases[rng.below(4)]).collect();
+    let read_len = 250usize;
+    let mut fa = String::new();
+    for i in 0..480 {
+        let start = rng.below(genome.len() - read_len + 1);
+        let mut r = genome[start..start + read_len].to_vec();
+        if rng.below(2) == 1 {
+            r = rev_comp(&r);
+        }
+        fa.push_str(&format!(">r{i}\n{}\n", String::from_utf8(r).unwrap()));
+    }
+    let reads = out_dir.path().join("reads.fa");
+    fs::write(&reads, fa).unwrap();
+
+    // Driver.
+    let c1 = out_dir.path().join("c1.fa");
+    PgrCmd::new()
+        .args(&[
+            "asm",
+            "olc",
+            reads.to_str().unwrap(),
+            "-o",
+            c1.to_str().unwrap(),
+            "--kmer",
+            "21,51,81",
+            "--min-contig-len",
+            "100",
+        ])
+        .assert()
+        .success();
+    let mut seqs1 = parse_fa_records(&fs::read(&c1).unwrap());
+
+    // Stage pipeline.
+    let mut unitigs = Vec::new();
+    for k in ["21", "51", "81"] {
+        let u = out_dir.path().join(format!("u{k}.fa"));
+        PgrCmd::new()
+            .args(&[
+                "asm",
+                "unitig",
+                reads.to_str().unwrap(),
+                "-o",
+                u.to_str().unwrap(),
+                "--kmer",
+                k,
+                "--min-contig-len",
+                "100",
+            ])
+            .assert()
+            .success();
+        unitigs.push(u);
+    }
+    let ovlp = out_dir.path().join("ovlp.paf");
+    let layout = out_dir.path().join("layout.tsv");
+    let mut args = vec!["asm", "ovlp"];
+    for u in &unitigs {
+        args.push(u.to_str().unwrap());
+    }
+    args.extend(["-o", ovlp.to_str().unwrap()]);
+    PgrCmd::new().args(&args).assert().success();
+    let mut args = vec!["asm", "layout", ovlp.to_str().unwrap()];
+    for u in &unitigs {
+        args.push(u.to_str().unwrap());
+    }
+    args.extend(["-o", layout.to_str().unwrap()]);
+    PgrCmd::new().args(&args).assert().success();
+    let c2 = out_dir.path().join("c2.fa");
+    let mut args = vec!["asm", "cns", layout.to_str().unwrap()];
+    for u in &unitigs {
+        args.push(u.to_str().unwrap());
+    }
+    args.extend(["-o", c2.to_str().unwrap(), "--min-contig-len", "100"]);
+    PgrCmd::new().args(&args).assert().success();
+    let mut seqs2 = parse_fa_records(&fs::read(&c2).unwrap());
+
+    seqs1.sort();
+    seqs2.sort();
+    assert_eq!(seqs1, seqs2, "driver and stage pipeline contigs differ");
+}

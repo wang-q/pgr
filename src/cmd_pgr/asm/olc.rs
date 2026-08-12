@@ -3,7 +3,7 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::asm::assemble::{assemble_unitigs_buf, AssembleOptions};
 use pgr::libs::olc::consensus::consensus;
 use pgr::libs::olc::layout::build_layouts;
-use pgr::libs::olc::overlap::{find_overlaps, OverlapOptions, Unitig};
+use pgr::libs::olc::overlap::{filter_contained, find_overlaps, OverlapOptions, Unitig};
 use std::io::Write;
 use std::path::Path;
 
@@ -133,12 +133,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             });
         }
     }
-    if let Some(dir) = keep_dir {
-        std::fs::create_dir_all(dir)
-            .with_context(|| format!("failed to create --keep-dir {dir}"))?;
-        dump_unitigs(dir, &unitigs)?;
-    }
-
     // S1: exact overlaps.
     let overlaps = find_overlaps(
         &unitigs,
@@ -147,7 +141,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             min_overlap,
         },
     )?;
+
+    // S1.5: drop unitigs fully contained in longer unitigs (multi-k
+    // redundancy); layouts are unchanged, the graph shrinks.
+    let (unitigs, overlaps) = filter_contained(&unitigs, &overlaps);
     if let Some(dir) = keep_dir {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("failed to create --keep-dir {dir}"))?;
+        dump_unitigs(dir, &unitigs)?;
         dump_paf(dir, &unitigs, &overlaps)?;
     }
 

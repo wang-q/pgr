@@ -23,7 +23,10 @@
   `tests/bbtools/Lambda`（40× 原始 reads）验证 `asm olc`——抓出并修复
   左向延伸坐标下溢 bug（真实数据触发，合成数据漏测）；参考菌株差异
   （reads 与 NC_001416 不同源）修正"未贴回≠嵌合"判据；多 k 冗余 2.4×
-  经 contain 去重降到 1.22×（N50 3409→6537）。详见 `design/olc.md` §12/§13。
+  经 contain 去重降到 1.22×（N50 3409→6537）；**unitig 级预过滤**
+  （`filter_contained`，布局前）后 Lambda 从 16 条碎片**合并为 1 条全长
+  基因组 contig**（48,387 bp，旧 16 条全是其子串）：unitigs 90→22、
+  overlaps 386→50。详见 `design/olc.md` §12/§13。
 - **`pgr paf coverage` 新增（2026-08-12）**：PAF `cg:Z` → 每 target
   恒定深度段（TSV），补 wgatools 对照的 pafcov 缺口；`libs/paf/cov.rs`
   扫描线 + 3 单测 + 2 集成测试。
