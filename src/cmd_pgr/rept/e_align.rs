@@ -71,7 +71,7 @@ This command identifies repeats in a genome against an external repeat library
                 .short('f')
                 .value_parser(value_parser!(usize))
                 .num_args(1)
-                .default_value("50")
+                .default_value("100")
                 .help("K-mers occurring at least this often on either side are skipped as seeds"),
         )
         .arg(
@@ -79,7 +79,7 @@ This command identifies repeats in a genome against an external repeat library
                 .long("min-shared")
                 .value_parser(value_parser!(usize))
                 .num_args(1)
-                .default_value("12")
+                .default_value("16")
                 .help("Minimum shared seed length (bp)"),
         )
         .arg(

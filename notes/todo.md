@@ -6,95 +6,45 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
-## 0. 会话交接（2026-08-12，OLC + 参考盘点 + pgi A1）
+## 0. 会话交接（2026-08-12 晚，依赖清理 + 二进制瘦身 + 下一步规划）
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1739 测试通过，fmt/clippy 干净。
-**最近提交**：`d167ac3`（pgi 优化 + 键错位 bug 修复）、`f5bb2e7`
-（unitig 级 contain 预过滤）、`d9b478b`（paf coverage + OLC 修复 +
-输出级去重）、`20ce7a3`（2026-08-12 全量笔记）、`5fc711a`（OLC 四命令）。
-**未提交变更（用户自行提交）**：`notes/todo.md`（--sym 量化 + chain
-验证 + §0 交接）、`notes/design/pgi-align.md`（§7.4.1 方向偏差量化 +
-no-seq geometric blocks 提醒）。
+**当前状态**：1741 测试通过，fmt/clippy 干净，工作树干净。
+**最近提交**：`638fbf3`（依赖清理收尾：probminhash/isal-rs 删除）、
+`6290d7d`（tera 移除 + regex 挪 dev-deps + pgi no-seq 警告）、`d167ac3`
+（pgi A1 + 键错位修复）、`f5bb2e7`（unitig 级 contain 预过滤）、
+`d9b478b`（paf coverage + OLC 修复 + 输出级去重）。
 
-**本会话成果**：
-- **pgi build A1（2026-08-12）**：排序中间表示 u128 → FastK 打包字节
-  （内存 -10%，472MB）；collect 去重 HashSet → 位图（-30ms）；
-  partition 逐字节复制改 copy_from_slice（sort -12%）；group 键比较
-  u64 双段（-5%）。wall 0.84s vs GIXmake 505ms ≈ 1.66×，**1.2× 目标
-  未达**——perf 显示排序已内存带宽主导（memmove 36%），剩余差距需
-  结构性重写（GIXmake 式收集时分桶），收益 ~50-100ms、风险高，暂缓。
-  **关键产出**：抓出并修复"打包键重构致 entry 键错位、.pgi 静默损坏"
-  严重 bug（基因组逐位置回验暴露），回归测试
-  `grouped_entries_match_positions`；`align pgi` 兼容确认。详见
-  `bench-pgi-vs-gixmake.md`。
-- **A2：Lambda reads 回贴验证（2026-08-12）**：48,387bp 全长 contig 的
-  86.7% reads 完美贴回（vs 参考 85.2%，+628 条变异区 reads）、无覆盖
-  缺口——确认 unitig 预过滤后的单 contig 正确。`design/olc.md` §12.4。
-- **三项真实数据验证（2026-08-12）**：
-  * 稀疏 s=1 完整 45 对 cohort：mash Spearman 0.9814 / Pearson 0.9969
-    / max |Δ| 0.0035（10 对子集 0.988/0.0025）→ `design/hv.md`；
-  * `asm unitig` vs bcalm（MG1655 1M 纠错 reads × k=31）：**unitig
-    序列 100% 一致**（2403/2403 canonical 归一后逐条相同，聚合统计
-    完全一致）→ `fq-assemble.md` §8.1；
-  * `--links` 边集 vs bcalm LinkTigs：无向边共同 2577/3331（bcalm 的
-    77%），bcalm 边 = canonical 端点共享图（5019）的子集、过滤条件不在
-    README/本地源码；按 README 语义重写尝试未对齐且回归真实边，已回退
-    ——保持简化语义，逐边对齐需 bcalm 链接实现源码，暂不立项。
-- **`--sym` 方向偏差量化（2026-08-12）**：带序列路径 A→B vs B→A 覆盖差
-  0.08–1.81%（多数 <1%）——接近噪声级，默认关保持不变。⚠️ 教训：
-  `align pgi` 不带序列输出的是未精化 geometric blocks，不能当精化比对
-  用（首次量化误用该路径、数字作废重测；已加审计项 §5）。
-- **KD-tree 验证闭环（2026-08-12）**：已被 UCSC 管线字节级验证覆盖
-  （`verify-ucsc-pipeline.sh` 的 `pgr psl chain` vs axtChain）。
-- **OLC 真实数据验证（Lambda）+ 两个 v1 改进（2026-08-12）**：用
-  `tests/bbtools/Lambda`（40× 原始 reads）验证 `asm olc`——抓出并修复
-  左向延伸坐标下溢 bug（真实数据触发，合成数据漏测）；参考菌株差异
-  （reads 与 NC_001416 不同源）修正"未贴回≠嵌合"判据；多 k 冗余 2.4×
-  经 contain 去重降到 1.22×（N50 3409→6537）；**unitig 级预过滤**
-  （`filter_contained`，布局前）后 Lambda 从 16 条碎片**合并为 1 条全长
-  基因组 contig**（48,387 bp，旧 16 条全是其子串）：unitigs 90→22、
-  overlaps 386→50。详见 `design/olc.md` §12/§13。
+**本会话成果（依赖审计 + 瘦身）**：
+- **release 17.0 → 12.62 MB**：bio（死依赖）、tera（plot 4 条渲染路径
+  改纯 Rust 拼接/替换，8 个 golden 逐字节一致）、regex（生产代码 0 使用
+  → dev-deps，A/B 实测 -0.48MB）、probminhash/isal-rs（零引用删除）。
+- **依赖全量审计**：生产依赖全部真实使用、无死依赖；regex 无法彻底移出
+  二进制（env_logger→env_filter 传递依赖，仍 ~0.61MB）；xlsx 输出链
+  （rust_xlsxwriter+zip+zopfli+zlib-rs ~0.72MB）为最大第三方贡献者，属
+  真实功能未动；`sqlite3-ext-vtab` 的 bundled 特性为 sqlite-vector-rs
+  基准必需（保留）。
+- **二进制构成（nm 符号级 9.40MB）**：pgr 3.68 / std+core+alloc 1.95 /
+  异常+解栈元数据 0.91 / xlsx 链 0.72 / regex 家族 0.61 / rayon 0.37 /
+  clap 0.26 / 压缩 C 0.18 / crossbeam 0.12 / anyhow 0.11 / serde_json
+  0.10 / noodles 0.08 MB。
 
-**下一步（按优先级）**：1) 提交本会话变更（todo/pgi-align 两文件）；
-2) pgi 结构性重写（收集时分桶）或放弃（收益小、风险高，建议等真实大
-基因组场景证明必要性）；3) OLC v1 覆盖度 repeat breaking 待真实宏基因
-组数据调参（`design/olc.md` §13）；4) 队列中的数据驱动项（4 万 cohort、
-人类规模
-pgi、repeat masking 真核标定等）。
-- **`pgr paf coverage` 新增（2026-08-12）**：PAF `cg:Z` → 每 target
-  恒定深度段（TSV），补 wgatools 对照的 pafcov 缺口；`libs/paf/cov.rs`
-  扫描线 + 3 单测 + 2 集成测试。
-- **参考笔记索引一致性测试**（2026-08-12）：`tests/cli_notes_consistency.rs`
-  强制 `notes/references/*.md` ↔ `project-understanding.md` §11 一一对应
-  （hv.md 漏索引教训）；§11 补齐缺失的 15 行。
-- **OLC 组装落地（2026-08-12，新）**：`pgr asm ovlp`/`layout`/`cns`/
-  `olc` 四命令 + `libs/olc/`（overlap/layout/consensus），设计
-  `design/olc.md`；精确 seed-verify overlap、互惠 best-edge greedy layout、
-  精确缝合 consensus；合成基因组 30× 重建验证（contigs 全为基因组精确
-  子串，最长覆盖 97.5%）、确定性、阶段管道与驱动器等价；
-  `asm unitig` 新增内存版 `assemble_unitigs_buf`
-- `design/kmer.md` §12：长 k-mer 统一到 FastK 表示，M1–M5 全部落地
-- 性能优化：count_mg1655 297 → 158 ms（双窗口滚动、收集直落字节、
-  append 移动缓冲、emit 传引用）；单线程快 FastK 28%、8 线程快 16%
-- pgi 真实数据验证 + 优化：E. coli 4 基因组（20 Mb）build 817 ms
-  （vs GIXmake 505 ms，1.62×）、内存 145 MB（-19%）、并行收集 +
-  组内排序去重 + pack_kmer 大端拷贝；align mg1655×sakai 738 PSL
-  与迁移前逐条一致
-
-**关键裁定（必须遵守）**：
+**关键裁定（必须遵守，自旧交接保留）**：
 - k-mer 只保留一套，以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做
   定长对象键）——**已落地（M1–M5 完成）**；存储 = FastK 式连续打包；
   u128 仅剩算法中间量（pgi 构建滚动、qcheck 判定、FastGA 移植位运算）
 - OLC 已落地（见 §1/§3）；v1 覆盖度 repeat breaking 待真实宏基因组数据调参
 - 气泡处理不做（明确不做区）
 
-**下一步（按优先级）**：1) 提交本会话变更（OLC 四命令 + paf coverage +
-验证修复 + 笔记）；2) pgi build 剩余差距（collect/sort，1.62× vs
-GIXmake）或转向 repeat masking 标定（等真核数据）/ paf 查询层扩展
-（`--min-tree-coverage`/`--end-trim`）；3) OLC v1 的覆盖度 repeat
-breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
+**下一步（按优先级，用户已确认方向）**：
+1) **paf 查询层 `--min-tree-coverage`**（`paf-pangenome.md` §Caf）：纯代码，
+   查询时传递闭包后处理过滤。
+2) **fas_multiz best_crossover 真实多基因组验证**（`chain-algorithms.md`
+   §12.3）：合成测试已覆盖，真实数据待确认本地是否有合适多基因组比对。
+3) 等数据：OLC 长读（本地无 HiFi/ONT）、4 万 E. coli cohort、人类规模
+   pgi（GRCh38/CHM13）。pgi 结构性重写（收集时分桶）挂账，等真实大基因
+   组场景证明必要性。
 
 **参考源码（本地，gitignore 参考目录）**：`FASTK-master/`（长 k 第一参考）、
 `FASTGA-main/`（pgi 参考，k-mer 与 FastK 同套）、`canu-2.3/`、`wgs-8.3rc2/`、
@@ -102,6 +52,11 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
 
 ## 1. 已完成（一行结论，细节见链接）
 
+- **依赖瘦身与审计**（2026-08-12）：release 17.0→12.62 MB。bio（死依赖）、
+  tera（plot 模板改纯 Rust，8 个 golden 逐字节一致）、regex（生产 0 使用
+  → dev-deps，-0.48MB 实测）、probminhash/isal-rs（零引用）；生产依赖全量
+  审计无死依赖；`sqlite3-ext-vtab` bundled 特性为 sqlite-vector-rs 基准
+  必需（保留）→ 详见 Cargo.toml 注释与 §0。
 - **asm 命令族 + SAM 工具**（2026-08-11/12 提交）：`pgr asm`
   contig/unitig/map（含 `--min-count-seed`、`--links`/`--gfa`、
   `--paired`/`--max-reads`）、`pgr sam` ihist/to-rg（noodles-sam 0.81
@@ -155,6 +110,13 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
   缓冲 + emit 传引用）；单线程 347 ms vs FastK 481 ms（-28%）、
   8 线程 158 vs 188 ms（-16%）；基准拆解（radix 45 ms / 分组 13 ms）
   保留在 kmer_benchmark → `design/kmer.md` §12 基准段。
+- **repeat masking 真核标定（2026-08-12）**：`rept e-align` 默认参数定稿
+  f100/ms16（`--freq` 50→100、`--min-shared` 12→16 已落地）；S288c（去
+  soft-mask）+ repbase 对 `pgr rept masker` 参考（RM 复刻）recall 67.6%、
+  over-mask 0.029%；f10 明显低敏感、f100≈f500、k31≈k40≈k21、
+  min-identity 0.60≡0.70；漏检 192 kb 以 <100 bp 真实 Ty LTR 碎片为主
+  （种子敏感度边界，非参数问题），MITO 为参考侧 AT 富集 over-mask；
+  MG1655 对照 1.29% 更接近 RM 1.06% → `design/repeat-masking.md` §2.5.1。
 - **pgi 真实数据验证 + 优化**（2026-08-12）：E. coli 4 基因组
   （~20 Mb）build 817 ms（vs GIXmake 505 ms，1.62×）、峰值内存
   145 MB（迁移前 ~180 MB，-19%）；并行收集（+17%）、分组
@@ -172,12 +134,6 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
 
 ## 2. 待实现
 
-- [ ] **repeat masking：pgi 参数标定 + 真核验证**：CLI 透传已实现（`align
-      pgi` 的 `-f/--min-shared/-k/--smer/--window`），但默认值未按 §2.5 调整
-      （`--freq` 10 → 100、`--min-shared` 12 → 16 待验证）；真核（拟南芥/
-      玉米等转座子丰富）与 RepeatMasker masked 输出对比 recall（E. coli 无
-      转座子无参考价值）；polyA/卫星低复杂度缺口由 `rept trf` 兜底
-      （来源：`design/repeat-masking.md` §2.4/§2.5）。
 - [ ] **paf 查询层扩展**：`--min-tree-coverage`（Caf Tree Coverage 过滤维度，
       查询时无法全图计算，作传递闭包后处理过滤）；`--end-trim` 推迟（需
       per-interval 修剪 CIGAR，待序列输出引入时一并处理）

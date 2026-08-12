@@ -333,8 +333,8 @@ pgr rept e-align [OPTIONS] <repeat> <infile>
 | `kmer` | `-k` | `--kmer` | Int | k-mer size for indexing (default: 31) |
 | `smer` | | `--smer` | Int | Syncmer s-mer length (default: 8) |
 | `window` | | `--window` | Int | Syncmer window (default: 5) |
-| `freq` | `-f` | `--freq` | Int | Max k-mer frequency to keep as seed (default: 50) |
-| `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 12) |
+| `freq` | `-f` | `--freq` | Int | Max k-mer frequency to keep as seed (default: 100) |
+| `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 16) |
 | `min_identity` | | `--min-identity` | Float | Min alignment identity (default: 0.70) |
 | `min_len` | | `--min-len` | Int | Min length of repetitive fragments (default: 50) |
 | `fill_fragment` | | `--fill-fragment` | Int | Fill holes between fragments (default: 10) |
@@ -352,11 +352,14 @@ insert bases in the denominator.
     regions fragment the alignment and drastically underestimate coverage.
     `e-align` warns when it detects lowercase; uppercase the genome first
     (`tr a-z A-Z`) if warned. (`e-kmer` is case-insensitive and unaffected.)
-*   The defaults (k=31, freq=50, min-shared=12) are tuned for sensitivity,
-    matching the empirically chosen `pgr sd` pgi parameters (TnCentral × 10
-    E. coli: ~47% closer to a LASTZ `set01` baseline than the previous
-    k=40/freq=100/min-shared=16 defaults). Raise k/freq/min-shared for
-    speed or specificity.
+*   The defaults (k=31, freq=100, min-shared=16) were calibrated on
+    Saccharomyces cerevisiae S288c against the `pgr rept masker` reference
+    (RepeatMasker replica, RepBase library): freq 10 clearly loses
+    sensitivity, freq ≥ 100 plateaus, and min-shared 16 masks less
+    non-repetitive DNA than 12 with negligible recall loss. On E. coli
+    MG1655 the same defaults land closer to the RepeatMasker reference
+    (1.29% vs 1.06%) than the previous freq=50/min-shared=12 (1.38%).
+    Raise k/freq/min-shared for speed or specificity.
 *   `--keep-index` caches the pgi indexes next to the inputs for reuse, same
     convention as `pgr align pgi`.
 

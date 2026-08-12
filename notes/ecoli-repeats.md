@@ -159,6 +159,13 @@ bp 仍在 LASTZ 内。注意参数要成套：mg1655 上 k31/f50 若保留 min-s
 > 2026-08-07：`pgr rept e-align` 默认参数已按上述结论改为 k=31 / freq=50 / min-shared=12（新默认 =
 > 表中"PGI 新默认"一行，代码与 docs/rept.md 已同步）。
 
+> 2026-08-12 更新：真核标定（S288c + repbase，对照 `pgr rept masker` 参考）后
+> `pgr rept e-align` 默认改为 k=31 / freq=100 / min-shared=16（见
+> `design/repeat-masking.md` §2.5.1）。细菌上同参数 TnCentral 覆盖
+> 1.29%（MG1655），比 f50/ms12 的 1.38% 更接近 RM 参考 1.06%——本节的
+> "k31 必须放宽 min-shared"结论在 k31/f100 下不再成立（f100/ms16 recall
+> 67.6% vs f100/ms12 67.9%，over-mask 更低），历史记录保留。
+
 ### 2.6 数字怎么读：两种"重复"口径（库遮蔽 vs 自找重复）
 
 "大肠杆菌重复很少"这句话只对**经典重复/转座子**成立。同一批基因组用两种口径 算出的覆盖度差一个量级
@@ -398,4 +405,3 @@ pgr runlist compare json/$g.rm-strict.json json/$g.<method>.json --op diff -o tm
 - 方法与库的完整说明：[docs/rept.md](../docs/rept.md)
 - 重复遮蔽方案设计：[design/repeat-masking.md](design/repeat-masking.md)
 - 10 株 cohort 来源与用途：[ecoli-genome.md](ecoli-genome.md)
-
