@@ -90,7 +90,12 @@ cutadapt 的接头去除核心是一个 Cython 实现的**混合 cost/score 半�
 - **单列 DP + origin**：内存中仅保留一个 `_Entry` 列（`column`，含 cost/score/origin），`origin` 记录比对起点（负=起点在 reference 内，正=在 query 内），据此回溯得到 `(ref_start, ref_stop, query_start, query_stop)`（_align.pyx:579-587）。
 - **Ukkonen 带状剪枝**：`last` 追踪"cost ≤ k 的最远行"，只计算错误带内的格；`start_in_query=0` 时列上限 `min(n, m+k)`，`stop_in_query=0` 时列下限 `max(0, n-m-k)`（_align.pyx:343-352）。
 - **结束位置搜索**：若 `stop_in_query`，当整条 reference 比对完（`last==m`）时检查 `column[m]` 作为候选（match 结束于 read 内部）；若 `stop_in_reference`，列扫完后在最后一列倒序搜索（match 结束于 read 末尾）（_align.pyx:494-572）。
+- **N 通配计数的前缀数组**：`_set_reference`（_align.pyx:250）预计算 `n_counts[i] = reference[:i] 中 N 的个数`，并缓存 `effective_length = m - N`；当仅匹配 reference 的子段时，用 `length - (n_counts[m] - n_counts[m-length])` 重算该子段的非 N 有效长度（_align.pyx:504-510, 543-549），以此对错误率约束"按非通配长度"折算。用前缀数组把任意子区间 N 计数降到 O(1)。
+- **字符表翻译与快速比较**：`_reference` 在初始化时通过 `_match_tables.py` 的查找表（`_upper_table`/`_acgt_table`/`_iupac_table`）一次性转成紧凑字节表示（`translate`，_align.pyx:43）；无通配时走 `compare_ascii` 直接按字节相等比较，有 IUPAC 通配时用**位掩码交集** `(s1[i-1] & s2[j-1]) != 0` 判断兼容（_align.pyx:322-328, 442-445）。用"空间换比较速度"，避免每次逐字符查通配表。
+- **精确匹配提前终止**：当候选满足 `cost == 0 且 origin >= 0`（零错误精确命中）时立即 `break` 跳过整条 read 的剩余扫描（_align.pyx:531-533）。
 - 返回 `(ref_start, ref_stop, query_start, query_stop, score, errors)`；无满足条件者返回 `None`。
+
+> 配套的纯 Python 模块 `align.py` 提供 `edit_distance`（经典 O(mn) DP）、`hamming_environment`/`naive_edit_environment`/`slow_edit_environment` 等供测试对照的实现，`edit_environment` 的 Cython 版则在 §3.6 的 `AdapterIndex` 索引构建中实际使用。
 
 **`PrefixComparer` / `SuffixComparer`**（_align.pyx:594,696）：当锚定适配器禁用 indel 时使用，不做 DP 矩阵，只逐位统计前缀/后缀错误数，满足 `errors <= max_k` 且 `length >= min_overlap` 即返回固定区间元组（更快；`PrefixAdapter` 在 `indels=False` 时走此路径）。
 
@@ -124,10 +129,13 @@ cutadapt 的接头去除核心是一个 Cython 实现的**混合 cost/score 半�
 
 真正的 DP 比对前先做**可命中性检查** `KmerFinder.kmers_present()`（adapters.py:715 等）：对每条 adapter 生成一组"位置 → k-mer 集合"，要求 read 中至少一个 k-mer 出现在指定位置附近，否则直接判不匹配、跳过昂贵的 DP。`create_positions_and_kmers`（kmer_heuristic.py:118）按错误率把 adapter 分成若干段，每段取 `max_errors+1` 个互不重叠 chunk 作为必需 k-mer（例：AAAAATTTTT 允许 1 错时，AAAAA 或 TTTTT 至少一个必须存在）；front/back 适配器另加部分重叠的短 k-mer（`create_back_overlap_searchsets`）。k-mer 过长无法建索引时退回 `MockKmerFinder`（恒真，退化为纯 DP）。
 
+- **shift-and 位并行多模式匹配**（_kmer_finder.pyx）：`KmerFinder.kmers_present`（:170）把同一搜索位置的一组必需 k-mer **首尾相接拼进单个 64-bit 机器字**，每碱基占 1 位；`init_mask` 标记各 k-mer 的起点位、`found_mask` 标记终点位，再对 read 单遍跑 shift-and（`shift_and_multiple_is_present`，:241）：`R = (R<<1 | init_mask) & needle_mask[base]`，`R & found_mask` 非零即命中。多条 k-mer 同时检测，**O(read_len) 且常数极小**；总长超过 64 位时在 `__cinit__` 内层循环自动拆成多个 bitmask 分组（:131-149）。`needle_mask` 是 128 项查表（按 ASCII 值索引），IUPAC 兼容匹配通过 `_match_tables.matches_lookup` 预合并到位掩码里。对 pgr 以 k-mer 为中心的路线（如 `clean --k` 的 BBDuk 计数、`paf` k-mer 索引）是值得参考的位并行技巧——相比逐 k-mer `find()`，它把多模式匹配常数压到最低。
+
 ### 3.6 多适配器匹配：`MultipleAdapters` 与 `AdapterIndex`
 
 - **`MultipleAdapters.match_to`**（adapters.py:1265）：依次对每个 adapter 调 `match_to`，选 **score 最高、score 相同取 error 最少** 者为最佳匹配——这是多接头竞争的基本规则。
-- **`AdapterIndex`**（adapters.py:1289）：对**锚定**（Prefix/Suffix）适配器建索引加速：把每个 adapter 的**编辑环境**（`edit_environment`，含 indel，或 `hamming_sphere` 纯错配）内、错误数 ≤k 的所有字符串预先展开存入 dict，查询时直接 O(1) 查 read 的后缀/前缀。限制：k≤3、不允许通配、适配器须为锚定类型。多长度时按长→短依次查，用"匹配数不可能超过已找到的 best_m"提前终止。出现歧义（两个 adapter 对同一字符串同分，`matches` 相等）的字符串会被**删除**——含歧义序列的 read 将**不修剪**（并有日志警告，adapters.py:1444-1466）。
+- **`AdapterIndex`**（adapters.py:1289）：对**锚定**（Prefix/Suffix）适配器建索引加速。索引构建（`_make_index`，:1396）把每个 adapter 的错误数 ≤k 的**编辑环境**内所有字符串预先展开存入 dict：允许 indel 时用 `edit_environment(seq, k)`（_align.pyx:785，一个按 DP + Ukkonen 带状约束遍历 edit distance ≤k 的字符串、同时计数匹配数的生成器），不允许 indel 时用 `hamming_sphere`（_align.pyx:717，k=1/2 有专门展开、k>2 递归）。查询时直接 O(1) 查 read 的固定后缀/前缀。限制：k≤3、adapter 不允许通配、read 不允许通配、适配器须为锚定类型。多长度时按长→短依次查，用"匹配数不可能超过已找到的 `best_m`"提前终止（:1507）。出现歧义（两个 adapter 对同一字符串同分，`matches` 相等）的字符串会被**删除**——含歧义序列的 read 将**不修剪**（并有日志警告，:1444-1466）。k=3 且有 indel 时索引可能巨大，日志会提示 `--no-indels`/`--no-index`（:1407-1412）。
+- **read 中 N 通配的兜底**：限制"不允许通配"指 adapter 序列；read 侧遇 N 时 `_lookup_with_n`（adapters.py:1535）先把 N 替换成 A 查索引，命中后**对该 affix 重跑一次真比对**（`adapter.match_to`）修正 errors/score——避免把 N 误算成匹配。
 - `AdapterCutter._regroup_into_indexed_adapters`（modifiers.py:127）把用户适配器里"可被索引的锚定"拆出来建 `IndexedPrefixAdapters` / `IndexedSuffixAdapters`，其余进 `MultipleAdapters`。
 
 ### 3.7 修饰器 `AdapterCutter` 与 action（modifiers.py:82）

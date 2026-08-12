@@ -47,6 +47,15 @@
   `!(key + (key<<21))`，与 AVX2 版 `key = key+(key<<21); key = key ^ cmpeq(key,key)`（即取反）
   结果**一致**——"bug"注释只是作者对哈希质量的顾虑，不造成标量/AVX2 分歧；
   若有问题应指"对 canonical min(f,r) 直接哈希"这一层。
+  **重要：fairy 直接对 canonical 2-bit 整数做 murmur64**（`mm_hash64(min(f,r))`），
+  而不是先编码成字节再哈希——这正是 pgr `libs/hash.rs::seq_fracminhash`（L650-656）
+  刻意避免的（raw 2-bit 值结构化、需先 `.to_le_bytes()` 再 rapidhash）。
+- **哈希族混用**：fairy 有两套哈希：`mm_hash64`（u64→u64，采样用）+ 可逆版
+  `rev_hash_64`（seeding.rs:18，倒着逆推最终化步骤，源码有 `_get_kmer_identity`
+  死代码想反解 kmer）；另有 `mm_hash`（usize 版）+ `MMHasher`/`MMHashSet`
+  （types.rs:74-99，取自身为 `HashMap<K,V,MMBuildHasher>`）。**genome sketch 的
+  去重 set 用 murmur 系 `MMHashSet`（sketch.rs:401）**，而 **read 计数用
+  `FxHashMap`**——两类结构哈希族不一致，是 fairy 的既有实现细节。
 - **采样**：`threshold = u64::MAX / c`；`hash < threshold` 才保留
   → 采样率 ≈ 1/c。默认 `c=50`（约 1/50，sylph 为 1/200）。
 - **滚动**：f 左移 2 位累积、r 右移 + 顶部补补链，与 pgr 现有滚动同构；
@@ -167,9 +176,29 @@
    深度分位的语义；此前讨论的"对 reads 采样"也不是 fairy 路线。
 2. **dedup 思路**（pair marker 指纹 + 按 kmer 门控计数）与 pgr 现有
    `fq clump` 精确整对去重是不同抽象层级；pgr 不需要引入。
-3. 若 pgr 未来做 coverage/丰度类工具，FracMinHash + FxHashMap +
-   `Vec<(u64,u32)>` bincode 是现成的最小实现模板；`c` 与内存线性反比。
-4. 与 pgr 现有设施对照：
+3. **pgr 已有等价实现，不必新造**：fairy 的 FracMinHash 稀疏采样路线
+   在 pgr 里已有现成对应物——`src/libs/hash.rs`：
+   - `seq_fracminhash`（L630，DNA canonical k-mer 以 `threshold = u64::MAX/scale`
+     采样，与 fairy §3 完全同构；蛋白质走 `is_protein` 分支）、
+   - `load_fracminhash`（L664，FASTA→逐记录 sketch）、
+   - `mash_sketch_distances` / `set_distances`（L327/L401，含 containment
+     与 ANI CI `ani_ci_from_jaccard` L441）、
+   - `bottom_k_min_hashes`（L260，Mash bottom-k 累积器）。
+   命令入口：`pgr dist frac`（FracMinHash，`--scale`）、`pgr dist mash`
+   （Mash bottom-k）、`pgr dist mini`（minimizer）。fairy 对 pgr 的增量价值
+   不在"要不要做 FracMinHash"（已做），而在**它把 sketch 用于多样本 coverage/
+   丰度矩阵而非距离**这一用例，以及 read-level 去重门控计数。
+4. 若 pgr 未来做 coverage/丰度类工具（fairy 的 `coverage` 输出即 MetaBAT2 兼容
+   contig×样本矩阵），FracMinHash + FxHashMap + `Vec<(u64,u32)>` bincode
+   序列化（`SequencesSketchEncode`，注释称快一个量级）是现成的最小实现模板；
+   `c` 与内存线性反比。注意 fairy 的覆盖度估计**不是**简单的 kmer 计数——
+   它叠加了泊松剪枝（median<30 时 CDF 剪高倍噪声）、λ 的 ratio/mme/nb/mle
+   四种估计（默认 ratio，`ratio_lambda`：`count(mode+1)/count(mode)×(mode+1)`，
+   要求 ≥25 命中、mode+1 存在、两侧计数≥`min_count_correct`=3）、100 次
+   bootstrap CI、pseudotax 二次分配（`winner_table` + 二次 `get_stats`）、
+   `read_length/(read_length-k+1)` 与 `1/(seq_id/100)^k` 校正——这套是 fairy
+   独有、pgr 完全没有的统计层，比采样本身更值得参考。
+5. **与 pgr 现有设施对照**：
 
 | 项 | pgr 现有 | khmer | fairy |
 |---|---|---|---|
@@ -178,9 +207,17 @@
 | 判定 | truedepth/depthAL 分位 + toss | median ≥ cutoff（在线） | 中位数 + 泊松剪枝 + λ 校正 |
 | 内存 | 外部桶（mem_cap 约束） | 固定但随装载率失真 | 与采样率反比（1/c） |
 
-5. **fairy 不含 graph 构建**：它完全是「稀疏采样 sketch → 计数 → 查询」这条
-   丰度/覆盖度估计路线，没有 de Bruijn 或其它图结构（与 pgr fa/装配类图算法
-   无对应关系）。对 pgr 的借鉴价值在**稀疏采样 + 查询表**这一范式，而非图算法。
+6. **fairy 不含 graph 构建、对 pgr `asm` 无直接借鉴**：它完全是「稀疏采样
+   sketch → 计数 → 查询」这条丰度/覆盖度估计路线，**没有 de Bruijn 或任何图
+   结构**（全库无图构建代码），也没有 error-correction。因此对 pgr 的
+   `asm`（OLC overlap-layout-consensus，`cmd_pgr/asm/{olc,ovlp,layout,contig}.rs`）
+   与 `fq` error-correction（`cmd_pgr/fq/ec_kmer.rs`、`ec_overlap.rs`）**没有
+   可直接迁移的算法**——它们需要的是 kmer 深度 / 图 / 比对，而非稀疏采样。
+   对 pgr 的借鉴价值在**稀疏采样 + 查询表**这一范式（对应 `dist frac/mash`），
+   而非图算法。若要为 `fq ec` 找"重复去除/计数门控"的现成参考，fairy 的
+   `dup_removal_lsh_full_exact`（sketch.rs:583）那套（`(km, [Marker;2])` 组合键
+   + 按 kmer 计数门控，避免同一 read-pair 重复计数）是唯一可借鉴的 read-level
+   工程技巧。
 
 ## 8. 源码 quirks
 

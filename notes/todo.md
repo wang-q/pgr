@@ -11,14 +11,12 @@
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
 **当前状态**：1739 测试通过，fmt/clippy 干净。
-**最近提交**：`f5bb2e7`（unitig 级 contain 预过滤）、`d9b478b`（paf
-coverage + OLC 修复 + 输出级去重）、`20ce7a3`（2026-08-12 全量笔记）、
-`5fc711a`（OLC 四命令）。
-**未提交变更（本会话末尾，用户自行提交）**：`src/libs/pgi/build.rs`
-（打包字节键 + 位图去重 + entry 键错位严重 bug 修复 + 回归测试）、
-`src/libs/ds/radix_sort.rs`（partition copy_from_slice + 增量偏移）、
-`notes/benchmarks/bench-pgi-vs-gixmake.md`、`notes/design/olc.md` §12.4、
-`notes/todo.md`。
+**最近提交**：`d167ac3`（pgi 优化 + 键错位 bug 修复）、`f5bb2e7`
+（unitig 级 contain 预过滤）、`d9b478b`（paf coverage + OLC 修复 +
+输出级去重）、`20ce7a3`（2026-08-12 全量笔记）、`5fc711a`（OLC 四命令）。
+**未提交变更（用户自行提交）**：`notes/todo.md`（--sym 量化 + chain
+验证 + §0 交接）、`notes/design/pgi-align.md`（§7.4.1 方向偏差量化 +
+no-seq geometric blocks 提醒）。
 
 **本会话成果**：
 - **pgi build A1（2026-08-12）**：排序中间表示 u128 → FastK 打包字节
@@ -34,6 +32,22 @@ coverage + OLC 修复 + 输出级去重）、`20ce7a3`（2026-08-12 全量笔记
 - **A2：Lambda reads 回贴验证（2026-08-12）**：48,387bp 全长 contig 的
   86.7% reads 完美贴回（vs 参考 85.2%，+628 条变异区 reads）、无覆盖
   缺口——确认 unitig 预过滤后的单 contig 正确。`design/olc.md` §12.4。
+- **三项真实数据验证（2026-08-12）**：
+  * 稀疏 s=1 完整 45 对 cohort：mash Spearman 0.9814 / Pearson 0.9969
+    / max |Δ| 0.0035（10 对子集 0.988/0.0025）→ `design/hv.md`；
+  * `asm unitig` vs bcalm（MG1655 1M 纠错 reads × k=31）：**unitig
+    序列 100% 一致**（2403/2403 canonical 归一后逐条相同，聚合统计
+    完全一致）→ `fq-assemble.md` §8.1；
+  * `--links` 边集 vs bcalm LinkTigs：无向边共同 2577/3331（bcalm 的
+    77%），bcalm 边 = canonical 端点共享图（5019）的子集、过滤条件不在
+    README/本地源码；按 README 语义重写尝试未对齐且回归真实边，已回退
+    ——保持简化语义，逐边对齐需 bcalm 链接实现源码，暂不立项。
+- **`--sym` 方向偏差量化（2026-08-12）**：带序列路径 A→B vs B→A 覆盖差
+  0.08–1.81%（多数 <1%）——接近噪声级，默认关保持不变。⚠️ 教训：
+  `align pgi` 不带序列输出的是未精化 geometric blocks，不能当精化比对
+  用（首次量化误用该路径、数字作废重测；已加审计项 §5）。
+- **KD-tree 验证闭环（2026-08-12）**：已被 UCSC 管线字节级验证覆盖
+  （`verify-ucsc-pipeline.sh` 的 `pgr psl chain` vs axtChain）。
 - **OLC 真实数据验证（Lambda）+ 两个 v1 改进（2026-08-12）**：用
   `tests/bbtools/Lambda`（40× 原始 reads）验证 `asm olc`——抓出并修复
   左向延伸坐标下溢 bug（真实数据触发，合成数据漏测）；参考菌株差异
@@ -43,10 +57,11 @@ coverage + OLC 修复 + 输出级去重）、`20ce7a3`（2026-08-12 全量笔记
   基因组 contig**（48,387 bp，旧 16 条全是其子串）：unitigs 90→22、
   overlaps 386→50。详见 `design/olc.md` §12/§13。
 
-**下一步（按优先级）**：1) 提交本会话变更；2) pgi 结构性重写（收集时
-分桶）或放弃（收益小、风险高，建议等真实大基因组场景证明必要性）；
-3) OLC v1 覆盖度 repeat breaking 待真实宏基因组数据调参
-（`design/olc.md` §13）；4) 队列中的数据驱动项（4 万 cohort、人类规模
+**下一步（按优先级）**：1) 提交本会话变更（todo/pgi-align 两文件）；
+2) pgi 结构性重写（收集时分桶）或放弃（收益小、风险高，建议等真实大
+基因组场景证明必要性）；3) OLC v1 覆盖度 repeat breaking 待真实宏基因
+组数据调参（`design/olc.md` §13）；4) 队列中的数据驱动项（4 万 cohort、
+人类规模
 pgi、repeat masking 真核标定等）。
 - **`pgr paf coverage` 新增（2026-08-12）**：PAF `cg:Z` → 每 target
   恒定深度段（TSV），补 wgatools 对照的 pafcov 缺口；`libs/paf/cov.rs`
@@ -203,7 +218,14 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
       对照（来源：`design/pgi-align.md` §7.2）；E. coli 多基因组
       （~20 Mb，8 contig）已实测（见 §1），人类规模仍待。
 - [ ] pbit 自动路由：等多样性 cohort 数据证明收益（来源：`design/pbit.md`）。
-- [ ] `--sym` 场景开关：先量化方向偏差再实现（来源：`design/pgi-align.md` §7.4.1）。
+- [x] `--sym` 场景开关：方向偏差已量化（2026-08-12，带 `--ref-seq/--query-seq`
+  正确路径，A→B vs B→A 的 aligned 差异：mg1655×sakai +0.49%、
+  mg1655×se11 −1.81%、sakai×se11 +0.51%、mg1655×cft073 +0.08%——
+  多数 <1%，接近"噪声级"标准，全对场景大概率不需要 `--sym`，默认关
+  保持不变。⚠️ 注意：**不带序列的 `align pgi` 路径输出的是未精化的
+  geometric blocks**（帮助文档明示，每个种子链管一个粗 block），不能当
+  精化比对用；本项首次量化误用了该路径，数字作废重测
+  （来源：`design/pgi-align.md` §7.4.1）。
 - [ ] 完整 adaptamer（变长种子 >k）：前置 lcp 已落地，只差立项
       （来源：`design/pgi-query-layer.md`）。
 - [ ] `dist mash` 序列级并行：等单文件多 contig 大规模场景（文件级并行
@@ -227,22 +249,32 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
       README/本地源码；尝试按 README 语义重写后边集未对齐且回归真实
       边，已回退。**结论：保持简化语义，逐边对齐需 bcalm 链接实现
       源码，暂不立项**（`fq-assemble.md` §8.1 已记录）。
-- [ ] **pgr asm map 真实数据验证**：已实现（`asm/map.rs`，设计
-      `asm-map.md`）；待用真实 UT.fasta + reads 与 bbmap 输出对照 mapped
-      比例与覆盖度（`sam to-rg` + `rg coverage`，本机 Java 配对读 gz 失败，
-      黑盒对照暂缓）。
+- [x] **pgr asm map 真实数据验证（自一致性，2026-08-12）**：MG1655 参考 ×
+      1M 纠错 reads（anchr `pe.cor.fa` 采样）——完美贴回 505,305/1M
+      （50.5%，539,045 hits，1.5% 多映射）；**mapped reads 坐标抽查
+      10/10 与参考区间逐碱基一致**；mapped 子集平均覆盖 38.4×。50%
+      贴回率是设计使然（完美匹配拒绝任何带错 reads；anchr bwa 容错映射
+      mosdepth 271× 佐证 reads 来自该参考）。⚠️ bbmap 黑盒对照仍暂缓
+      （本机 Java 配对读 gz 失败）→ `asm-map.md` §4。
 - [ ] **OLC 宏基因组/长读真实数据验证**：Lambda（Illumina 108bp）已验证
       （`design/olc.md` §12，含 40× 原始与 9× 纠错两种路径）；长读
       （HiFi/ONT）与宏基因组数据到位后调 v1 参数（overlap 错配容忍、
       repeat breaking 覆盖度阈值、多 k 反馈）。
-- [ ] chain 算法待验证（低优先）：KD-tree 已实现并用于 `psl chain`
-      （`libs/ds/kdtree.rs`）；`best_crossover` 已接入 `fas_multiz` merge
-      （`libs/ds/crossover.rs`）——两者的真实数据验证待做；KD-tree 用于
-      PAF 链式化 / POA 排序仍待评估（PAF 当前未明确需要链式化）
-      （来源：`chain-algorithms.md` §12.3）。
+- [x] chain 算法验证（2026-08-12）：**KD-tree 已由 UCSC 管线字节级验证
+      覆盖**——`verify-ucsc-pipeline.sh:71` 跑 `pgr psl chain`（KD-tree
+      链式化，`libs/chain/connect.rs`）并与 axtChain 逐字节一致（E. coli
+      mg1655×sakai 主流程 + --syn + medium）。`best_crossover` 仍有
+      fas_multiz 真实多基因组数据验证待做（合成测试已覆盖交叉合并语义，
+      `tests/cli_fas_multiz.rs`）；KD-tree 用于 PAF 链式化 / POA 排序
+      仍待评估（PAF 当前未明确需要链式化）（来源：`chain-algorithms.md`
+      §12.3）。
 
 ## 5. 低风险审计记录项（可顺手修）
 
+- [ ] `pgr align pgi` 不带序列路径（geometric blocks，未精化）易被误当
+      精化比对使用（2026-08-12 本人误用过一次，见 `pgi-align.md`
+      §7.4.1）——帮助文本已有说明，可考虑在 `after_help` 加一句显式警告
+      或输出时提示"unrefined"。
 - [ ] `syncmer.rs` 重复发射同一位置：**暂缓**——消费方已去重，收益小风险高
       （来源：`audit/audit-rept-sd.md`）。
 

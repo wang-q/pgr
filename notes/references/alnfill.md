@@ -29,13 +29,22 @@
 
 ### 2.2 找 gap（align_gaps）
 
-- 按 (qid, tid, qbeg, qend, tbeg, tend) 排序后按 (q,t) 序列对分组；每组**首尾各加
-  一个哨兵**（0 位与全长位）→ 染色体首端/尾端的 gap 也会被 box 化。
+- 按 RORDER（`alngap.c:263-297`，键序为 (qid, tid, qbeg, tbeg, qend, tend)，
+  注意是 qbeg/tbeg 先、qend/tend 后）排序后按 (q,t) 序列对分组（`align_gaps` 的
+  `ranges` 数组，`alngap.c:442-451` 记录每组起始+长度）；并行以**序列对分组**为
+  单元（`kt_for` 调度 `gap_core`，见 §6.6）。
+- 每组**首尾各加一个哨兵**（0 位与全长位，`alngap.c:349-354`）→ 染色体首端/尾端
+  的 gap 也会被 box 化；端部哨兵的 box 上界/下界被钳到 0 / 全长，故不会越界。
 - 对每个锚点 aln1，向后找 query 起点满足
   `qbeg2 ∈ [qend1+min_gap, qend1+max_gap)` 的锚点 aln2（query 侧 gap 在
   [min_gap, max_gap)）；再算 target 侧两区间间距
   `dist = max(tbeg1,tbeg2) − min(tend1,tend2)`，要求 `dist ∈ [min_gap, max_gap]`。
   **不检查链向**：混合方向的锚点对（target 顺序相反）只要间距达标同样成 box。
+  - 扫描方式（`alngap.c:364-369`）：对每个 aln1 用 `aln2s`/`aln2e` 两个指针
+    （while 前进）圈出 `[qend1+min_gap, qend1+max_gap)` 窗口内的 aln2，再逐个配对；
+    因 aln2s 每次从 `aln1+1` 重启而非真正单调滑窗，最坏 O(n²)，但受 max_gap 窗口
+    约束、实际开销集中在有 gap 的局部——pgr 若用排序数组 + 二分找窗口边界可做到
+    真正线性。
 - box 区间（`-e`=max_ovl，默认 1000）：
   - query：上游锚点 query 末端 − max_ovl 到下游锚点 query 起点 + max_ovl
     （即 `[max(abpos1, aepos1−max_ovl), min(aepos2, abpos2+max_ovl)]`，钳到锚点自身边界）；
@@ -66,12 +75,22 @@
 > `max_cov = (int) parse_num(opt.arg)`，help 也写成 `-f INT`）**转成整数**——传小数
 > `-f 0.5` 会被截成 0（= 完全不约束重叠），实际只能传 `-f 0` 或 `-f 1` 这类整数值。
 > 另 `-o`（`alngap.c:548-555`）可把输出写到文件（`freopen` 重定向 stdout，`-` 表示 stdout）；`-v` 为 verbose。
+>
+> **参数解析细节**：`parse_num2`（`alngap.c:494-509`）支持 K/M/G 后缀，但按**十进制**
+> 乘（×1e3/1e6/1e9，非 1024），并 `+0.499` 取整；仅 `-l/-m/-f` 走 `parse_num`。
+> `-e`（`alngap.c:545`）与 `-t`（`alngap.c:547`）用 `atoi`，**不支持 K/M/G 后缀**——
+> 例如 `-e 1K` 会被解析成 1 而非 1000。pgr 若做同类 CLI 需统一后缀语义。
 
 ## 3. alnfill：跑 LastZ（alnfill.c，530 行）
 
 - **整库入内存**：`make_sdict_from_fa`（sdict.c:131）用 kopen（bgzip 感知）读入
   全部序列并 `strdup` 保存——2 Gbp 级基因组 RAM 需求很高；且每条序列长度
-  **不能 >4 Gb**（`>UINT32_MAX` 直接报错退出）。pgr 侧用 2bit/loc 区间提取可避免。
+  **不能 >4 Gb**（`>UINT32_MAX` 直接报错退出，sdict.c:150）。且 **ref 与 qry 各自
+  调用一次** `make_sdict_from_fa`（alnfill.c:375-376），两份全基因组同时常驻内存。
+  pgr 侧用 2bit/loc 区间提取可避免。
+- **启动时自检**：`check_executable`（alnfill.c:83-93）用 `command -v <lastz>` 先校验
+  lastz 可执行，缺失即报错退出；`run_system_cmd`（alnfill.c:74-81）调 `system()` 且带
+  一次重试。pgr 若外包 lastz 进程可参考"先探测可执行、失败重试"的稳健性。
 - 读 interval 文件：跳过 `#` 头行；解析 10 列（≥6 列可用）；用 ovl 列做越界校验
   （`qbeg ≥ qbol`、`qend+qeol ≤ qlen`、target 同理），非法区间跳过；
   **若 qname/tname 在已加载的 FASTA 中找不到则直接报错退出**（非跳过）。

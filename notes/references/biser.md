@@ -21,6 +21,9 @@
   会在内部将其转换为 hard-masked 序列进行分析。
 - **与 SEDEF 的关系**: BISER 是 SEDEF 的继任者，继承了其 SD error model，但在算法上改用线性
   plane-sweep 替代 MinHash，从而获得数倍加速。
+- **版本演进**（README Changelog，v1.4，2023-03）: 切换为 Codon 实现；并
+  "change of alignment refinement heuristics (should be faster now)"——即 §3.3.3 的 `refine()`
+  稀疏 DP + 分块 `bio.seq.align` 精修。README 提示 v1.4 产出的 SD 可能与旧版略有差异。
 
 ### 1.2 输入输出
 
@@ -50,6 +53,22 @@ biser -o <output> -t <threads> <genome1.fa> [genome2.fa ...]
 
 - 主输出为 BEDPE 格式，描述 SD mate 的坐标、链向、CIGAR、error rate 等。
 - `.elem` 文件记录 elementary SD decomposition 结果，包括 core duplicon 标记。
+
+**BEDPE 字段**（`hit.codon` `Hit.__str__`，行 155-171）:
+
+| 字段 | 含义 |
+|------|------|
+| 前 6 列 | 标准 BEDPE：`chr1, start1, end1, chr2, start2, end2`（半开区间、0-indexed） |
+| `reference` | 两 mate 基因组名，以 `:` 分隔（如 `hs:hs`） |
+| `score` | 总 alignment error（%）= `mis_err + gap_err` |
+| `strand1/2` | `+` / `-` |
+| `max_len` | 较长 mate 的长度 |
+| `aln_len` | `span()` = CIGAR 各 op 长度之和 |
+| `cigar` | 由 `simple_cigar()`（行 173-184）生成，把 `=`/`X` 连续段折叠为单个 `M` |
+| `optional` | `X=<mismatch%>;ID=<gap%>` 两个字段 |
+
+> 注意输出 CIGAR 用 `M`（而非 `=`/`X`）表示匹配/错配；`=`/`X` 的细分仅用于 error rate 统计
+> （`mis_err`/`gap_err`/`err`，行 233-238）。
 
 ## 2. BISER 论文算法
 
@@ -397,6 +416,12 @@ score 求和)`；否则各自独立输出。
 **输出**: 每个 elementary SD 集合输出为 BED 行，格式为
 `species\tchrom\tbegin\tend\tset_id\tlength\tscore\tstrand`；其中 strand 来自序列名中的 `+`/`-`。
 
+> **strand 编码细节**: cluster.codon 写出的 FASTA 头为 `>{sp}#{chr}{strand}#{st}#{ed}`，其中
+> `strand` 取 `'+_'[int(reversed)]`——正向为 `+`、反向为 `_`（`cluster.codon:139` 构造 `c2`
+> 处）。decompose 按 `#` 拆分后取 `chr[-1]` 作为 strand，凡非 `+` 均按反向处理并翻转坐标
+> （`decompose.codon:265-270`）。因此 decompose 的输入头、输出 strand 与 search 的 BEDPE 链向
+> (`+`/`-`) 是两套独立的表示，仅在 cross 阶段由 cluster 头统一桥接。
+
 #### 3.3.5 Core duplicon cover in `cover.py`
 
 `cover(bed, elems)` 读取 `final.bed` 与 `.elem.txt`，为每个 `(species, chrom, strand)` 键用 `ncls`
@@ -432,6 +457,27 @@ Codon 二进制只做单条序列对/单 cluster 的计算，跨染色体/chunk�
 - **输出路径**：`!hard` 时对 `final.bed` 跑 `translate` 映射回原基因组坐标；`hard` 时直接
   `shutil.copy` final.bed（及 `.elem.txt`）。进程统一设 `env OMP_NUM_THREADS=1` 限制 Codon 的
   OpenMP；`--gc-heap` 设 `GC_INITIAL_HEAP_SIZE`。
+
+#### 3.3.7 Clustering in `cluster.codon`
+
+`cluster(genomes, bed, output)` 把重叠的 SD 按"区间染色"归入若干 group，每个 group 抽成一个
+`<output>/<i>.fa`，供 decompose 逐 cluster 处理（`cluster.codon:53-165`）：
+
+1. 把每条 SD 的两个 mate 端点投影到"点集合"：收集所有 `get_first()`/`get_last()` 的 `(chr, pos)`
+   并排序去重得 `help_all_dots`（行 82-84），`colors` 数组记录每个点的当前颜色。
+2. 对每条 SD，取其两 mate 的起始/结束在 `colors` 中的区间下标，取并集得 `colors_avail`（行 99）。
+   - 若全是 0（未染色）：给两段区间赋一个新颜色 `color`，并在 `colors_dict` 记 `color→color`
+     （行 100-105）。
+   - 否则：取 `colors_avail` 中最小的非零色 `l[0]` 为代表色，把 `colors_dict` 中所有出现过的颜色
+     映射到 `l[0]`（近似 union-find 的路径压缩，行 106-113），再给两段区间赋 `l[0]`。
+3. 染色完成后，逐 SD 沿 `colors_dict` 做并查集 `parent` 上溯到根（行 120-128），把共享同一根色的
+   SD 归入同一 group；按 group 写 FASTA（行 133-165），每行 `{sp}#{chr}{strand}#{st}#{ed}`，
+   反向 mate 取反向互补序列。
+
+> 该染色法用"离散点着色"代替区间树：把每个 mate 端点映射到排序后的唯一坐标下标，用数组区间赋值
+> 实现 O(区间跨度) 的区间覆盖染色，`while colors_dict[parent] != parent` 上溯即并查集 find（无
+> 路径压缩，但整体仍接近线性）。pgr 的 `sd cluster`（`src/libs/sd/cluster.rs:43` `cluster_paf()`）
+> 直接复刻了这一染色聚类逻辑。
 
 ## 4. 相关研究：T2T-CHM13 SD 注释来源与下游分析
 

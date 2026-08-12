@@ -143,6 +143,19 @@ pgr sam to-rg [OPTIONS] <infile>            # SAM → .rg（stdin 可用）
 
 ## 4. 验证
 
+### 4.1 真实数据自一致性验证（2026-08-12）
+
+MG1655 参考（`tests/genome/mg1655.fa.gz`）× 1M 纠错 reads（anchr
+`pe.cor.fa` 采样，`/tmp/pe500k.fa`，313–347 bp）：
+
+* 完美贴回 505,305/1,000,000（50.5%），539,045 hits（1.5% 多映射）；
+* **mapped reads 坐标抽查 10/10 与参考区间逐碱基一致**（含反向链）；
+* mapped 子集平均覆盖 38.4×（`sam to-rg` + `rg coverage` 剖面正常）；
+* 50% 贴回率解释：`asm map` 是完美匹配，任何残余错误（纠错 reads 仍有
+  ~1% 错误）都导致未贴回——anchr 自身 bwa 容错映射 mosdepth 271× 佐证
+  reads 确实来自该参考（见 `3_bwa/R.mosdepth.summary.txt`）。工具行为
+  符合设计；bbmap 黑盒对照因本机 Java 配对读 gz 失败暂缓。
+
 - 合成参考 + reads：
   - 精确正向/反向匹配 → mapped，位置/方向正确；
   - 1 个错配 / 1 个 gap → unmapped（完美语义）；
