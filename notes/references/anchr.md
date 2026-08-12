@@ -88,11 +88,26 @@ pgr 保持"通用基因组数据处理工具集"定位，不吸收 anchr 的流�
 
 ## 5. 待办与风险
 
-- **7_glue/7_fill 替换评估（唯一有算法语义差异的迁移）**：对照 `dazz
-  group`（anchors 按长读分组规则）与 `paf graph`、`dazz layout`（组内布局
-  算法）与 `asm layout` 的具体语义差异，确认可替换后再动模板；
+- **7_glue/7_fill 替换评估（2026-08-12 已做，结论：分层保留在 anchr）**：
+  `dazz group`/`layout` 的语义（读 `App-Dazz/lib/App/Dazz/Command/
+  group.pm`/`layout.pm` 源码）：
+  * **group**：只保留 anchor×long 的 overlap → multi-matched 长读剔除
+    （同一长读多次匹配同一 anchor）→ anchor 图建边（边需 ≥coverage 个
+    长读支持 + 距离判断 + 链方向一致）→ 连通分量 = 分组；
+  * **layout**：用 overlap 端点建**有向图**（g_strand=0 才保留）→
+    transitive reduction → 路径分解（linear/branched/cyclic）→ 按
+    relation 距离拼接**锚序列**成 contig（长读只提供证据不参与拼接）。
+  **与 pgr 对照**：`paf graph`（DSU 传递闭包）是"序列段平等"图，无
+  anchor/long 分层、无证据计数/距离/方向一致性过滤、无 multi-matched
+  剔除；`asm layout` 是 unitig×unitig 的 OLC 链化，不消费"锚经长读链接"
+  的分层证据。**直接替换不可行**（语义差异大）。
+  **结论**：group/layout 的**分层策略逻辑留在 anchr**（用 Rust 重写
+  替换 Perl App-Dazz），pgr 只提供底层原语——overlap 检测 `asm ovlp`/
+  `olc`（甩掉 DALIGNER）、覆盖 `paf coverage`、图构建 `paf graph`；
+  ovlp.tsv 13 列格式可保留为 anchr 内部格式（或换 PAF）。**pgr 侧无需
+  新增命令**，符合"anchr 留流程 + 策略"的边界原则。
 - **`paf coverage` 无 cg:Z gap**：ovlpr `covered` 用 PAF start/end（不依赖
   CIGAR），pgr `paf coverage` 要求 `cg:Z`（无标签记录不贡献）——补丁方向：
-  无 cg:Z 时退回用 start/end 算覆盖；
+  无 cg:Z 时退回用 target 区间算覆盖。**2026-08-12 已落地**（见 todo §5）。
 - **anchr 模板替换整体**：见 todo §3 挂账条目（trim.era.sh 等 bbtools
   调用换 pgr 命令链，用户自处理）。

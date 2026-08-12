@@ -202,6 +202,11 @@ pgr paf query aln.paf A:0-30 --min-tree-coverage 3
 pgr paf query aln.paf.idx -b regions.bed
 ```
 
+`pgr paf coverage` 从 PAF 累计每 target 的比对深度：有 `cg:Z` 标签时按
+CIGAR 的 M/=/X/D 操作计数（插入不计），无标签时退回用 target 区间
+`[target_start, target_end)`（等价于 M/=/X/D 覆盖）。输出恒定深度极大段
+TSV：`target<TAB>start<TAB>end<TAB>depth`。
+
 `--min-tree-coverage N` 对传递闭包后的**每个输出区间**统计其目标区间上重叠的
 不同查询序列数（多跳同源计入），低于 N 的区间被丢弃。与 `--min-degree`（区域级、
 整区跳过）互补：它是 block 级过滤，可只保留区域内支持度高的部分。

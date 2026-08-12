@@ -11,14 +11,15 @@
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
 **当前状态**：1746 测试通过，fmt/clippy 干净；repeat masking 标定
-（`f5f7798`）与 paf `--min-tree-coverage`（`ee914d6`）已由用户提交；工作树
-未提交改动 = **fas_multiz 合并修复 + 差异本质分析**（9 个文件，见 §1；本
-环境 `.git` 只读无法 commit，需用户本地提交）。
+（`f5f7798`）、paf `--min-tree-coverage`（`ee914d6`）、fas_multiz 合并修复
+（`4431788`）与 2026-08-12 全量文档（`db4f47a`，含 anchr.md 边界划分与
+变长种子实验结论）均已提交，工作树干净。
 **最近提交**：`638fbf3`（依赖清理收尾：probminhash/isal-rs 删除）、
 `6290d7d`（tera 移除 + regex 挪 dev-deps + pgi no-seq 警告）、`d167ac3`
 （pgi A1 + 键错位修复）、`f5bb2e7`（unitig 级 contain 预过滤）、
 `d9b478b`（paf coverage + OLC 修复 + 输出级去重）、`f5f7798`（repeat
-masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`）。
+masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`）、
+`4431788`（fas_multiz 块流合并修复）、`db4f47a`（2026-08-12 全量文档）。
 
 **本会话成果（依赖审计 + 瘦身）**：
 - **release 17.0 → 12.62 MB**：bio（死依赖）、tera（plot 4 条渲染路径
@@ -44,6 +45,13 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   块流合并重写修复（16/16 染色体恢复 100%）；残余列差异经分析为 multiz
   列重排而非 pgr 误差，且会被 `fas refine` 消化，判定不解决（见 §1 两条
   与 `design/fas-multiz.md` §6.6/§6.7）。
+- **adaptamer 变长种子实验否定**：E. coli + 酵母实测覆盖增量 ≤0.15%、
+  性能加速 ≤3%（种子 94.8–97.9% 已唯一），不做；FastGA 自比对更快的
+  来源是 C 实现效率（波扩展/索引构建），非变长种子（§1/§7 与
+  `design/pgi-align.md` §7.3.1/§7.3.2）。
+- **anchr/ovlpr/App-Dazz 边界划分**：anchr 留流程编排 + 策略，通用原语
+  pgr 覆盖（asm/paf coverage/paf graph/fq 系列），DALIGNER 生态退役
+  （`references/anchr.md`）。
 
 **关键裁定（必须遵守，自旧交接保留）**：
 - k-mer 只保留一套，以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做
@@ -202,7 +210,10 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
   （asm 系列/paf coverage/paf graph/fq 系列，大部分已就位），DALIGNER 生态
   （dazzname/show2ovlp/paf2ovlp/restrict + 7_glue/7_fill 的 App-Dazz
   依赖）退役——详见 `references/anchr.md`。7_glue/7_fill 的
-  `dazz group/layout` → `paf graph` + `asm layout` 替换前需先对照语义。
+  `dazz group/layout` 替换评估已做（2026-08-12）：分层策略逻辑留在
+  anchr（Rust 重写替换 Perl App-Dazz），pgr 只供底层原语（asm ovlp/
+  paf coverage/paf graph），pgr 侧无需新增命令——详见 `references/anchr.md`
+  §5。
 - **多 k unitig 的 OLC 拼接**：**已实现**（2026-08-12，`pgr asm olc`
   等四命令，`design/olc.md`，承接 `references/canu.md` §8）。剩余待真实
   宏基因组数据验证：overlap 是否允许少量错配、不同 k unitig 冗余去重、
@@ -276,9 +287,12 @@ masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`�
 
 ## 5. 低风险审计记录项（可顺手修）
 
-- [ ] `paf coverage` 支持无 `cg:Z` 的 PAF（退回用 start/end 算覆盖）——
-      ovlpr `covered` 不依赖 CIGAR，pgr 当前无标签记录不贡献；minimap2
-      默认 PAF 无 cg:Z 时覆盖算不出（来源：`references/anchr.md` §5）。
+- [x] `paf coverage` 支持无 `cg:Z` 的 PAF（退回用 target 区间算覆盖）——
+      2026-08-12 已落地：`cov.rs` 无标签记录退回 `[target_start,
+      target_end)`（与 CIGAR M/=/X/D 覆盖等价），单测
+      `covers_without_cigar_via_target_interval` + minimap2 真实 PAF
+      （ovlpr 11_2.long.paf，0 cg:Z）端到端验证；help/docs 同步
+      （来源：`references/anchr.md` §5）。
 - [x] `pgr align pgi` 不带序列路径（geometric blocks，未精化）易被误当
       精化比对使用——已加运行时 `log::warn!` 显式警告（2026-08-12：
       "writing unrefined geometric blocks ... pass --ref-seq/--query-seq"），

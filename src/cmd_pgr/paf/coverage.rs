@@ -7,7 +7,7 @@ use std::io::{BufReader, Write};
 /// Build the clap subcommand for coverage.
 pub fn make_subcommand() -> Command {
     Command::new("coverage")
-        .about("Computes per-target coverage depth from PAF cg:Z tags")
+        .about("Computes per-target coverage depth from PAF records")
         .after_help(
             r###"
 Accumulates per-target alignment depth from the `cg:Z` CIGAR tag of every
@@ -16,9 +16,10 @@ writes maximal segments of constant depth at or above `--minimum` as TSV:
 `target<TAB>start<TAB>end<TAB>depth` (0-based half-open, sorted by target
 then start).
 
-Records without a `cg:Z` tag (e.g. `pgr psl to-paf` output) contribute
-nothing. Pipelines that carry the tag include `pgr pl chainnet` →
-`pgr maf to-paf`.
+Records without a `cg:Z` tag (e.g. minimap2 default or `pgr psl to-paf`
+output) fall back to the target interval `[target_start, target_end)`,
+which is equivalent to the CIGAR-based M/=/X/D coverage. Pipelines that
+carry the tag include `pgr pl chainnet` → `pgr maf to-paf`.
 
 Examples:
 1. All covered segments:
