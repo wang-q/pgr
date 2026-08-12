@@ -40,9 +40,17 @@ FM-index（rld rank + 采样 SA）
   计数对称，否则报错退出。查询端由 `sid` 的奇偶区分正反链（`pos_stranded`）。
 - 两种 BWT 格式：
   - **FMR**（ropebwt2/fermi 动态格式）：可增量追加/合并（`-i` 续建），BWT 构建
-    用；同一 BWT 不保证同一 FMR。
-  - **FMD**（静态格式）：结构简单、加载快、内存小、可 mmap，查询用。
-  - 可互转（`build -i in.fmd -bo out.fmr` / 反向）。
+    用；同一 BWT 不保证同一 FMR。文件头 magic = `"RB\2"`（mrope.c `mr_dump`，
+    `mrope.c:152-159`），随后 6 条 rope（ACGTN$ 各一）逐条 dump。
+  - **FMD**（静态格式）：结构简单、加载快、内存小、可 mmap，查询用。文件头
+    magic = `"RLD\3"`（rld0.c `rld_dump`，`rld0.c:222-243`）；`rld_restore` 按
+    内存加载，`rld_restore_mmap` 按 `mmap` 零拷贝映射（`rld0.c:322-341`）。
+  - 可互转（`build -i in.fmd -bo out.fmr` / 反向），转换走 `rb3_enc_fmr2fmd` /
+    `rb3_enc_fmd2fmr`（fm-index.c，前者遍历 FMR 重编码 RLE，后者按 `cnt[]` 累积
+    计数切分每个 rope 段）。
+  - 其余二进制格式：SSA 采样后缀数组 magic = `"SSA\1"`（ssa.c:204）、BRE 文件
+    magic = `"BRE\1"`（rld0.c:279）——解析时都用 magic 判断格式，跨格式复用同一
+    `rb3_fmi_restore`（fm-index.h:123-133），先试 FMD 失败再试 FMR。
 
 ## 3. 核心算法
 
@@ -59,6 +67,11 @@ FM-index（rld rank + 采样 SA）
      节点满（`n==max_nodes`）或叶子 `n_runs + RLE_MIN_SPACE(18) > block_len`
      时 `split_node` 分裂，动态维护 BWT；`rpcache_t` 缓存上次插入位置加速连续插入。
    - `-r` 用 RCLO（reverse-complement + 计数排序优化），适合短读。
+   - **免释放内存池**（rope.c `mempool_t`，`rope.c:13-49`）：节点与叶子各一个
+     bump 分配器，按 `MP_CHUNK_SIZE=0x100000`（1MB）分块、只分配从不 free——
+     避免索引构建期百万级 `rpnode_t` 的小对象 malloc/free 碎片与开销；树深上界
+     `ROPE_MAX_DEPTH=80`（rope.h:7）。这是 pgr 大规模索引构建时可借鉴的
+     "固定大小池 + 无释放"模式。
 2. **libsais 批量算法**（默认）：
    - 按 batch 读入序列（含正反链），用 **libsais 构建广义后缀数组**（libsais.c，
      外部库；`sais-ss.c` 的 `rb3_build_sais` 按 batch 长度选择：`len + sais_extra_len >=
@@ -75,6 +88,12 @@ FM-index（rld rank + 采样 SA）
 
 输出格式：`-b` FMR（rope dump）、`-d` FMD（rld 编码）、`-T` TREE、`-e` BRE
 （block-run encoding）、默认 PLAIN 文本 BWT。
+
+> **外部构建路径（grlBWT，README:140-145）**：当输入为单文件时，可用
+> `fa2line` 把序列（正反链）转成每行一条 → 交给外部 **grlBWT** 构建（可能更快
+> 但需工作磁盘空间）→ `grl2plain` 出纯文本 BWT → `plain2fmd` 转回 FMD。
+> 这体现 ropebwt3 的"构建后端可插拔"设计：`plain2fmd`（main.c:299-331）只是把
+> 纯文本 BWT 逐符号 `rld_enc` 成 FMD，任何外部 SA/BWT 工具的产物都能接入。
 
 ### 3.2 RLE-BWT 存储（rld0.c + rle.h）
 
@@ -114,9 +133,13 @@ FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
 - **原始算法** `rb3_fmd_smem1`（`--old-mem` 切回）：对每个起点 x 先**前向**扩展区间
   （`rb3_fmd_extend`），记录所有 size ≥ `min_occ` 的区间；再**后向**扩展，区间无法延伸时
   输出一个 MEM（长度 ≥ `min_len`）。每位置尝试一次，汇总得全部 SMEM。
-- **Gagie 算法** `rb3_fmd_smem1_TG`（3.2 起默认，更快）：从 `x + min_len - 1`
-  位置起向后扩展到 `min_len`，再**前向/后向交替扩展**，只输出长 MEM，省去大量
-  短 MEM 的重复扫描。
+- **Gagie 算法** `rb3_fmd_smem1_TG`（3.2 起默认，更快；fm-index.c:483-518）：
+  对每个起点 `x` 从 `x + min_len - 1` 处的单字符区间起步，**先反向**扩展到
+  `min_len`（中途 `size < min_occ` 即判定无 MEM、返回下一起点）；再**前向**扩展
+  直到无法延伸，输出这一个长 MEM（`info = x<<32 | j`）；随后**再反向**扩展一次
+  求下一个起点。全程只输出长 MEM，省去原始算法对每个位置尝试、收集大量短 MEM
+  的重复扫描。`check_long` 参数切换"只探测存在性"模式，供 `-j` 的
+  `rb3_fmd_smem_present` 门控预检（fm-index.c:530-538）复用同一热路径。
 - `mem` 输出 BED（query name, start, end, #hits），默认不输出位置（`-p` 可选，
   3.8 起输出半随机子集）；`--gap`/`--cov` 报告未覆盖/覆盖长度。
 - **歧义碱基**：query 非 ACGT 字符经 `rb3_nt6_table` 统一编码为 N（code 5，合法 BWT
@@ -128,6 +151,12 @@ FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
   而不是 query 后缀数组。局部模式用 `rb3_bwtl_gen` 先建 query 的 BWT 再 `rb3_dawg_gen`
   构造完整 DAWG；end-to-end 模式则用**线性 DAWG**（`rb3_dawg_gen_linear`，query 本身即
   一条路径，适合 `hapdiv`/`-e` 的整条查询）；
+- **query 轻量 BWT**（`rb3_bwtl_gen`，dawg.c:28-76）：对短查询用 libsais 建 SA，
+  BWT 用 **2-bit 打包**（每 4 基一字节、每 16 基 32-bit 字），rank 每 16 基存一次
+  前缀计数（`occ[]`）；`rb3_bwtl_rank1a`（dawg.c:78-89）用预计算的
+  `bwtl_cnt_table[256]` **查表统计单字内 2-bit 符号数**（一次处理 4 字节），
+  是 SW 里"小字符串上反复 rank"的紧凑 SIMD 式优化——pgr 若做 query 端小索引，
+  这种 2-bit 打包 + 查表 rank 是省内存且快的模板；
 - **候选集**：`sw_cell_t` 携带 H/E/F 三个 DP 状态与 **SA 双区间**（`lo, lo_rc, hi-lo`）；
   `sw_candset_t` 以 `(lo,hi)` 为键去重/合并同一区间的多个来源，`sw_update_candset`
   裁剪，`sw_heap_insert1` 用堆保留 top `n_best` 候选；
@@ -187,15 +216,15 @@ FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
 |------|------|----------|
 | `build` | 构建 BWT（FMR/FMD）| `-2/-s/-r` ropebwt2 算法（`-s` RLO、`-r` RCLO）、`-m` batch（默认 7G）、`-t` 线程、`-p` SA 并行线程、`-l/-n` 叶子块长/节点扇出、`-F/-R` 免正/反链、`-d/-b/-e/-T` 输出格式、`-i` 续建、`-S` 逐文件保存 |
 | `mem` | SMEM 查找 | `-l` 最小长度（默认 19）、`-c` 最小出现、`-p` 输出位置、`--gap/--cov`、`--old-mem` 切回原始算法（默认 Gagie）|
-| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数（`n_best`）、`-k` 末端 k-mer（`end_len` 默认 11）、`-j` 启动 MEM 长度（`min_mem_len`）、`-m` min score、`-A/-B/-O/-E` 评分、`-C` rank 缓存、`-y` e2e 丢尾、`-e` 端到端、`-b` 双链、`-u` 输出未比对、`-p` 多位置、`--seq` 输出 rs、`--all-e2e`/`-g` |
+| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数（`n_best`）、`-k` 末端 k-mer（`end_len` 默认 11）、`-j` 启动 MEM 长度（`min_mem_len`）、`-m` min score、`-A/-B/-O/-E` 评分、`-C` rank 缓存、`-y` e2e 丢尾、`-e` 端到端（强制 `-k 1`）、`-b` 双链、`-u` 输出未比对、`-p` 多位置、`--seq` 输出 rs、`--all-e2e`/`-g`（也强制 `-e` + `-k 1`）|
 | `suffix` | 找最长匹配后缀 | `-L` 输入单行一条序列 |
 | `hapdiv` | 101-mer 单倍型多样性 | 内部调用 sw -e（`hapdiv_k=101, hapdiv_w=50`）|
-| `ssa` | 采样后缀数组 | `-s` 采样率（每 2^INT 碱基一个 SA，默认 8）、`-t` 线程 |
+| `ssa` | 采样后缀数组 | `-s` 采样率（每 2^INT 碱基一个 SA，默认 8）、`-t` 线程；输出文件 ≈ `64·(n/2^s + m)` 字节（n=符号数、m=序列数）|
 | `get` | 按索引取序列 | `get <idx.fmr> <int> [...]` |
 | `merge` | 合并多个 BWT（FMR）| `-t` 线程、`-o` 输出、`-S` 中途保存 |
 | `kount` | 统计高出现 k-mer | `-k` k-mer 长、`-m` 最小出现（`kount -k 51 -m 100` 类）|
 | `fa2line` | FASTX 转行（正反链）| `-R` 不含反向链 |
-| `fa2kmer` | FASTX 抽 k-mer | `-k` 长度、`-w` 步长 |
+| `fa2kmer` | FASTX 抽 k-mer | `-k` 长度（默认 151）、`-w` 步长（默认 50；对末尾 k-mer 做截断处理）|
 | `plain2fmd` | 纯文本 BWT → FMD | `-o` 输出 |
 | `stat` | 报告序列数/符号数/run 数与 A/C/G/T/N 计数 | `-M` mmap（3.6 起 FMR 也支持）|
 
@@ -205,7 +234,10 @@ FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
 
 > **kount 与 pgr 的关联**：`kount` 在 FM-index 上做深度优先遍历统计（出现次数 ≥ `min_occ`）
 > 的 k-mer，与 pgr 的 `kmer` 命令功能对应；若未来 pgr 引入 FM-index，kount 的"rank2a 定长
-> 区间 DFS + 阈值剪枝"是可直接移植的计数骨架（`main_kount`，约 80 行 C）。
+> 区间 DFS + 阈值剪枝"是可直接移植的计数骨架（`main_kount`，main.c:346-423，约 80 行 C）。
+> 它接受**多个索引文件**，同步维护各索引的区间栈，输出"该 k-mer 在每个索引中的出现数"
+> （`main_kount` 里对每个 `aux[i]` 独立 `rank2a` 并取交集判断），适合做多个样本间的
+> k-mer 共享/差异统计。
 
 ## 6. 对 pgr 的启示
 
@@ -242,6 +274,12 @@ FMD 的核心数据结构 `rld_t`（rld0.h），其 RLE 编码分两层：
 6. **`ssa` 定位的 O(s/m) 算法**：`rb3_ssa_multi` 用堆维护待展开区间（优先小区间）、
    命中哨兵即得序列归属，把"区间内位置集合"定位加速到期望 O(s/m)（s 采样率、
    m 相似基因组数），对 pgr 在高度冗余集合上的坐标定位有借鉴价值。
+7. **索引构建期工程细节**：rope 的"固定大小池 + 无释放"bump 分配（`mempool_t`）、
+   每 2-bit 打包 + 查表 rank 的 query BWT（`rb3_bwtl_rank1a`）、以及"magic 字节 +
+   统一 `rb3_fmi_restore` 自动识别 FMR/FMD"的多格式加载，都是 pgr 索引模块
+   （`fa index`/PAF 索引）可复用的低成本模式；grlBWT 外挂 + `plain2fmd` 接入的
+   "构建后端可插拔"设计则提示：pgr 的索引层也应把"核心数据结构"与"具体构建算法"
+   解耦，便于将来替换或组合不同构建器。
 
 ### 6.3 结论
 

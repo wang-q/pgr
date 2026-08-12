@@ -46,6 +46,7 @@ return (start, stop)
 - **5' 端**：从 5' 到 3' 扫描，`s` 是 `cutoff - q` 的累积。`s < 0` 表示从此处开始质量持续低于 cutoff，应停止 5' 修剪；`s > max_qual` 时更新 `start = i+1`，即质量相对高点的下一个碱基。
 - **3' 端**：从 3' 到 5' 反向扫描，对称逻辑，`stop = i`。
 - **区间判定**：`start >= stop` 时整段无效，返回 `(0,0)`（即不修剪，或全部丢弃由上层决定——注意这里**不是**丢弃整条，而是置空区间，`QualityTrimmer` 会返回空 read）。
+- **Cython 实现要点**：质量串要求为 ASCII，`quality_trim_index` 用 `PyUnicode_1BYTE_DATA` 直接取底层字节指针、逐字节读 `qual[i] - base` 累加（qualtrim.pyx:46-48, 53-70），避免逐字符 Python 对象开销；质量缺失抛 `HasNoQualities`。5'/3' 两端独立单遍扫描，O(n)、零额外内存。
 
 ### 2.2 与滑窗（sickle/Trimmomatic）的本质区别
 
@@ -144,6 +145,8 @@ cutadapt 的接头去除核心是一个 Cython 实现的**混合 cost/score 半�
 - `times`（`-n/--times`，默认 1；`-e` 是 `--error-rate`）：每轮只剪最佳匹配，剪完再搜下一轮，直到某轮无匹配为止（modifiers.py:225-231）。
 - `action`（`--action`）：`trim`（默认，删除接头及上下游）、`mask`（将被删区替换为 N）、`lowercase`（转小写）、`retain`（保留接头本体，只删其上下游）、`crop`（只保留接头匹配区）、`none`（`--no-trim`，只记录不删除）。`retain`/`crop` 不能与 `times>1` 组合。
 - 统计：`with_adapters`、每个 adapter 的 `EndStatistics`（按 removed 长度 × 错误数计数、`adjacent_bases`）供报告。
+- **特化快路径**：默认 `times==1 且 action=="trim"` 时，`__init__` 把 `match_and_trim` 换成专用方法 `_match_and_trim_once_action_trim`（modifiers.py:118-119, 253），省去 `matches` list 分配与 action 分支，只查一次并直接 `match.trimmed(read)`。`action=None`（`--no-trim`）时只把 match 记入 `info.matches`、不修改序列（modifiers.py:248-249）。
+- **误配率/GC 估计**：`EndStatistics.random_match_probabilities`（adapters.py:118）按 GC 含量估算"随机序列上与 adapter 匹配前 i 个碱基的概率"，供报告估算随机误配率；`adjacent_bases` 统计 3' 接头剪掉处**相邻碱基**分布（adapters.py:194），可用于识别非特异性结合。这两者 pgr 若做接头统计报告可参考。
 
 ### 3.8 paired-end 处理（modifiers.py + cli.py）
 

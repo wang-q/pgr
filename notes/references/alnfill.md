@@ -56,7 +56,9 @@
     供 alnfill 校验区间越界。
 - **最小 box 去嵌套**：AORDER 按面积升序排序 → rtree 只插入"内部不含已插入节点"
   的 box（`rtree_exist_node_inside`），面积小的先插，最终只保留不包含任何更小
-  box 的 box——与论文"retain only the minimal ones"一致。
+  box 的 box——与论文"retain only the minimal ones"一致。注意该去嵌套**在每个
+  (q,t) 序列对组内独立进行**（`gap_core` 每组新建一棵 rtree，`alngap.c:397`），
+  而非跨组全局去重。
 - 输出 10 列：`#Q_NAME Q_BEG Q_END T_NAME T_BEG T_END Q_BEG_OVL Q_END_OVL
   T_BEG_OVL T_END_OVL`（头一行 `#Q_NAME...` 也是标准输出的一部分）。
 
@@ -157,13 +159,32 @@
    这正是 chain 里"只补不可被更小锚点覆盖的单 gap"的几何版，pgr chain 的 gap
    筛选可复用同一思路（用现有 coitrees 区间树即可，无需引入 rtree）。
 3. **哨兵 + 相邻锚点对**（alngap.c:349-354）：每组 (q,t) 序列对首尾各加一个
-   零长哨兵，使染色体首端/尾端的 gap 也被枚举；相邻配对用双指针滑窗而非二重
-   全遍历。pgr 的 holes/chain 枚举 gap 时可照此处理端部。
-4. **进程内逐字段坐标回移**（alnfill.c:97-134）：不重写整行，只对 PAF 前 8 列
-   定点替换（ql/tl 换全长、qs/qe/ts/te 加偏移），第 9 列起原样透传。pgr 在
-   `pgr align fill` 中回移 lastz 输出时可复用该"列级重写"而非逐列重建 PSL。
+   零长哨兵，使染色体首端/尾端的 gap 也被枚举；相邻配对用 `aln2s`/`aln2e` 指针
+   圈 `[qend1+min_gap, qend1+max_gap)` 窗口而非二重全遍历（注意它每次从 `aln1+1`
+   重启，并非真正单调滑窗，见 §2.2）。pgr 的 holes/chain 枚举 gap 时可照此处理
+   端部，并可用二分真正线性化。
+4. **进程内逐字段坐标回移**（alnfill.c:97-134）：不重写整行，`paf_parse1` 用
+   switch 按列号定点重写（ql/tl 换全长、qs/qe/ts/te 加偏移），第 9 列（n_match）起
+   原样透传。pgr 在 `pgr align fill` 中回移 lastz 输出时可复用该"列级重写"而非
+   逐列重建 PSL。
 5. **多线程临时文件编排**（alnfill.c:431-496）：每线程一套独立临时文件，结果
    写入各自匿名缓冲，最后按线程序合并到 stdout——避免跨线程排序/加锁。
    与 pgr 惯用 rayon 并行、单写 outfile 不同，但"按线程隔离中间文件"的思路
    可迁移到并行子进程调用的场景（如并行跑 lastz 批次）。
+6. **工作窃取式并行调度**（kthread.c:24-65，`kt_for`）：每个 worker 依次处理
+   `i, i+n_threads, ...`，耗尽后再**窃取"剩余最小索引"的 worker 的任务**
+   （`steal_work`，`__sync_fetch_and_add` 原子推进）。alngap 以序列对分组为并行
+   单元、alnfill 以 interval 为并行单元，天然负载均衡且免锁。pgr 的 rayon
+   `par_iter` 语义等价，但"每个 worker 持独立缓冲（`abufs`/`gbufs`/`tmpfds`）"
+   的做法可避免共享可变状态。
+7. **rtree 实现要点**（rtree.c/h，Joshua J. Baker，MIT）：通用 2D R-tree，此处配置
+   为 `NUMTYPE=int64`、`MAXITEMS=16`、路径提示（`USE_PATHHINT`）、**写时复制 +
+   原子引用计数**（`rc_t`，`stdatomic`）、可换分配器与 item 回调。对 pgr 而言这套
+   实现偏重，最小 box 筛选只需"包含/被包含"查询，用现有 coitrees 即可覆盖，无需
+   引入完整 rtree（见 §6.2）。
+8. **整库入内存 + 资源工程**（misc.c:89-93、sdict.c:131）：`sys_init`→`liftrlimit()`
+   把 `RLIMIT_AS` 提到上限（配合把 ref+qry 两份全基因组同时读入的粗放内存策略）；
+   `peakrss`/`cputime`/`realtime` 汇报耗时与峰值 RSS（misc.c:50-93），结尾统一打印
+   CMD 与版本。pgr 用 2bit/loc 区间提取 + rayon 可彻底规避全内存加载，但"结束打印
+   峰值内存与耗时"的诊断习惯值得借鉴。
 

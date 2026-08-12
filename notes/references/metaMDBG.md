@@ -80,8 +80,10 @@ metaMDBG-metaMDBG-1.4/
 ## 4. asm 主流水线（`AssemblyPipeline::execute_pipeline`）
 
 `execute()` 先跑 `convertReadsToMinimizerSpace()`，再跑多轮
-`executePass(k, prevK, pass)`，最后 `derepSmallContigs → removeOverlaps →
-removeRepeats → toBasespace`，输出 `contigs.fasta.gz`。
+`executePass(k, prevK, pass)`；**最终后处理（`derepSmallContigs → removeOverlaps →
+removeRepeats → toBasespace`）不是循环结束后的独立步骤，而是在最后一轮
+`executePass(_lastK, ...)` 的 `isFinalPass` 分支内联执行**（`AssemblyPipeline.hpp:1111`
+起），输出 `contigs.fasta.gz`。首轮/中间轮只生成 unitig 序列反馈下一轮，不做碱基重建。
 
 ### 4.1 multi-k′ 迭代
 
@@ -108,6 +110,26 @@ _lastK = Commons::computeLastK(_minimizerDensityAssembly, readStats._n50ReadLeng
    `unitig_data.txt`（非 final）或 `contig_data_init.txt`（final）。
 4. 每轮结束时 `savePassData(k)`；非首轮 `dumpUnitigAbundances` 备份
    `unitigGraph_prev.*` 并写 refined abundance。
+
+**k′ 的语义与长度换算**（`AssemblyPipeline::writeParameters`,
+`AssemblyPipeline.hpp:1479`）：multi-k 里的 `k` 是**一个 k′-min-mer 包含的
+minimizer 个数**，不是碱基长度。换算关系写在 `parameters.gz` 里，供各子命令
+`Parameters::load` 复读：
+
+```cpp
+minimizerSpacingMean = 1 / assemblyDensity;   // 相邻 minimizer 的平均间距(碱基)
+kminmerLengthMean   = minimizerSpacingMean * (k-1);   // 一个 k-min-mer 的期望碱基跨度
+kminmerOverlapMean  = kminmerLengthMean - minimizerSpacingMean; // 相邻 k-min-mer 重叠
+```
+
+故 `k` 每 +1，k′-min-mer 期望碱基长度约 +`1/density`（assembly density 0.005 →
+每轮约 +200 bp）。这就是"unitig 反馈 + k 递增"实现**渐进长单元化**
+（longer k-min-mer → 更多直链、更少分支）的机制。
+
+**assembly graph 导出节奏**：`--gen-graph` 默认在第 11 轮（`_nextGenGraphIteration=11`，
+之后每 +10）导出一次 GFA（`doesGenerateAssemblyGraph`，
+`AssemblyPipeline.hpp:831`；首轮过大不导出）——用"隔轮导出"控制磁盘/内存，
+pgr 的 `pl` 管道若多轮组装可参考。
 
 ### 4.2 最终后处理（isFinalPass）
 
@@ -266,6 +288,21 @@ cutoff 倒序消费（见下）。
    或容错比对，metaMDBG 是"内嵌依赖"的参考，但 pgr 目前不引新依赖（用户约束）。
 6. **断点续跑**：checkpoint 文件机制简单实用，pgr 的 `pl` 管道若做多步任务
    可参考（不过 pgr 目前坚持原语路线，优先级低）。
+7. **multi-k 反馈 = 迭代式参数精化**（新增，2026-08-12）：把"组装"重构成
+   **"参数化子命令 + 磁盘中间文件 + 循环调度"**——同一 `graph`/`contig`/
+   `toMinspace` 子命令被 `AssemblyPipeline` 以不同 `k` 反复调用，跨进程只通过
+   `parameters.gz`（gzip 二进制参数 blob，`Parameters::load/save`）和
+   `unitig_data.txt`/`refined_abundances` 传递状态。pgr 的单进程 `libs/` 路线
+   不必照搬子进程，但**"迭代长度参数 + 反馈 unitig"** 的骨架可直接映射到
+   `asm` 的多趟 OLC/unitig 循环；`parameters.gz` 可类比 pgr 用 struct 传参。
+8. **外部分区计数（scale-out）**：k′-min-mer 计数不把全量 k-mer 塞内存，而是
+   `hash128 % nbPartitions`（`nbBases/20Gb`，clamp `[nbCores, 5000]`）写分区文件
+   → 分区内去重计数 → 合并（`KminmerCounter::partitionKminmers`，
+   `CreateMdbg.hpp:3652`）。这是典型的"外排序式"大数据手法，pgr 若做超大
+   数据集（如 `kmer count` 溢出内存）可参考分区+归并，而非一味加大内存。
+9. **内存驱动的批量分片**：toBasespace 用 `--max-memory`（`peakMemory/8`，
+   clamp `[1,100]`）决定 minimap2 一次读入多少 reads（`ToBasespace2.hpp:337`）——
+   峰值内存预算显式控制批大小。pgr 若加长读抛光，可把内存预算作为一等参数。
 
 > 结论：metaMDBG 对 pgr 的最大价值是**§6.3 的渐进丰度过滤**——它给出了
 > "不解析菌株气泡、用丰度逐级简化"的成熟实现，正好验证用户对气泡处理的直觉；
@@ -278,7 +315,7 @@ cutoff 倒序消费（见下）。
 
 1. **渐进丰度过滤 → unitig 覆盖度驱动的布局前过滤**：
    `ProgressiveAbundanceFilter::removeAbundanceNoQueue`
-   （`ProgressiveAbundanceFilter.hpp:2183`）：`t=1.1` 起步、`~10%` 步长、
+   （`ProgressiveAbundanceFilter.hpp:2181`）：`t=1.1` 起步、`~10%` 步长、
    每轮删 `abundance < t` 的 unitig 并 recompact 邻接——不是单阈值一刀切。
    pgr `asm unitig` 头部已带 `cov=`，v1 可在 `asm olc` 布局前按 unitig
    丰度多轮剔除（或给 `asm unitig` 加渐进 `--min-coverage` 模式）。

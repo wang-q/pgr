@@ -139,6 +139,7 @@ typedef struct {
 
 - **1-based 索引 + 负号表示反向**（`kmerhash.h:19-22`）：`kmerHashAdd` 返回 `index > 0` 表示新增正向，`index < 0` 表示命中反向互补。pgr 的 `MinimizerInfo.strand` 字段可复用此思路。
 - **canonical 定向**（`kmerhash.c:57` `isCanonical`）：k-mer 存储时统一取向（kmer < revcomp(kmer)），比较时只需正向比对。这与 pgr `seq_sketch` 的 `.canonical()` 一致。
+- **非 ACGT → A 的折叠**（`kmerhash.c:46` `comp[]` 表）：把任何非 `acgt` 字符（含 `N` 与 IUPAC 简并码）都折叠成 `A`（编码 0），保证任意输入（含畸形/含 N 的读段）都能 2-bit 压缩、进 `pack[]`。pgr 的 `encode_base`（[syncmer.rs:147](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L147)，走 `nt::NT_VAL`，非法/IUPAC → 0=a）采用了**完全相同**的约定——这是移植时一个容易忽略、但必须对齐的边界约定（否则含 N 序列在两端会产出不同哈希集合）。
 - **同聚物过滤**：`syng.c` 建立 SyncmerSet 时预先把 4 条同聚物（poly-a/c/g/t，长度 `w+k`）插入
   `KmerHash`（索引 `1/2/-2/-1`），主流程跳过 `|sync| ≤ 2` 的命中（注释 "don't record
   poly-A/C/G/T"）——`.1khash` 因此不含同聚物 syncmer。
@@ -211,7 +212,8 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
 
 - [src/cmd_pgr/dist/mini.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/mini.rs) — minimizer 草图 → `pgr dist mini`（原 `dist seq` 的 minimizer 模式）
 - [src/cmd_pgr/dist/hv.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/dist/hv.rs) — `--sampler syncmer` → `load_hv_from_fasta_syncmer`；否则 `load_hv_from_fasta` → `pgr dist hv`
-- [src/cmd_pgr/pgi/build.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/pgi/build.rs) — `pgr pgi build` 用 closed syncmer 作为稀疏 k-mer 索引种子：默认 `--smer 8 --window 5`（与 FastGA GIX 参数一致）、`-k 40`，**锚定在窗口最小 s-mer 端点**（syng 式 closed syncmer），而非 GIX 的 window-start match-mer。这是 syncmer 算法在 pgr 中除 `dist hv` 采样外的第二处落地（索引/比对侧），说明同一 `seq_syncmer_set`/`syncmer_dna` 核心可同时服务"草图距离"与"稀疏种子"两类用途
+- [src/cmd_pgr/pgi/build.rs](file:///home/wangq/Scripts/pgr/src/cmd_pgr/pgi/build.rs) — `pgr pgi build` 用 closed syncmer 作为稀疏 k-mer 索引种子：默认 `--smer 8 --window 5`（与 FastGA GIX 参数一致）、`-k 40`，**锚定在窗口最小 s-mer 端点**（syng 式 closed syncmer），而非 GIX 的 window-start match-mer。这是 syncmer 算法在 pgr 中除 `dist hv` 采样外的第二处落地（索引/比对侧），说明同一 `seq_syncmer_set`/`syncmer_dna` 核心可同时服务"草图距离"与"稀疏种子"两类用途。
+  > **GIX 规则 vs pgr 规则的实测差异**（[syncmer.rs](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs) 的 `gix_matchmer_vs_closed_syncmer_empirical` 测试）：GIX 等价于"最小 s-mer 位于窗口首端或末端则取**窗口首端**"（`gix_as_characterization`），pgr 取**最小 s-mer 所在端点**。两者在"最小 s-mer 位于窗口首端"时输出一致；当最小 s-mer 落在末端时，GIX 与 pgr 的位置最多偏移 `window-1` 位（命中数同一量级）。pgr 选最小端点是为了 reverse-complement 链对称（两端哈希相同），这正是该测试断言 GIX 规则与特征化一致、并统计 `max_shift` 的原因。
 - `set_distances` / `calc_distances` / `mash_distance`（不变，与采样器无关）
 - `--kmer`/`--window` 默认值由 `args::resolve_kmer_window` 统一分流（两命令共用）
 
@@ -220,6 +222,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///home/wangq/Scripts/pgr/src/libs/h
 - pgr 的 `JumpingMinimizer`（`hash.rs:43`）先对全文所有 k-mer 预算哈希（`hash_kmers`），再做"跳跃式"选最小——O(n) 内存且语义是经典 minimizer。
 - pgr 的另一条路径用 `minimizer_iter` crate（`hash.rs:111`、`seq_sketch`），已是滚动窗口式。
 - syng 的 syncmer 迭代器是 O(w) 内存的滚动式（环形缓冲区，无需预算全部哈希）。**已优化（2026-08-03 及后续）**：`dna_canonical_hashes` 改为流式迭代器（`syncmer.rs:187`），`closed_syncmers_stream` 采用**分块前缀/后缀最小值**的滑动窗口最小方案（simd-minimizers 思路的标量版，`syncmer.rs:92-97` 注释明确 "no monotonic deque needed"）：用大小为 `window` 的块前缀/后缀最小值求窗口最小，另配一个环形缓冲 `ring` 保留最近 `window` 个原始条目（哈希 + extra）以做"端点最小"判定——DNA/蛋白路径均不再预算全部 s-mer 哈希（内存 O(window)）。`closed_syncmers_from_hashes` 现在是流式核心的薄包装，语义与输出完全一致（strand-symmetry / bounded-gap / density 测试全绿，pgi build 的 single-pass 对照测试亦通过）。
+- **`SyncmerParams::validate` 对 window 设上界**（[syncmer.rs:52](file:///home/wangq/Scripts/pgr/src/libs/syncmer.rs#L52)，`window ≤ 1_000_000`）：pgi build 会以 `(window + 2).next_power_of_two()` 尺寸分配环形缓冲，极端 `--window`（如 `usize::MAX`）会导致 `window + 2` 溢出 panic 或 GB 级 OOM；在参数层就拦截是防御性工程而非算法需求（真实窗口默认仅 5/55）。这与 syng 侧 `seqhashCreate` 仅做 `w < 1` 与 `k` 范围的宽松校验（`seqhash.c:21-22`）形成对照——pgr 因有外部参数入口（CLI）而更严格。
 
 ## 5. 对 pgr 的启示与实现计划
 

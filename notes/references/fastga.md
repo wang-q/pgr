@@ -155,8 +155,8 @@ wave 划定的搜索区域。pgr 移植时把 tube 提升为正式概念（`Tube
 3. 链在两侧覆盖 ≥ `CHAIN_MIN`（源码 170 = 2×`-c` 85）个 anti-diagonal。
 
 满足条件的链在"tube"（`alow..ahgh` × `dgmin..dgmax`）内触发 wave aligner
-（`Local_Alignment`）。self 比对（`SELF && ctg1==ctg2 && !comp`，FastGA.c:
-3029 判定 `self`，对角线限制调用在 3245-3257；早前笔记误记 3220-3240，已更正）
+（`Local_Alignment`）。self 比对（`SELF && ctg1==ctg2 && !comp`，FastGA.c:3030
+判定 `self`，对角线限制调用在 3245-3257；早前笔记误记 3220-3240，已更正）
 对 tube 扩展做对角线限制：tube 带全正（`dgmin > 0`）时
 `Local_Alignment(..., dgmin-1, -1)`、全负（`dgmax < 0`）时
 `Local_Alignment(..., -1, -(dgmax+1))`，带跨 0 的 tube 整管跳过——
@@ -571,8 +571,11 @@ PAF / PSL（含 CIGAR）
 
 `new_merge_thread`（FastGA.c:610，逐前缀面板并行）：
 
-1. 两个 GIX 各自以 `Kmer_Stream` 流式迭代（字典序）；线程各处理 256 个前缀
-   （`[pbeg<<8, pend<<8)`），按 `Kmer_Stream.index` 定位起点。
+1. 两个 GIX 各自以 `Kmer_Stream` 流式迭代（字典序）。`adaptamer_merge`
+   （FastGA.c:2280）把 16-bit k-mer 前缀空间切成 NTHREADS 段**连续面板区间**：
+   按较长的 T1/T2 条目数均分取分割点 `parm[t].pbeg = (tp->cpre >> 8)`
+   （FastGA.c:2308-2319），每线程处理一段 `[pbeg<<8, pend<<8)` 前缀面板，
+   按 `Kmer_Stream.index` 定位起点。前缀面板分区 → 线程间零共享、天然无锁。
 2. 对 T1 的每个前缀 `cpre`：T2 跳过前缀更小的条目，把前缀 == cpre 的 T2 条目
    载入小缓存（`cache`），然后做**前缀面板内的归并**。
 3. 面板内相同的 40-mer（T1 条目 vs T2 缓存）产出种子位置对，写 PAIR 流；
@@ -691,6 +694,17 @@ alncode.c）；ALNtoPAF/ALNtoPSL 多线程线性展开 trace → CIGAR（`-pafx`
   `-e` 造成的 FastGA/LastZ 重叠是已知问题（`-e 0` 又会漏掉从锚点延伸出去的比对）。
 - **"顺序一致、方向一致"即共线性前提**——证实 [[../design/pgi-lastz-hybrid.md]]
   §3.4 的结论：hybrid 模式只适合 syntenic 搜索。
+- **pgr 的原生实现**：`pgr align fill`（`src/cmd_pgr/align/fill.rs`）把论文 gapfill
+  工程化为：按 (target, query, strand) 分组、按 target start 排序，对每对**相邻、不重叠、
+  同链同向**的锚点，若 **target 与 query 两侧 gap 都在 [min_gap, max_gap]**（fill.rs:277-
+  282）则生成 box，box 按 `--overlap` 在两侧外扩作 LASTZ 播种缓冲（fill.rs:285-289，即
+  论文/ALNfill 的 1 kb seeding buffer 语义），再 rayon 并行逐 box 跑 LASTZ。与论文的
+  一个差别：pgr 不做"只保留最小 box（无更小 box 包含）"这一步（论文 §5.2 用它削减重叠
+  box），而是把重叠/冗余交给下游 `pgr pl chainnet` 统一去重。
+- **`pgr align rest`**（rest.rs）是互补侧填充：对锚点未覆盖的"整基因组洞"做 target/query
+  两侧 1D runlist 补集，再用 **syncmer/minimizer 预过滤**（`sample_hole`，rest.rs:406）配对
+  可能的 hole 对——与 FastGA 用 (12,8) syncmer 稀疏采样的思路同族，只是这里用于
+  "洞配对预筛选"而非种子检测。
 
 ### 12.4 其他物种与实验口径（§5.3 + §4 工程细节）
 
@@ -708,3 +722,63 @@ alncode.c）；ALNtoPAF/ALNtoPSL 多线程线性展开 trace → CIGAR（`-pafx`
   4. FastGA 索引构建（GIX 排序）峰值内存 ~29 GB，**比对主进程仅 ~1 GB**——
      内存大头在索引排序，不在对齐（pgr 的 `.pgi` 构建同理，见
      [[../benchmarks/bench-pgi-vs-gixmake.md]]）。
+
+## 13. 并行化架构与 DALIGNER 遗留机制（2026-08-12 源码复核补充）
+
+> 前文各节散见多线程的描述；本节把 FastGA 从种子归并到 .1aln 的**并行数据流**
+> 完整串起来。核心结论：**并行度全部来自"前缀/contig 空间切分 + 每线程私有临时
+> 文件"，线程间零共享、无锁**。这一点对 pgr 用 rayon 重写 pgi 管线的并行化取舍
+> 很有参考价值。
+
+```
+GIX1 / GIX2（排序 k-mer 流）
+  │ ① adaptamer_merge（FastGA.c:2280）：前缀面板空间切 NTHREADS 段 → 每线程一段
+  ▼
+NTHREADS² 个临时 PAIR 文件（正链 N_unit + 负链 C_unit，按源 contig Select[] 分发）
+  │ ② reimport_thread（FastGA.c:2639）：每线程读自己的 PAIR 文件，算 diag/anti/band
+  ▼
+sarray（按源 contig 桶排布的大数组）→ RSDsort（rmsd_sort）每桶排序
+  │ ③ search_seeds（FastGA.c:3715）：NTHREADS 线程各处理一段源 contig 区间
+  ▼
+align_contigs（每对 contig × 对角线段）→ 写本线程 Overlap 到 .las gather 文件
+  │ ④ 每线程把 .las 排序 → 块文件（SORT_MAP：aread,abpos,bread,...）
+  ▼
+NTHREADS 个排序 .las 块
+  │ ⑤ la_merge（FastGA.c:3991）：k-way 堆归并
+  ▼
+.1aln（写 header novl,tspace + 各 Overlap 的 trace）
+```
+
+1. **① 归并**：`adaptamer_merge` 把 16-bit k-mer 前缀空间按较长的 T1/T2 条目数均分
+   成 NTHREADS 段连续面板区间（`parm[t].pbeg = tp->cpre >> 8`），每线程独立处理一段，
+   把种子对写入**自己的一批临时文件**——按源 contig 分发到 NTHREADS² 个
+   `PAIR` 文件（正链 `N_unit`、负链 `C_unit`，`Select[acont]` 定位目标），
+   缓冲满才 `write()`（IOBuffer，~1 MB/块）。**写私有文件而非共享队列**避免了
+   跨线程加锁，代价是后续要按文件再聚合。
+2. **② 重导入 + 排序**：`reimport_thread` 每线程读回自己的 PAIR 文件，算
+   `diag = i−j`、`anti = i+j`、`band = diag>>BUCK_SHIFT`（FastGA.c:2704-2716），
+   按源 contig 桶填入 sarray；随后对每桶做 `rmsd_sort`（RSDsort.c）。这一步
+   把"种子位置对"物化为 `align_contigs` 要用的 anti-diagonal 坐标流。
+3. **③ 对齐**：`search_seeds` 每线程领一段**源 contig 区间**（`range->beg..end`），
+   逐对 contig、逐对角线段调 `align_contigs`；每个 Overlap 记录（OVL_SIZE + trace）
+   `fwrite` 到本线程的 gather 文件 `SORT_PATH/<root>_algn.<pid>.<tid>.las`
+   （FastGA.c:3269）——**这里沿用了 DALIGNER 的 `.las` Overlap 格式**。
+4. **④ 块排序**：每线程把 gather `.las` 按 `SORT_MAP`（aread → abpos → bread →
+   COMP → ...，FastGA.c:3799）排序为"块文件" `ALGN_UNIQ.<tid>.las`。
+5. **⑤ LAmerge**：`la_merge`（FastGA.c:3991）对 NTHREADS 个排序块做 **k-way 堆归并**
+   （堆顶 Overlap + 每源按块 `ovl_reload` 流式补读），边归并边写 `.1aln`（先
+   `open_Aln_Write` 写 header：版本/provenance/tspace/GDB 引用，再逐条写 Overlap 的
+   trace）。**这一步是 DALIGNER LAmerge 的移植**——FastGA 内部把"并行对齐 → 汇聚"
+   完整复用了 DALIGNER 的 `.las`+LAmerge 机件，最终才转成 ONEcode `.1aln`。
+
+**对 pgr 的启示**：
+
+- pgr 的 `pgr align pgi`（[[../design/pgi-align.md]]）与 `pgr sd` 的并行化可以对照
+  这套"前缀/contig 空间切分 + 每线程私有输出 + 最后归并"模式：**不要在共享结构上加锁，
+  而是按 key 空间预切分，让每线程写自己的分片，末尾再归并**。pgr 的 rayon
+  `par_iter` + 每线程 `Vec` 分片收集正是等价形态。
+- FastGA 复用 DALIGNER `.las`/LAmerge 说明：成熟的并行对齐工具往往内置一套
+  "gather → 排序 → k-way 归并"的磁盘中间态，宁可多一次 IO 也要避免共享内存竞争。
+  pgr 若做大规模并行比对输出，值得参考"每线程临时分片 + 排序 + 归并"而非共享写入。
+- `.las` 中间态是 FastGA 的**内部格式**（非用户可见 API），pgr 无需复刻；其可借鉴点
+  是"分片-归并"的数据流结构，不是 `.las` 编码本身。

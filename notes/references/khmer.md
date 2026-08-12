@@ -62,6 +62,14 @@
 - **约束**：CLI 层强制 `k ≤ 32`（超出报错退出，`create_countgraph`/
   `create_nodegraph`）、`n_tables ≤ 20`（默认需 `--force` 才能越过）——
   k 上限来自 u64 2-bit 编码，n_tables 上限是经验值。
+- **k-mer banding（哈希空间分带）**：`compute_band_interval(num_bands,
+  band)`（kmer_hash.cc:262-276）把 `[0, u64::max)` 均匀切成 `num_bands`
+  段，`band` 段即 `[max/num_bands·band, max/num_bands·(band+1))`；
+  `Hashtable::consume_seqfile_banding`（hashtable.cc:192-228）只对落在
+  该区间内的 k-mer 计数，其余丢弃。这是一条**把一个大 CMS 工作集拆成
+  `num_bands` 个互斥子集、可分多次独立运行**的工程技巧（配合
+  `banding` 参数即可在受限内存/单机上分批建表，或分发到多机再合并），
+  与 pgr 的 sort-merge/分块思路可对照。
 
 ## 4. 计数存储（storage.hh）：Count-Min Sketch
 
@@ -102,10 +110,13 @@
   `qf_init(&cf, 1ULL<<size, size+8, 0)`（size 必须 2 的幂，来自 Cython 校验；
   第 2 参为槽数 `2^size`，第 3 参 `size+8` 为 key 位数，末参 value 位数=0 未用），
   `add`/`get_count` 用 `khash % cf.range` 寻址，计数用 `qf_count_key_value`。
-  khmer 3.0 试验特性（底层 `third-party/cqf/gqf.h` 不在本快照内，为外部依赖），
-  每槽约 1.3 字节，槽被占满后会**停止接受 `add`**（内存不能像 CMS 那样
-  预先严格固定），`get_tablesizes` 返回 `cf.xnslots`。
-- **HLLCounter（hllcounter.cc）= HyperLogLog（死代码/latent）**：估算
+  khmer 3.0 试验特性，底层 CQF **已随快照内置于树内**（`third-party/cqf/`
+  含 `gqf.h` + `gqf.c`、LICENSE、Makefile、README，非外部依赖，pgr 可直接
+  读其实现；`qfblock` 每块 64 槽 + 元数据位图，见 gqf.h:36-54），
+  每槽约 1.3 字节（`_buckets_per_byte['qfcounttable']=1/1.26`），槽被占满
+  后会**停止接受 `add`**（内存不能像 CMS 那样预先严格固定），
+  `get_tablesizes` 返回 `cf.xnslots`。
+- **HLLCounter（hllcounter.cc）= HyperLogLog（latent，脚本未接线）**：估算
   基因组大小用的 unique k-mer **基数**（不计数，只估基数）。`add` 用
   `_hash_murmur(value, len)`（hllcounter.cc:264），低位取
   `index = hash & (ncounters-1)` 当桶号，高位用 `__builtin_clzll` 数前导零
@@ -113,11 +124,16 @@
   ——线性计数/`alpha·m²/Σ2^-v` 基本估计/偏置校正（hllcounter.cc:237-260），
   预置 `rawEstimateData`/`biasData` 两张查表（hllcounter.cc:69-103）。
   **quirks**：`set_erate`/`set_ksize` 在首次计数后抛 `ReadOnlyAttribute`
-  （hllcounter.cc:214/229）；error_rate 有范围约束（`calc_alpha` 对
+  （hllcounter.cc:215/230）；error_rate 有范围约束（`calc_alpha` 对
   `p=floor(log2 m)` 越界抛 `InvalidValue`，hllcounter.cc:110-118）。
-  **dead code**：本快照（master）中 HLLCounter 未接入任何脚本或 Cython
-  绑定（`scripts/`、`khmer/_oxli/` 均无引用），是纯库层实验代码——与
-  diginorm 无关，pgr 无需参考其实现，仅作"基因组大小估计"功能的备选旁证。
+  **非死代码（纠正）**：HLLCounter 已通过 Cython 绑定暴露为公开 API
+  （`khmer/_oxli/hllcounter.pyx` 的 `cdef class HLLCounter`，默认
+  `error_rate=0.01, ksize=20`），并在 `khmer/__init__.py:221` 导出为
+  `khmer.HLLCounter`，且有独立测试 `tests/test_hll.py`（含
+  `consume_seqfile`/`merge`/pickle 等接口）。只是**没有任何 `scripts/`
+  脚本引用它**——即"库层已提供、脚本层未接线"的 latent 特性，而非完全
+  死代码。与 diginorm 无关，pgr 无需参考其实现细节，仅作"基因组大小
+  估计/unique 基数估计"功能的备选旁证。
 - **磁盘存储格式**（`SAVED_SIGNATURE="OXLI"`，`SAVED_FORMAT_VERSION=4`）：
   头部固定 `OXLI`(4B) + version(1B) + `ht_type`(1B)，类型常量
   `SAVED_COUNTING_HT=1`、`SAVED_HASHBITS=2`、`SAVED_SMALLCOUNT=7`、
@@ -168,6 +184,12 @@ if not all(read.median_at_least(cutoff) for read in batch):
 - **顺序相关**：被丢弃的 read 不计数，表随保留 read 在线演化——同一个文件
   换一种顺序处理，keep/drop 集合可能不同。这是与 pgr norm（bbnorm 语义）
   最根本的差异，移植时不能照搬整条流程，只能借用数据结构。
+- **运行期表大小自检**：`main` 收尾时调 `khmer.calc_expected_collisions(
+  countgraph, False, max_false_pos=.8)`（normalize-by-median.py:406-410；
+  `khmer/__init__.py:181-215`），用 `n_occupied/min(tablesize)` 估单表
+  装填率、`fp ≈ (占位比)^n_tables` 估整体误报；超出阈值就告警/退出，
+  提示用户用 `-M` 加大。这是"近似表必须验证是否够大"的工程惯例，pgr
+  若做近似路径同样应在结束时校验装填率与误差。
 
 ## 7. 对 pgr 的启示
 
@@ -201,6 +223,12 @@ if not all(read.median_at_least(cutoff) for read in batch):
    `notes/design/anchr-trim-replace.md` §M6）；`pgr kmer table` 走精确
    `.pkt` 排序表。因此 khmer 的 CMS/median 判定只作为"未来若新增近似路径"
    的参考，当前精确路线下不直接落地——与 §9 结论一致。
+7. **banding 可作为"近似 + 分块"的中间路线**：khmer 的 k-mer banding
+   （§3）把哈希空间切成互斥区间，每轮只计一个区间，等于把单个大 CMS
+   分解为可独立运行/可合并的多份子表。若 pgr 未来要在受限内存下做近似
+   计数，可把"分带 + 分块排序"组合：同一带内仍可走 CMS 或精确表，带间
+   天然可分治、可并行、可 merge——比单纯加大单一 CMS 更贴合 pgr 的
+   sort-merge 工程底座。
 
 ## 8. 与 pgr 现有设施对照
 

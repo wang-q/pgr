@@ -638,6 +638,22 @@ P(X ≤ k) = B(k, n, p)
 6. **窗口化重比对检测基因转换**: 该文献的 IGC 检测思路（1-kbp 窗口独立重比对 + donor/acceptor
    CIGAR 比较 + 二项检验）为 pgr 提供了一个可复用的“寻找 ectopic 最佳匹配”模板，
    可用于检测组装间的非等位基因转换或重复片段的迁移事件。
+7. **软屏蔽→硬屏蔽与坐标回翻译**: BISER 要求 soft-masked 输入，内部先 `mask()` 滤掉小写碱基生成
+   hard-masked 基因组，检测/分解全程在硬屏蔽序列上做，最后 `translate()`（`mask.codon:32`）把坐标
+   与 CIGAR 映射回原基因组：将 CIGAR 的 `M` 按 lowercase 区间重新切分为 `M`/`S`/`N`，`I`→`I`/`S`、
+   `D`→`D`/`N`（用 `uppers`/`lowers` 两张表做坐标偏移 `conv`，行 33-49）。这与 pgr `rept`
+   （`src/cmd_pgr/rept/masker.rs`）"屏蔽后分析、再回映射"是同类的工程模式；若 pgr 需在 soft-masked
+   输入上直接跑 SD 检测，可复用其 lowercase 区间映射思路。
+8. **高频 k-mer 频率阈值过滤**: search 与 decompose 共用 `INDEX_CUTOFF=0.001` 的"累积频率"过滤
+   （`search.codon` `filter_index` 行 247-262、`decompose.codon` 行 243-254）：先统计每个 k-mer
+   出现次数分布，按出现次数降序累加，直到累计占比 ≤ 0.1% 即把该频次作为阈值，更高频的 k-mer 在
+   扫描时跳过（search 侧 `max_frequency=threshold`，decompose 侧 `len(index[k]) >= threshold`）。
+   这一"按累积频率而非绝对频次"的自适应阈值，对 pgr 的重复/低复杂度 k-mer 过滤有直接借鉴价值。
+9. **染色体分块 + round-robin 分桶约束单任务规模**: search 按 `--max-chromosome-size` 分块，
+   align/cross_align 把 hits 按 span 排序后 round-robin 分到 `max(threads*2, 50)` 个 bucket
+   （`__main__.py:142-185`、`:261`），每个 bucket 独立跑一次 align。这与 pgr `libs/sd/`
+   （`src/libs/sd/cluster.rs`、`decompose.rs`）按染色体的任务划分一致，是控制内存峰值/单核负载的
+   实用工程模式。
 
 ## 6. 参考文献
 

@@ -4,7 +4,9 @@
 > 逐文件重读补全（multiz.c / mz_preyama.c / mz_yama.c / mz_scores.c），
 > 并记录 pgr 的直译进展。2026-08-11 再核对全部源码，修正 GAP 表第 4 条
 > 映射、补充 maf.c/multi_util.c 分析、quasi-natural gap 逐对累加语义及两处
-> 源码怪癖。设计/实现记录见 [[fas-multiz.md]]。
+> 源码怪癖。2026-08-12 补 §2.7 工程实现细节（列主序 1-based 矩阵、MININT
+> 防下溢、GAP 位编码、128×128 打分表、score 哨兵值等）、pre_yama 早退边界
+> 与 mafScoreRange 扣减语义澄清。设计/实现记录见 [[fas-multiz.md]]。
 
 本文档分析 UCSC `multiz-tba` 软件包的核心组件 `multiz`。源码在仓库
 `multiz-multiz/` 目录（2016 版 v11.2），环境已安装二进制
@@ -111,6 +113,12 @@ multiz [R=?] [M=?] [L=?] [S=?] file1 file2 v [out1 out2] [nohead] [all]
     （mz_preyama.c:308）传 `0..L-1` 则正确。属源码遗留问题，pgr 若直译 v=0
     分支应规避（pgr 目前未实现 v=0，见 §3.2）。
 
+**边界情形（早退）**：`pre_yama` 对退化输入有显式早退——B 去 dash 后 `N<1`
+（重叠区 B 全 gap）直接返回 NULL（`mz_preyama.c:180-185`）；`K==0`（a1 无可用
+非参考行）则把 a2 重叠区整块 `print_part_ali_col` 到 fpw2 后返回 NULL
+（`mz_preyama.c:190-198`）。这些早退保证 `multiz()` 主循环对单行块/空列不
+panic，pgr 直译的 merge/windows 路径应保留等价守卫。
+
 `mafBuild`：从 (K+L)×M_new 列矩阵重建 MAF 块——每行按参考坐标重算
 start/size，`nc->size == 0`（全 gap 行）丢弃，`score = mafScoreRange`。
 
@@ -171,8 +179,11 @@ D→`A列+dashes`。
         每个物种对"各收一次；某列只有部分物种有 gap 时，罚分按有 gap 的物种数
         成比例。这正是 Altschul quasi-natural gap 与"固定 gap_open"的关键差异
         （后者对所有物种对一视同仁）。
-*   **mafScoreRange**：MAF 块 SP 打分（列内所有物种对 SS + 相邻列 GAP2
-    修正），供 `mafBuild` 写 `a score=`。
+*   **mafScoreRange**（`mz_scores.c:99-127`）：MAF 块 SP 打分——逐列对所有
+    物种对累加 `SS(br,bi)`，再对每一对跨相邻列**减去** `GAP2(ar,ai,br,bi)`
+    （准自然 gap_open 罚分按物种对在相邻列间扣减，即 gap 会降低块得分），
+    供 `mafBuild` 写 `a score=`；`keep_ali`/`make_part_ali_col` 重建块时也
+    用它重算 score。
 
 ### 2.5 band（LB/RB）处理
 
@@ -232,6 +243,40 @@ Jim Kent & seriously abused"），依赖 zlib，`.gz` 输入由 `gzopen`/`gzgets
 **`util.c`**: `fatal`/`fatalf`（打印 argv0 前缀后 exit(1)）、`fatalfr`（追加
 strerror）、`ckalloc`（0 长度按 1 分配、失败 fatal）、`copy_string`，全局
 `argv0`。`util.h` 另定义了 `MAX`/`MIN` 宏与 `uchar = unsigned char`。
+
+### 2.7 工程实现细节（数据结构与数值技巧）
+
+这些 C 实现细节对 pgr 的 Rust 直译有直接借鉴意义：
+
+*   **列主序 1-based 矩阵**：`yama` 的剖面 A/B 以"列主序"存储（`A[i][k]`，
+    i 列、k 行），用 `malloc(n*sizeof) - 1` 让指针从 1 开始、0 行列留空
+    （`mz_preyama.c:171-174,187,200`；`mz_yama.c:290-293` 输出同样从 1 起）。
+    C 里这是避免"减 1"的惯用技巧；Rust 侧 pgr 用 `Vec<u8>` 按 0-based 表达
+    等价即可，无需照搬。
+*   **`dp_node` 显式填充**：`struct DP { int D,C,I; int unused; }`
+    （`mz_yama.c:31-35`），`unused` 注释明言 "padding for efficiency with
+    linux/GCC"——把 3 个 int 对齐到 16 字节、便于向量化。pgr 若做 SIMD/行缓冲
+    可参考，普通 `[i32;3]` 亦可。
+*   **`MININT = INT_MIN/2`（`mz_yama.c:28`）**：取 INT_MIN 的一半，"远离下溢
+    阈值"，保证在 MININT 上再减 gap 罚分（`- n*K*gap_extend` 等）不会溢出。
+    pgr 用 `i32` 时同样要避免拿 `i32::MIN` 当"负无穷"再减罚分。
+*   **GAP 表 4-bit 位编码索引**：`#define GAP(s,t,u,v) gop[(s<<3)+(t<<2)+(u<<1)+v]`
+    （`mz_scores.h:12`）——把 (s,t,u,v) 四个 0/1 位打包成 4-bit 下标，直接查
+    16 项 `gop` 数组，替代 4 维查表。pgr 可用嵌套 `[[i32;2];2]` 或同样的位编码。
+*   **traceback 字节打包**：三个 flag 共用一个 byte（`flag_c | flag_d<<2 |
+    flag_i<<4`，`mz_yama.c:249`），回溯时按 node 类型移位提取
+    （`mz_yama.c:273-285`），显著压缩 traceback 内存。§2.3 已述。
+*   **打分矩阵 128×128**：`ss` 是 `NACHARS=128` 方阵（`mz_scores.c:22,29-31`），
+    先用 `UNSPECIFIED=-100` 填满，再对 ACGT 大小写双写填充 HOX70 值
+    （`mz_scores.c:32-41`），`-` 行/列单列为 `-gap_extend`。这样 `SS(c,d)`
+    对任意字符 O(1) 直查、无分支。pgr 用 5×5 或 128×128 均可，需支持大小写。
+*   **`init_scores70` 单次初始化守卫**：静态 `int init` 标志保证表只建一次
+    （`mz_scores.c:84-97`），随后全局 `ss/gop/gap_open/gap_extend` 指向实例；
+    全局 `ss`/`gop` 让 `SS`/`GAP` 宏无需传表指针。pgr 以 `OnceLock`/`LazyLock`
+    对应。
+*   **score 缺省值语义**：`parseScoreLine` 把 `ali->score` 置为 `MIN_INT` 表示
+    "未给出"（`maf.c:91`），`mafWrite` 仅在 `score != MIN_INT` 时才输出 `score=`
+    （`maf.c:246-247`）——用哨兵值区分"无 score"与"score 为 0"。
 
 ## 3. 对 pgr 的启示与落地
 

@@ -68,6 +68,12 @@ fast 模式再快 1.8–2.7×。
 * 距离：i32 点积 → jaccard → ANI，clamp [0,1]×100、NaN→0；对称模式
   只算上三角；输出按 ANI 降序、过滤阈值（默认 85.0）；
 * 文件格式：整批 `Vec<FileSketch>` 直接 bincode（无 magic/版本）。
+* **测试即文档（lib.rs）**：`test_simd_hd_enc`（lib.rs:185–226）断言
+  标量与 AVX2 编码逐位一致；`test_t1ha2_cuda`（lib.rs:518–589）断言
+  CPU 与 CUDA 产出的采样哈希集合完全相同（异构加速正确性的验证模板）；
+  `test_minimizer_strobemer`（lib.rs:330–429）在测试里实测 strobemer/
+  minmer 采样（`rust_seq2kminmers::KminmersIterator`）相对 plain k-mer
+  的 Jaccard→ANI——这些实验性采样器只活在测试里，未进主路径。
 
 **核对补充（2026-08-11 源码逐行）**：
 
@@ -206,6 +212,39 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
   等价（cos = 1 − 2·hamming/D）；我们主路径已用 cosine（.hv v2）与
   Jaccard/Mash，无新增。
 * 随机向量生成与 seed 复现：与我们一致，无新增。
+
+**图编码（`model/graph.py`，Poduval 2022，2026-08-12 源码核对）**：这是
+hdlib 里与 pgr 最相关的一块——把"结构/顺序"压进 HV 的具体实现，即上文
+"bind + permute 顺序敏感草图"的现成参考：
+
+* **节点记忆（`_node_memory`，graph.py:254–293）**：对每个节点 u，取其
+  全部邻居 v，`memory(u) = Σ_v (weight_vector(w) * vector(v))`（`*` 为
+  bind 逐维乘、`+` 为 bundle 累加）——用权重向量标记边上的"类别"。
+* **整图记忆（`fit`，graph.py:486–579）**：`graph = Σ_u (vector(u) *
+  permute(memory(u), rotate_by=1))`（**有向**，permute 编码顺序/方向）；
+  无向则去掉 permute、直接 `vector(u) * memory(u)`，并在最后对 graph
+  除以 2（graph.py:562–565，因为展开后 `H(i)H(j)` 与 `H(j)H(i)` 会被
+  计两次）。
+* **边查询（`edge_exists`，graph.py:581–685）**：`memory(u) = bind(u,
+  graph)`，有向时再 `permute(memory, rotate_by=-1)` 旋回，然后算
+  `(weight_vector(w)*vector(v))` 与 `memory(u)` 的 **cosine 距离**——
+  距离≈0 有边、≈1 无边。
+* **节点级阈值估计（graph.py:647–677）**：取 u 的邻居 + 等量随机非邻居，
+  算各自 cosine 距离，用 **5 分位**（`np.percentile(distances,5)`）当
+  判边阈值（缓存于 `weight_to_node_specific_thresholds`）。pgr 目前距离
+  直接用数值排序/阈值，不做这种"邻居 vs 非邻居分布分位"的自适应阈值——
+  若 pgr 未来做"集合相似度的自适应 cutoff"，此思路可参考。
+* **误差缓解（`error_mitigation`，graph.py:369–484）**：迭代训练式
+  reinforcement——对误判的边，把 `correct_connection = w*v` 的 bind 累加
+  回 `GRAPH_ID`，直到 error rate 不再下降。
+* **pangenome 示例（`examples/pangenome/debruijn.py`）**：`GraphModel(
+  size=10000, directed=True, seed=0)`，minimizer 作节点、连续 minimizer
+  作有向边，按物种标签训练/预测（train/test 各 50%），`ERROR_MITIGATION_
+  ITERS=10`；配套的 `minimizers.cpp` 只是 O(n·w) 朴素滑动窗口最小串
+  提取（minimizers.cpp:262–295），无采样/哈希价值。**pgr 借鉴点**：这套
+  编码即"顺序/邻接敏感草图"，若 pgr 未来做 k-mer 沿序、contig 邻接、
+  pangenome 图分类（design/hv.md 未立项方向），可整体照搬；其 cosine
+  距离也与 pgr `.hv` v2 一致。
 
 ## 5. 测距与聚类文献（bacteria clustering）
 
@@ -514,7 +553,10 @@ README 明确称对高维数据集 "better space requirement and accuracy"
 再哈希；⑤ 处理粒度：默认**逐序列 sketch**，`--block` 才把整文件连成
 一条；基因组级排序用"序列级距离的乘积"聚合（matcher.rs
 compute_merit_wl，阈值 0.99，注释自承 TODO 未调优）；⑥ 请求侧
-ef_search 独立传参，输出阈值 0.99；⑦ README 快速上手参数：
+ef_search 独立传参（gsearch.rs:893 默认 5000，TODO），输出阈值 0.99；
+matcher 里的 `SequenceMatch.distance` 在注释中被称为 "jaccard
+distance computed by hnsw"（matcher.rs:29），即 HNSW 返回的签名
+Hamming 距离被当作 Jaccard 距离代理；⑦ README 快速上手参数：
 k=21、s=18,000、n=128、ef=1600、--algo optdens、scale 0.25。
 **召回（Table 3，真值 = 暴力 BLAST-ANI/AAI 的 top-K）**：定义
 recall = |R'∩R|/|R|（R' = GSearch 返回的 top-K），跨查询平均，评估

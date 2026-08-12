@@ -76,8 +76,10 @@ create 流程:
    - 收集全部 k-mer（kmer_length，默认 31，canonical），排序去重取 singletons
    - 沿参考序列按 ~segment_size（默认 60,000 bp）间距选取 splitters 存入 hs_splitters
      （存 `splitters` stream；自适应模式还会把 duplicated k-mers 存到 v_duplicated_kmers）
-1. 打开输出 archive，注册 16 个 raw group（no_raw_groups=16，各放一个 0x7f 空 raw 段占位），
-   存放无法归到参考的原始段（v_segments[0..16]，`ss_delta_name`）
+1. 打开输出 archive，注册 16 个 raw group（no_raw_groups=16，各放一个 0x7f 空 raw 段占位，
+   `Create()` 里 `map_segments[(~0ull,~0ull)] = 0` 预置 group 0），
+   存放无法归到参考的原始段（v_segments[0..15]，`ss_delta_name`；group_id 0–15 为 raw，
+   delta 组从 16 起）
 2. 逐样本压缩（参考是第一个样本，同样进入此流程；-c 可把多个基因组拼成单样本）：
    a. 读 FASTA，按 splitters 把 contig 切成段（切点 = 出现在 splitter 集合的 k-mer，
       段长约 segment_size）
@@ -167,8 +169,9 @@ gzip），Identity 后纯 `=` 段零载荷、碎链 PAF 恢复区已整块 flate
 - `ht16` / `ht32`: 开放寻址哈希表，存储参考中 k-mer 的位置
     - 哈希函数为 **MurMur64Hash**（定义于 `utils.h`，MurMurHash3 风格 fmix64；`lz_diff.cpp` 中实例化 `mmh`，`ht_pos = mmh(x) & ht_mask`），线性探测最多 `max_no_tries=64` 槽；表大小取 2 的幂（`ht_size / 0.7` 后 `while (ht_size & (ht_size-1)) ht_size &= ht_size-1; ht_size <<= 1`），负载因子 0.7
     - `short_ht_ver`: 参考长度 / hashing_step < 65535 时用 16-bit
-    - `USE_SPARSE_HT`: 每 4 位取一个 key（hashing_step=4），减少表大小；
-      表中存的位置为 `i / hashing_step`（`make_index16/32`），读回时 `h_pos = ht[slot] * hashing_step`
+    - `USE_SPARSE_HT`: 每 4 个碱基位置才取一个 key 建索引（`hashing_step=4`，
+      `make_index16/32` 的循环 `i += hashing_step`），减少表大小；
+      表中存的位置为 `i / hashing_step`，读回时 `h_pos = ht[slot] * hashing_step`
 - `key_len = min_match_len - hashing_step + 1`。注意两处默认不一致：`CLZDiffBase` 构造函数默认 `min_match_len=18`（→ key_len=15），但 AGC CLI 默认 `min_match_length=20`（`application.h`）→ **实际 key_len=17**；`hashing_step=4` 由 `USE_SPARSE_HT`（`lz_diff.h`）定义
 - `key_mask`: 2×key_len 位的掩码
 
@@ -313,8 +316,11 @@ struct segment_desc_t {
     - `[2]`：`in_group_id`——按 group 做增量：首个 `e=in_group_id`；后续
       `in_group_id==0 → 0`、`==prev+1 → 1`、否则 `zigzag_encode(in_group_id, prev+1)+1`，
       解码时以 `get_in_group_id(group_id)` 为 `prev+1` 反推（`zigzag` 见 `utils.h`）
-    - `[3]`：`raw_length`——相对预测器 `pred_raw_length`（初值 `segment_size+kmer_length`，
-      随后逐段更新为前段 raw_length）做 `zigzag_encode(raw_length, pred)` 
+    - `[3]`：`raw_length`——相对预测器 `pred_raw_length`（`serialize_contig_details`
+      `collection_v3.cpp:549`）做 `zigzag_encode(raw_length, pred)`。注意：**该预测器
+      每个 sample 内固定为 `segment_size+kmer_length`，并不逐段更新为前段 raw_length**
+      （`collection_v3.cpp:574` 每次仍用同一个 `pred_raw_length`），仅靠 zigzag 对
+      "接近段长"的 raw_length 压缩，与 `[2]` 的"按 group 跟踪 prev"不同
     - `[4]`：`is_rev_comp`（0/1）
   - 即在 `segment_desc_t` 的四字段中，仅 `group_id` 与 `is_rev_comp` 原样存储，
     `in_group_id`、`raw_length` 都经过 zigzag 差分压缩（利用相邻 segment 高度相关）。
@@ -359,6 +365,84 @@ struct segment_desc_t {
 >   新参考段、提高阈值（短段≥0.9×段长 / 长段≥0.2×段长才复用）；`-f` 控制 fall-back
 >   minimizers 比例。pgr 的 Reference Index 设计可参考其"切点定位 + 局部 fall-back"思路
 >   （细节在 application.cpp / agc_compressor.cpp），但 pbit 已用 PAF 驱动路由。
+
+## 可借鉴的工程细节（pgr 视角）
+
+以下为深读源码后整理的、对 pgr（尤其 `pbit` 参考层压缩、段路由、k-mer 索引）有直接借鉴价值
+的实现细节，均标注出处文件与函数/行号，可对照源码验证。
+
+### 参考段"按最大碱基码自适应打包"（segment.h / segment.cpp）
+
+参考段入库前先做**周期性检测**：`store_in_archive(const contig_t&)`（`segment.cpp:218`）
+对 lag `i ∈ [4,32)` 统计 `data[j]==data[j+i]` 比例（仅 ACGT 位置计入），取最大 `best_frac`，
+阈值 0.5 提前 break。`best_frac < 0.5` → `add_to_archive_tuples`（`segment.cpp:193`）：
+先 `bytes2tuples` 转 tuple 再 ZSTD(13)，尾部 marker=1；否则 `add_to_archive` 直接 ZSTD(19)，
+marker=0。解码端 `get`/`unpack`（`segment.cpp:260,519`）按尾部 marker 决定是否 `tuples2bytes`。
+
+**对 pbit 最有价值的是 `bytes2tuples`（`segment.h:73`）**：取参考最大碱基码 `me`，
+`me<4`（纯 ACGT）走 `bytes2tuples_impl<4,4>`——以 base-4 编码把 4 个 0..3 字节压成 1 字节
+（即 **2 bit/base，等价 2bit 化**）；`me<6` 用 `<3,6>`（3 字节→1，base-6）、`me<16` 用
+`<2,16>`（2 字节→1，base-16）、否则原样。每块末尾追加 marker 字节
+`(NO_BYTES<<4) + (v_bytes.size() % NO_BYTES)`，`tuples2bytes`（`segment.h:94`）按
+`marker>>4` 取 NO_BYTES、`marker&0xf` 取尾随基数还原。
+→ pbit 参考层目前是"标准 2bit 不二次压缩"；若未来想压参考且要求随机访问，
+这套"按最大碱基码自适应打包 + 尾部 marker"是最直接的方案（比 2bit 更通用，可同时容纳 N/IUPAC）。
+
+### LZ-diff 的稀疏哈希表与滚动 key（lz_diff.h / lz_diff.cpp）
+
+- 索引只对**每第 `hashing_step=4` 个位置**的 key 建表（`make_index32` `lz_diff.cpp:403` 的
+  `i += hashing_step`），表内存 `i / hashing_step` 而非绝对位置，读回 `h_pos = ht[slot]*hashing_step`，
+  把索引表缩小 4 倍。
+- 短参考自动降级为 16-bit 表：`short_ht_ver = reference.size()/hashing_step < 65535`
+  （`prepare` `lz_diff.cpp:146`），空槽哨兵 `empty_key16=0xffff` / `empty_key32=~0u`。
+- V2 用**滚动 key**：`Encode` 维护 `x_prev`，当上一个 key 有效且出现 literal 时用
+  `get_code_skip1(x_prev, p)`（`lz_diff.h:108`）——`code=(code<<2)&key_mask; code+=*s`，
+  避免每步重扫 key_len 个碱基。pgr 做 2-bit k-mer 流式切点可复用同样的 uint64 移位滚动。
+- 表容量 `ht_size = count / 0.7` 后归整到 2 的幂（`prepare_index` `lz_diff.cpp:117-122`），
+  线性探测上限 `max_no_tries=64`。pgr 若自建 k-mer 索引可直接复用"负载因子 0.7 + 2 的幂掩码 + 探测上限"。
+
+### CKmer 双寄存器 canonical 滚动（kmer.h）
+
+`insert_canonical`（`kmer.h:284`）同时维护 `kmer_dir`（正序：低位插入）与 `kmer_rc`
+（反向互补：高位插入右移），`data() = min(dir, rc)` 得 canonical，`is_dir_oriented()`
+记录方向；遇非 ACGT 时 `Reset()`。段路由正是靠 `kmer_front`/`kmer_back` 的方向判断是否
+reverse-complement（`add_segment` `agc_compressor.cpp:1306`：front<back 存正向，否则
+reverse_complement 后按 (back,front) 查表）。→ pgr 若走 k-mer 参考路由，"双寄存器 + 方向标志"的
+2-bit k-mer 是标准做法，可避免每次算 canonical 时重新反转。
+
+### 段级"缺中间切点"的 LZ 成本二分（agc_compressor.cpp）
+
+当样本段两端切点都有、但 `(front,back)` 不在 `map_segments`，且两端都关联过 terminator 时，
+`find_cand_segment_with_missing_middle_splitter`（`agc_compressor.cpp:1502`）对前后两个候选
+参考段各算一次 `get_coding_cost`（`GetCodingCostVector` `lz_diff.cpp:159`，逐位 LZ 编码成本），
+取前缀和（`partial_sum`）后逐位求 `cost1[i]+cost2[i]` 最小点做切分，把样本段拆成两段分别复用
+（带 `kmer_length/2` 重叠，`agc_compressor.cpp:1422`）。
+→ 这是"用 LZ 编码成本做段内最优切分"的精细做法，pbit 用 PAF/CIGAR 直接给 `ref_start/ref_end`
+更轻；可作为 pbit 未来"段内多参考拼接/切分"的对照基准。
+
+### fallback minimizers 的"投票 + 剪枝"参考选择（agc_compressor.cpp）
+
+单端切点失败或 `-f` 开启时，`find_cand_segment_using_fallback_minimizers`（:1812）统计段内
+fallback k-mer 对候选 splitter-pair 的**命中数**，只保留命中数 `≥ max_val` 的候选，按命中数
+降序、最多估 top 10，并剔除命中数 `< 最佳一半` 的候选（`agc_compressor.cpp:1878`）；
+短段（`segment_size ≤ 10000`）直接按共享 k-mer 数快判不做 LZ estimate。
+fallback k-mer 由 `kmer_filter_t`（`agc_compressor.h:570`）**概率抽样**：
+`(mmh(x) ^ rnd) < thr`，`thr` 由 `fallback_frac`（`-f`）决定，只挑全部 singleton 中的一小撮，
+从而控制 fallback 映射表（`map_fallback_minimizers`）规模。
+→ pbit 若想"无 PAF 时也用 k-mer 投票路由"，这套"按命中数剪枝 + 上限估值 + 概率抽样降采样"
+可直接借鉴（当前 pbit 用 PAF 驱动，未移植）。
+
+### 工程技巧（排序 / SIMD 匹配 / 屏障并行）
+
+- k-mer 去重排序用 **radix sort（`raduls::RadixSortMSD`，`agc_compressor.cpp:490`）** 而非
+  `std::sort`；`v_candidate_kmers` 按 `raduls::ALIGNMENT=1024` 字节对齐
+  （`v_candidate_kmers_offset` 对齐移位，`agc_compressor.cpp:441-445`），供 SIMD 排序直接访问。
+- `compare_fwd` 用 `refresh::matching_length`（`lz_diff.cpp:284`）做 SIMD 匹配长度比较。
+- 多线程用 `USE_INCREMENTING_BARRIERS` 的 `my_barrier` 做 "registration / new_splitters"
+  同步屏障（`start_compressing_threads` `agc_compressor.cpp:1093`），候选 LZ estimate 用
+  `async` 并行（`agc_compressor.cpp:1588`）；生产者消费者用 `CBoundedQueue`/`CBoundedPQueue`
+  （按 contig 大小做 cost 优先级）。pgr 的 rayon 并行可对照其"按批次注册 segment + barrier 同步"
+  的模式（pbit 目前无此复杂屏障）。
 
 ## 参考资料
 

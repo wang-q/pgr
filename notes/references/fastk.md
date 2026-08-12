@@ -168,6 +168,10 @@ FastK 本体之外，仓库还附带一系列围绕 `.hist/.ktab/.prof` 及 1-co
     `-A` 制表符分隔 ASCII；`-k` 输出 **instance 计数**（默认是 unique 计数，
     用 `Modify_Histogram` 切换视角）；`-G` 输出专供 GenomeScope.FK 的 ASCII 直方图；
     `-h low:high` 限定频次区间（默认 1:100，`-G` 时强制 1:1000）。
+    **注意：FastK 本体不做基因组大小估计**——它只产出 `.hist` 并把 `-G` 直方图的
+    最高频次项做特殊封顶，供 GenomeScope(2.0)/GenomeScope.FK 拟合出
+    genome size / 重复率；"估计"这步在 FastK 生态里是外围脚本（GenomeScope）的事。
+    pgr 的 `kmer gsize` 把这一步内化为原生命令（见 §4.8）。
 *   **Tabex**（`[-1AC] [-t<int>] <root>[.ktab] [<address>[-<address>]]`）：
     列出 / 校验 / 在表中查找 k-mer，或转成 1-code 的 `.kmr`。`-A` ASCII 列出
     （`kmer\tcount`）；`-C` 校验排序（检查 k-mer 严格递增，与其余选项互斥）；
@@ -223,6 +227,11 @@ FastK 的内部处理逻辑主要分为四个阶段（Phase）：
 *   输入扫描: 程序首先扫描输入数据集的前 1GB 数据。
 *   方案确定: 基于这部分数据，计算 Minimizer 分布，确定如何将 Super-mer 均衡地分发到临时桶中。
 *   全量分发: 扫描整个数据集，计算 Super-mer，并根据 Minimizer 方案将它们写入磁盘上的不同临时文件（Buckets）。
+*   **minimizer 环形缓冲**（`FastK.c` 中 `MOD_LEN`/`MOD_MSK`，FastK.c:446-450）：
+    滑动窗口内维护 `min[]`（k-mer 内每个位置的 canonical minimizer 值）与 `flp[]`
+    （该位置是取正向还是反向互补），`MOD_LEN` 取 ≥ 2×KMER 的最小 2 的幂，用
+    `p & MOD_MSK` 做环形索引，避免整条 read 都重新扫描——这是 Super-mer 扫描能
+    O(n) 前向推进的关键工程技巧（`split.c::padded_minimizer_thread` / `Distribute_Block`）。
 *   *代码对应*: `split.c`
 
 ### 第二阶段：排序与计数 (Phase 2: Sorting & Counting)
@@ -236,7 +245,11 @@ FastK 的内部处理逻辑主要分为四个阶段（Phase）：
         `Weighted_Kmer_Sort` 再排序。
 *   **canonical 判定**：`kmer_list_thread` 对每个 k-mer 的正向与反向互补
   （用 `Comp` 表逐 2-bit 互补实现反转）逐字节比较，取字典序较小者
-  （`kb<hb` 取正向，否则取反向）。
+  （`kb<hb` 取正向，否则取反向）。**`Comp[256]` 是"字节级反转互补"查找表**
+  （`count.c::Sorting` 中 1242-1246 构造）：把 2-bit 编码的 4 个碱基按
+  高→低位映射回"补碱基 + 逆序"，使一个字节整体完成反转互补，于是
+  `rptr[i] = (Comp[sptr[o]]<<8)|Comp[sptr[o-1]]` 从序列末尾逐字节前推即可
+  拼出反向互补串，避免逐碱基循环——k-mer 比较热路径的关键优化。
 *   **count 上限 32767**：`ct >= 0x8000` 时溢出部分记入 `overflow`，count 封顶
   `0x7fff`（与 .hist 的 high 一致）。
 *   **统计生成**：`Weighted_Kmer_Sort` 过程中累积 k-mer 频次直方图，最后写
@@ -318,6 +331,27 @@ FastK 的内部处理逻辑主要分为四个阶段（Phase）：
    其他错误的 5 倍，`-c` 折叠后 hoco k-mer 错误率降 5 倍）。pgr 无此选项；
    若未来要支持 HiFi 组装质量评估（MerquryFK 场景）可低成本补上（`kmer.md` §9
    列为剩余缺口优先级 2）。
+
+8. **基因组大小估计（`kmer gsize`，内化 GenomeScope 模型）**：FastK 本体不做
+   基因组大小估计，只产 `.hist` + Histex `-G` 的 GenomeScope 兼容直方图，由外部
+   GenomeScope(2.0)/GenomeScope.FK 拟合负二项混合模型。pgr `kmer gsize`
+   （`src/cmd_pgr/kmer/gsize.rs`）把这条链路内化为原生命令：
+   * 廉价估计（无 `--model`）：`libs/kmer/hist::estimate`，取直方图主峰
+     `peak_coverage`（BBTools CallPeaks，跳过占主导的错误 k-mer），
+     `genome_size = total_kmers / peak_cov`（`hist.rs` 中
+     `estimate`/`GenomeEstimate`）——对应 FastK `-G` 直方图 + 人工读峰的做法。
+   * 完整模型（`--model`）：`libs/kmer/genomescope::fit(hist, k, ploidy)`，
+     拟合 GenomeScope 同族模型（`kmercov/het/genome_size`），并可按
+     `--plot` 渲染 `spectra.tex`（`libs/plot/spectra.rs`）。
+   借鉴点：GenomeScope 生态是"直方图 `U(f)` + 模型拟合"的标准接口，pgr 已兼容
+   该输入（`.hist` 字节级复刻，见 §4.4）并直接复用其拟合算法，无需调外部脚本。
+
+9. **HGT / 宏基因组（FastK 无专门模块，pgr 亦无）**：本 checkout 的 FastK 套件
+   **没有**专门的 HGT 或基因组大小估计命令。宏基因组 / 水平基因转移检测依赖
+   通用机制拼装：`-p:<table>` 相对 profile + KmerMap 的 `.bed` 覆盖区
+   （外源片段在相对 profile 里表现为连续低/零 count 区段）。pgr 无对应 HGT
+   命令，但 `kmer::profile::relative_profiles` 语义一致（以某库为参照给序列打分），
+   未来若需做外源片段检测可直接复用该原语。
 
 ---
 *参考来源: [FastK GitHub Repository](https://github.com/thegenemyers/FASTK)*

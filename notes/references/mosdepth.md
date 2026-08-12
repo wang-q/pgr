@@ -35,8 +35,10 @@ duplicate），`-i/--include-flag`（默认 0；非 0 时只保留含其中**任
 read，与 `-F` 是 AND 关系）、`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`
 （按 `abs(isize)`；`-u` 默认 -1 内部转 `int.high`，且 `-u < -l` 时直接
 quit(2)）、`-R/--read-groups`（逗号分隔，只统计这些 RG 的 read）、
-`-c/--chrom`（支持 `chr:start-end`，1-based、内部减 1 转 0-based、半开；
-BED 输入则直接按 0-based half-open 映射）。
+`-c/--chrom`（支持 `chr:start-end`，1-based、内部减 1 转 0-based、半开 `[start, stop)`：经 `region_line_to_region`
+（mosdepth.nim:211-227）用 `rsplit` 倒序解析，start 减 1、stop 不变；只给
+`chr` 时不限区间；限制区间后 `get_targets`（mosdepth.nim:482-488）只保留该
+染色体，单染色体处理）。
 
 参数约束（均在各入口直接 quit(2)）：`--fast-mode` 与 `--fragment-mode` **互斥**；
 `--thresholds` 只能在指定 `--by` 时使用；输入 BAM/CRAM **必须带索引**
@@ -97,7 +99,10 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   itoa 查表法，输出是主要性能瓶颈）。
 * **regions**：窗口（`window_gen`，半开 `[start, start+window)`，末窗口截断到
   染色体长度 `t.length`）或 BED 区域（`region_gen`，按染色体预读、边消费边删；
-  BED 若 ≥4 列，第 4 列 name 会作为输出第 4 列、depth 移到第 5 列）；mean
+  BED 文件经 `bed_to_table`（mosdepth.nim:362-380）用 **htslib 的
+  `hts_open`/`hts_getline`** 逐行读入（跳过 `track ` 与 `#` 行），按染色体分组后
+  `sort` 按 start 排序，供 `region_gen` 顺序消费；BED 若 ≥4 列，第 4 列 name
+  会作为输出第 4 列、depth 移到第 5 列）；mean 由 `imean`（mosdepth.nim:399-413）
   直接求和除以**区域全长** `stop-start`（含 0 深度位点，即"每碱基平均深度"
   口径；区域起点越界返回 0，终点越界时只累到数组末尾但分母仍用全长、值偏小），
   `-m` median 用 `CountStat` 直方图（65536 桶，超出 65535 的深度计入末桶，
@@ -123,16 +128,24 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
   同构，但**窗口模式**聚合的是"每窗口 mean 深度"的分布（`region.isdigit`
   分支），**BED 模式**才是逐碱基深度直方图（`inc(arr, start, stop)`）。
 * **summary**：length / bases（= 深度总和，即总比对碱基数）/ mean / min / max；
-  空染色体 min 记 0；数值精度由 `MOSDEPTH_PRECISION` 控制（默认 2）；
-  指定 `--by` 时额外输出 `<chrom>_region` 与 `total_region` 两行（区域统计）。
+  统计用 `depth_stat` 累加器（depthstat.nim:2-7，字段 cum_length/cum_depth/
+  min_depth/max_depth），每染色体由 `newDepthStat`（depthstat.nim:39-45）对
+  深度数组扫一遍生成，`chrom_stat` 再经 `+` 操作符（depthstat.nim:53-57）并入
+  `global_stat`；空染色体 min 记 0（`min_depth == uint32.high` 时置 0）；数值精度
+  由 `MOSDEPTH_PRECISION` 控制（默认 2）；指定 `--by` 时额外输出 `<chrom>_region`
+  与 `total_region` 两行（区域统计，同样累加）。
 
 ## 4. 性能设计
 
-* **单遍 + 数组复用**：`arr.init(tlen+1)` 只分配一次，后续染色体
-  `set_len` + `zeroMem` 复用；深度数组为 `seq[int32]`（约 4 B/碱基，1 Gb
-  染色体约 4 GB 内存）。
+* **单遍 + 数组复用**：`coverage_t {.shallow.}` 声明为浅拷贝类型，配合
+  `arr.init(tlen+1)`（mosdepth.nim:238-248）只分配一次，后续染色体
+  `set_len` + `zeroMem` 复用、不再重新分配；深度数组为 `seq[int32]`（约 4 B/碱基，
+  1 Gb 染色体约 4 GB 内存）。
 * **输出 I/O**：BGZF 压缩级别 1；BGZI + CSI 分级（`get_min_levels` 按最长
-  染色体定级，1<<14 起 ×8）；`fastIntToStr` 避免 `$int` 的通用格式化开销。
+  染色体定级，1<<14 起 ×8）；`fastIntToStr`（int2str.nim:59-76）避免 `$int` 的
+  通用格式化开销，其位数用 `countdigits`（int2str.nim:55-57）的
+  `(32 - clz(value|1)) * 1233 shr 12` 位运算近似（`log10` 的整数近似），
+  配合 Milo Yip 的 100 进制查表 `gDigitsLut` 两位两位写出。
 * **线程**：`-t/--threads` 只用于 htslib BAM 解压，深度计算单线程。
 * **跳过无用染色体的计算**：当 `-n`（跳过 per-base）且无 thresholds/quantize、
   且某染色体不在 `--by` BED 里时，`continue` 直接跳过整条染色体的 coverage
@@ -149,8 +162,11 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
 ### 5.1 相同点
 
 * **差分/扫描线思想**：`start +1 / end -1` 事件累积 → 深度。pgr
-  `libs/runlist::depth_runs` 对 `(start, end)` 半开区间做同样的事（事件排序后
-  单遍累积），二者数学上等价。
+  `src/libs/runlist/mod.rs:299` 的 `depth_runs` 对 `(start, end)` 半开区间做同样的事：
+  生成 `(s,+1)/(e,-1)` 事件（:301-305）、`sort_unstable`（:306）、单遍累积并按
+  `run_depth >= min_depth` 过滤（:314-329），二者数学上等价。pgr 的 `rg coverage`
+  （`src/cmd_pgr/rg/coverage.rs`）把 `-m/--minimum` 映射到 `depth_at_least`
+  （mod.rs:288）、`-d/--detailed` 映射到 `depth_by_level`（mod.rs:294）。
 * **游程输出**：mosdepth per-base 的 `(start, stop, depth)` 与 pgr runlist
   JSON 的 `"start-end"` span 都是对深度恒定段做压缩；mosdepth 输出 0 深度段
   （如 `0 80 1` 后跟 `80 16569 0`），pgr runlist 只输出覆盖段（语义更紧凑）。
@@ -183,6 +199,14 @@ samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins �
 * **mean 分母语义**：mosdepth 区域 mean 除以**区域全长**（含 0 深度位点），
   是 WGS"每碱基平均深度"的标准口径；pgr 若给 `rg coverage` 加窗口统计，须
   明确是"覆盖碱基平均"还是"全区域平均"，避免与 mosdepth/bedtools 口径不一致。
+* **数据结构差异决定区域统计的成本**：mosdepth 的逐碱基数组可**直接索引**到
+  任意位置，因此 region mean/median、逐碱基直方图、`>=阈值` 碱基数都是 O(区域长)
+  的廉价遍历；而 pgr 的 `depth_runs` 只产出 runlist（`run_depth`/span），不是可
+  按位置索引的结构。若 pgr 要给 `rg coverage` 补"任意区域的 mean/median/≥X 碱基
+  数"，事件扫描本身拿不到这些统计，需要在 `depth_runs` 里顺带对每个 run 记录
+  `(start, end, depth)` 三元组，再由区域查询做 run 切分（`IntSpan` 二分）——
+  这是 pgr 若要追平 mosdepth 的 `regions/thresholds/distribution` 功能面时
+  的核心数据结构缺口。
 * **region median 近似**：`CountStat` 桶截断（>65535 归末桶）使高深度区域
   median 偏小；pgr 若实现区域 median，直方图桶数需按实际深度动态扩容或设大，
   不宜用固定小桶数。
@@ -207,6 +231,10 @@ samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins �
 * **fragment-mode 越界**：`arr[fragment_start + abs(rec.isize)] -= 1` 未校验
   fragment 末端是否超出染色体长度（Nim 默认边界检查会 IndexDefect，release
   可关）。
+* **同染色体内 tid 断言**：`coverage` 里若读到与请求 tid 不同的 read
+  （`tgt.tid != rec.b.core.tid`，mosdepth.nim:286-287）直接 `raise OSError`，
+  依赖 `bam.regions` 查询保证单染色体；与 `get_tid` 快速路径同属"排序/索引
+  正确性假设"。
 * **中位数近似**：`CountStat` 65536 桶截断，>65535 深度的区域 median 偏小。
 * **`gen_depths` 的 `offset/istop` 参数**：全代码只在 per-base 输出处以默认值
   `gen_depths(arr)`（`offset=0, istop=0`）调用，区域用途的偏移/截断参数从未

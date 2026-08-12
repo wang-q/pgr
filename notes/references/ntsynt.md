@@ -54,11 +54,14 @@
 | 1%–10% | 1000 | 50000 | 100000 | 250 100 |
 | > 10% | 10000 | 100000 | 1000000 | 500 250 |
 
-> **顶层 CLI 约束**（`ntSynt` 顶部，L101-116）：`-d/--divergence` 必须在
-> **[0,100]** 区间（越界 `parser.error`）；`--w_rounds` 的**每个值都必须 < `-w`**
-> （否则 `parser.error`），因为细化窗口只能比初始窗口小。另：手动显式传
+> **顶层 CLI 约束**（`ntSynt` 顶部，L101-116）：`--w_rounds` 的**每个值都必须 < `-w`**
+> （否则 `parser.error`，L114-116），因为细化窗口只能比初始窗口小。另：手动显式传
 > `--indel/--merge/--w_rounds/--block_size` 会**覆盖**按分歧推导的默认值
 > （源码用 `args.indel or 默认` 的 or 短路实现）。
+>
+> **`-d/--divergence` 边界怪癖**：只有 **`> 100`** 才触发 `parser.error`（L107-111）；
+> 而**负值**会静默落入 `< 1%` 分支（L101 `if args.divergence < 1` 同时捕获负值与 0~1），
+> 不报错。pgr 移植时应显式校验 `0 <= d <= 100`，堵住这个不报错的缺口。
 
 > **双层 CLI 架构（易混淆点）**：ntSynt 实际是**两层命令**，上面这张表属于**顶层驱动
 > `bin/ntSynt`**（snakemake 驱动器：吃 FASTA + `-d/--divergence`，据此推导 indel/merge/block_size/
@@ -173,6 +176,11 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
   （以**最大权重基因组**上位置最小/最大者定 source/target）定向，`get_shortest_paths` 取
   简单路径，且**仅当路径覆盖该子分量的全部节点与边**（`len(path)==len(vs)` 且
   `num_edges==len(es)`）才接受。
+  - **并行怪癖**：`find_paths`（`ntjoin.py:145-150`）本会在 `t > 1` 时用
+    `multiprocessing.Pool` 对分量并行找路径，但 `NtSyntSynteny.__init__` 强制
+    `self.args.t = 1`（`ntsynt_synteny.py:37`）——**ntSynt 实际总是单进程找路径**；
+    整条管线的并行只来自 btllib 的 indexlr 线程 + snakemake 的 job 调度。pgr 启示：
+    找路径天然按连通分量可并行，移植时用 rayon `par_iter` 对分量并行即可，不必学它强制串行。
 - **find_paths_synteny_blocks**（`ntsynt_synteny.py:563`）：把每条路径交给
   `find_synteny_blocks`。
 - **find_synteny_blocks**（`ntsynt_synteny.py:70`）：沿路径逐个 minimizer 走：
@@ -188,6 +196,16 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
   **魔法数怪癖**：初轮（`ntsynt_synteny.py:649`）与细化每轮（`:514`）都硬编码 `4`
   （源码 `# TODO: magic number`），且过滤条件是 `all(len >= 4)`（每基因组的块内 minimizer
   都要 ≥4，任一不足则整块丢弃）。pgr 移植应把这个阈值参数化。
+
+**调试/健壮性细节**：
+- `--interarrivals`（`ntsynt_run.py:40`）可在初轮后导出每块相邻 minimizer 的间隔距离
+  （`print_interarrivals`，`ntsynt_synteny.py:577`），用于诊断 indel/断块阈值是否合理。
+- `main_synteny` 在初轮无路径时**打印错误并 `sys.exit(1)`**（`ntsynt_synteny.py:654-656`，
+  "no paths found. Try adjusting the specified k/w parameters"）；并在入口校验
+  `w_rounds` 无重复（`:621-623`）、`--filter` 必须配 `--repeat`（`:625-626`）。
+- **igraph 版本兼容**：`run_graph_simplification` 里 `get_all_simple_paths` 的
+  cutoff 参数名随 igraph 版本变化（`ntsynt_synteny.py:595`，`<1.0.0` 用 `cutoff`、否则 `maxlen`）。
+  pgr 用 petgraph 无此烦恼，但提示了"上游库 API 漂移"的维护成本。
 
 ### 3.4 坐标细化（`w_rounds` 递减窗口）
 
@@ -216,6 +234,17 @@ block_id  genome  contig  start  end  strand  num_minimizers  broken_reason
 > `run_graph_simplification(self.graph)` 作用在**旧的** `self.graph`（不含本轮新边），随后
 > `self.graph = filter_graph_global(graph)` 又用局部 `graph` 覆盖——即每轮简化结果实际被丢弃，
 > 只有末轮的 `filter_graph_global_flag_overlaps + refine_graph` 真正落到最终图上。
+>
+> **新 minimizer 合并回位置表的语义**（`update_list_mx_info`，`ntsynt_synteny.py:302-310`）：
+> 细化轮只把**通过 `filter_minimizers`（跨基因组交集）保留下来**的 minimizer 合并进
+> `list_mx_info`（`valid_mxs = 各基因组保留 minimizer 的并集`），被过滤掉的就不加入。
+> 这保证后续 `continue_block`/定向/断块只看"仍在所有基因组出现"的 minimizer——pgr 移植时
+> 对"每轮新增 minimizer 的加入条件"要同样严谨，避免把单基因组特异的点引入位置表。
+>
+> **`--collinear-merge` 的 `Nw` 解析发生在构造函数**（`ntsynt_synteny.py:41-46`），不在
+> argparse：`^(\d+)w$` → 乘以 `w`；`^(\d+)$` → 原样整数；否则 `ValueError`。故 `--merge 3w`
+> 在顶层被解释为 `3×w` bp，与底层 `--collinear-merge` 解析逻辑一致。pgr 若支持 `Nw` 写法，
+> 建议同样在参数归一化阶段（`libs/` 纯函数）统一处理，而不是散落在命令文件里。
 
 ### 3.5 末端/重叠精修（最后一轮，`refine_graph`）
 
@@ -335,6 +364,13 @@ TSV 调用；但它是**纯坐标层**合并，与主流程有两处差异需注
    - 若仅要多基因组块，可**基于 pgi 共享 syncmer + 现成 PAF** 做"图外"块合并（无需重建整张
      minimizer 图），比完整移植 ntSynt 轻量得多。高分歧基因组共享 minimizer 稀疏，ntSynt 本身
      也退化，不应当作"覆盖提升"手段。
+9. **并行与确定性（来自 §3.3 的 t=1 观察）**：ntSynt 强制 `t=1` 找路径、`FILES` 逆序排序
+   （`ntsynt_synteny.py:38`）保证确定性。pgr 移植时：找路径按连通分量用 rayon `par_iter`
+   并行（比 ntSynt 更强），但**图构建/块输出要保持确定顺序**（如按首基因组的 (contig,start)
+   排序块，见 `SyntenyBlock.__lt__`，`synteny_block.py:102-109`），以便字节级回归测试稳定。
+10. **输入命名耦合（易踩坑）**：`find_fa_name`（`ntsynt_synteny.py:113-119`）从 minimizer
+    TSV 文件名正则提取对应的 `.fai`/`.fa`（`.k<k>.w<w>.tsv` 前缀），命名不符直接 `sys.exit(1)`。
+    pgr 无需此耦合（`.pgi` 自带坐标），移植时不要照搬"按文件名推断"这种脆弱约定。
 
 ---
 

@@ -179,7 +179,7 @@ query` 区间投影 + 传递闭包）与图构建层（`pgr paf graph` 粗粒度
 **职责层次**（而非文件清单）可分为四层：
 
 - **索引层（隐式图核心）** — `Impg` struct（单文件 `.impg` 索引）+ `ImpgIndex` trait（统一单/多
-  文件接口）+ `MultiImpg`（协调 per-file 子索引）+ `ForestMap`（target_id→tree_offset 反向索引）。
+  文件接口）+ `MultiImpg`（协调 per-file 子索引）+ `ForestMap`（target_id→tree 在序列化索引中的 offset，用于按需懒加载单棵区间树）。
   这是"比对即图"哲学的物理载体：把 all-vs-all 比对装进 coitrees，查询时在区间树上投影。
 - **格式抽象层** — `AlignmentRecord` 把 PAF/1ALN/TPA 三格式统一成 8 字段（strand + 文件偏移打包），
   使上层索引与查询代码不感知具体比对格式。`SequenceIndex` + `PanSn`（`sample#haplotype#contig`）
@@ -472,7 +472,7 @@ pub struct Impg {
     pub trees: RwLock<TreeMap>,                          // target_id -> COITree
     pub seq_index: SequenceIndex,                        // 序列名 <-> ID 映射
     alignment_files: Vec<String>,                        // PAF/1ALN/TPA 文件路径
-    pub forest_map: ForestMap,                           // 反向索引
+    pub forest_map: ForestMap,                           // target_id -> tree 在序列化索引中的 offset
     index_file_path: String,
     pub sequence_files: Vec<String>,
     trace_spacing_cache: RwLock<Vec<Option<i64>>>,       // .1aln/.tpa trace_spacing 懒加载
@@ -605,6 +605,71 @@ strand 设计一致——`AlignmentRecord` 是入库前的中间表示，`QueryM
 **格式自动探测** — `AlignmentFormat::from_path` 按扩展名判定（`.paf`/`.paf.gz`/`.paf.bgz` → PAF，
 `.1aln` → OneAln，`.tpa` → Tpa）。pgr 当前只支持 PAF（见 [[paf-pangenome.md]]），无需此抽象层；
 若未来扩展到 1ALN/TPA，此 8 字段 + strand-bit 编码是可借鉴的最小设计。
+
+### 3.6 PAF 解析与 BGZF/GZI 虚拟位置（压缩输入的懒加载前提）
+
+`paf.rs`（416 行）是 PAF 输入侧的解析模块，也是 §3.2 "CIGAR 懒加载"能成立的**压缩输入前提**：
+索引不仅要存"文件偏移"，还要能在压缩文件里随机 seek 回 CIGAR 字节。impg 对 `.paf.gz`/`.paf.bgz`
+原生支持，且刻意**只接受 BGZF、拒绝普通 gzip**：
+
+- **BGZF 判定** — [`is_bgzf`](../../../impg-0.4.1/src/paf.rs#L50) 读前 18 字节校验 gzip
+  magic + DEFLATE + FEXTRA + `BC` 子字段 + `SLEN=2`。若文件是普通 gzip，
+  [`parse_paf_file`](../../../impg-0.4.1/src/paf.rs#L306) 直接报错并提示转换命令
+  `zcat '{}' | bgzip > output.paf.gz`（paf.rs:76-83）。理由是：普通 gzip 无法随机 seek，只有
+  BGZF 的虚拟位置机制才支持按偏移读取单条记录。
+- **两种解压路径**（`parse_paf_file` 按是否存在 `.gzi` sidecar 分支）：
+    1. **有 `.gzi`** → `noodles::bgzf::io::MultithreadedReader` +
+       [`parse_paf_bgzf_with_gzi`](../../../impg-0.4.1/src/paf.rs#L274)：**两遍**——先用
+       未压缩偏移解析全部记录，再用 `gzi_index.query(uncompressed_offset)`（paf.rs:289）把每个
+       CIGAR 偏移批量转成 BGZF 虚拟位置。README：`bgzip -r alignments.paf.gz` 生成 `.gzi` 提速首读。
+    2. **无 `.gzi`** → 单线程 `noodles::bgzf::io::Reader` +
+       [`parse_paf_bgzf`](../../../impg-0.4.1/src/paf.rs#L199)：逐行解析时在每行**读取前**记录
+       `reader.virtual_position()`（paf.rs:210），再 seek 回行首、前进到 CIGAR 字节（paf.rs:239-253）
+       得到该条记录的虚拟位置。注意它用"跳过剩余字节"而非二次 seek 省一次 seek（paf.rs:259-266）。
+- **偏移装载进 metadata** — 解析得到的 BGZF 虚拟位置（非未压缩偏移）写入
+  `strand_and_data_offset` 低位（`parse_paf_bgzf` 末尾 paf.rs:252-253 用 `u64::from(cigar_vpos) | strand_bit`
+  打包）。`AlignmentRecord`/`QueryMetadata` 对"这是虚拟位置"无感知——上层只需知道
+  `strand_and_data_offset` 可交给 [`read_cigar_data`](../../../impg-0.4.1/src/paf.rs#L68)
+  （对压缩输入用 `bgzf::VirtualPosition::from(offset)` + `reader.seek`）还原 CIGAR。**这就是 §3.2
+  "索引时存偏移、查询时按需读 CIGAR"对压缩 PAF 的落地方式**。
+- **`cg:Z:` 定位** — [`parse_paf_line`](../../../impg-0.4.1/src/paf.rs#L118) 扫描该行各字段，
+  遇到 `cg:Z:` 前缀时 `cigar_offset += 5`、`data_bytes = tag_str.len() - 5`（paf.rs:153-161），
+  把文件偏移精确指向 CIGAR 字符串起点。无 `cg:Z:` 时 `data_bytes = 0`（视为无 CIGAR，如纯 `+` 链
+  `=` 段）。
+
+**对 pgr 的意义**（`pgr maf to-paf` → `pgr paf index` 路线，§9.2）：pgr 的 PAF 索引若要支持
+`.paf.gz` 输入，可直接照搬这套"BGZF 虚拟位置 + `.gzi` 可选多线程 + 偏移装 metadata + `read_cigar_data`
+按需还原"的机制；关键是**必须约束输入为 BGZF 而非普通 gzip**，否则懒加载失效。
+
+### 3.7 序列获取抽象：`UnifiedSequenceIndex` + 每线程 ReaderCache + FD 预算
+
+索引/查询要输出 FASTA（`-o fasta`/`-o gfa`/`maf`）时，需要按名字+坐标随机取回源序列。impg 用
+`sequence_index.rs` + `faidx.rs` 两层实现，其工程技巧对 pgr 的**多 FASTA 随机访问**有直接借鉴价值：
+
+- **`SequenceIndex` trait**（[sequence_index.rs#L8](../../../impg-0.4.1/src/sequence_index.rs#L8)）—
+  `fetch_sequence(&seq_name, start, end)` + `get_sequence_length`，把"从哪取序列"抽象出去。
+- **`UnifiedSequenceIndex` enum**（sequence_index.rs#L15）— `Fasta(FastaIndex)` / `Agc(AgcIndex)`
+  双变体，`from_files`（L21）按扩展名自动判定，**能识别复合扩展名** `.fa.gz`/`.fasta.gz`/`.fna.gz`
+  （L35-41），并强制所有输入文件同类型（混用报错，L53-58）。AGC 归档（`ragc-core`）与 FASTA 对
+  上层透明。
+- **`FastaIndex` 的每线程 ReaderCache + FD 预算**（[faidx.rs#L71](../../../impg-0.4.1/src/faidx.rs#L71)）—
+  随机访问多个 FASTA 时若为每个文件/每线程各开一个句柄会耗尽文件描述符。impg 的做法：
+    1. `build_from_files`（L100）读/建 `.fai`，维护 `seq_name → fasta_idx` 与 `seq_name → length` 两个
+       FxHashMap；句柄真正打开推迟到首次取序列。
+    2. `get_soft_fd_limit`（L51）从 `/proc/self/limits` 解析 "Max open files" 软上限（解析失败默认 1024）。
+    3. 每线程分配独立 slot（`num_slots = rayon::current_num_threads()+1`），预留 64 个 FD 给
+       stdin/stdout/stderr/PAF/日志等（L148-152），再算 `readers_per_thread =
+       (available / num_slots).max(1).min(fasta_files.len())`。
+    4. 每 slot 一个 [`ReaderCache`](../../../impg-0.4.1/src/faidx.rs#L8)（LRU，counter 时间戳，
+       L23-48），`fetch_sequence`（L162）按 `rayon::current_thread_index()` 取对应 slot，命中缓存
+       复用 `rust_htslib::faidx::Reader`，并把取回的序列统一 `to_ascii_uppercase()`（L185）。
+  **这是"多文件 × 多线程"下不炸 FD 的成熟范式**；pgr 若实现 `paf query -o fasta` 等多文件序列输出
+  可直接复用。
+
+> 补充：`seqidx.rs` 的 `SequenceIndex`（与 `sequence_index.rs` 的 trait 同名，但职责不同）是
+> name↔id 映射本体——`FxHashMap<String,u32>` + `id_to_name` + `id_to_len` + `next_id`，
+> 在 `paf.rs::parse_paf_line` 中把名字解析成 u32 ID（`get_or_insert_id`，paf.rs:147-148）后装入区间树。
+> 注意区分这两个同名类型。
 
 <!-- crush 算法原 §3.5 内容已移至 §6 图构建层 -->
 ## 4. 查询层：区间投影与传递闭包
@@ -1333,6 +1398,12 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
 9. **POA 基础设施可直接复用** — `pgr` 的 `libs/poa/`（`Poa` struct + `AlignmentParams` +
    `AlignmentType::Global`）已是 crush 算法 aligner 层的现成基础。`fas consensus` 已验证该 POA 在
    MSA 场景可用，迁移到 graph bubble 场景的门槛低于从零起步。
+10. **BGZF 虚拟位置 + 懒加载是压缩 PAF 索引的前提**（§3.6）— impg 对 `.paf.gz` 只接受 BGZF
+    并拒绝普通 gzip，用 BGZF 虚拟位置把 CIGAR 偏移装进 metadata，查询时 `read_cigar_data` 按需还原。
+    `pgr maf to-paf` → `pgr paf index` 若要支持压缩 PAF，应照搬这套机制而非另起 gzip 方案。
+11. **FD 预算 + 每线程 ReaderCache 的多 FASTA 随机访问**（§3.7）— `FastaIndex` 从
+    `/proc/self/limits` 读软 FD 上限，按 `rayon` 线程数均分 `readers_per_thread`，每线程独立 LRU
+    reader 缓存。`pgr paf query -o fasta` 等多文件序列输出可直接复用，避免多文件×多线程下耗尽 FD。
 
 ## 10. impg-0.4.1 的 notes/scripts/docs 目录
 

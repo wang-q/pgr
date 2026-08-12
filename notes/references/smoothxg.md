@@ -3,6 +3,10 @@
 > 整理于 2026-06-29，源自对 `smoothxg-master/src/` 全部 31 个源文件的通读。目的：理解 smoothxg
 > 如何把 GFA 图切分成 POA 块、用 SPOA/abPOA 平滑后拼接回完整图，并与 `pgr paf to-gfa`
 > 局部 POA 路线对照，提取可借鉴的工程细节。
+>
+> **修订记录**：2026-08-12 复核源码后补全——§4.1 prep 中间文件与 `-X` 参数、§4.3 长度预筛
+> 剪枝阈值、§4.4 哈希去重权重 / 方向归一化 / 输入顺序 / consensus 命名、§4.5 README 与实现
+> 不符的 heaviest bundle 说明。其余正文经逐一比对源码，未发现与实现矛盾之处。
 
 ## 1. 项目定位
 
@@ -249,6 +253,11 @@ consensus paths 的 middle 段 + 连接它们的 link paths。这是 smoothxg �
 把不相关的节点塞进同一个 POA，产出垃圾比对。`pgr paf to-gfa` 走隐式图路线不需要
 全局排序，但若未来做全图归一化，path-guided SGD 是必经一步。
 
+**工程细节**：prep 把排序后的图写到中间文件 `<input>.prep.<iter>.gfa`（临时目录，[main.cpp#L423-L441](../../../smoothxg-master/src/main.cpp#L423)），
+再由 `XG::from_gfa` 加载建索引——图是**序列化到磁盘**而非内存中转，配合 §3.1 的外存块集，
+整个 prep → blocks 阶段的大图数据流都是落盘的。chop 长度由 CLI `-X/--chop-to` 控制
+（默认 100 bp）；若从 `-i` XG 输入起跑，prep 自动被跳过（[main.cpp#L417-L419](../../../smoothxg-master/src/main.cpp#L417)）。
+
 ### 4.2 blocks：块分解算法
 
 [blocks.cpp](../../../smoothxg-master/src/blocks.cpp) 的
@@ -320,6 +329,17 @@ SGD 把不相关的节点排到一起，toposplit 也能按连通性把它们拆
    两种聚类都只在去重后序列数 ≥ `min_dedup_depth_for_block_splitting`（`-d`，默认 0 关闭）
    时才执行，过小的块直接保留。
 
+> **长度预筛（正文未展开的剪枝细节）**：无论 WFA 还是 mash 聚类，在真正算对齐/哈希距离之前，
+> 都用**长度阈值**做廉价剪枝（[breaks.cpp#L417-L426](../../../smoothxg-master/src/breaks.cpp#L417)）：
+> WFA 模式用 `len_threshold_for_edit_clustering = block_group_identity / (1 - block_group_identity)`，
+> 当候选 `other_len < curr_len` 且 `other_len < len_threshold` 时直接判定"相似度必然低于阈值"而
+> 跳过对齐（[breaks.cpp#L466-L472](../../../smoothxg-master/src/breaks.cpp#L466)）；
+> mash 模式用 `len_threshold_for_mash_clustering = n_hashes * exp(-(1-id)*k) / (2 - exp(-(1-id)*k))`
+> （[breaks.cpp#L422-L426](../../../smoothxg-master/src/breaks.cpp#L422)），候选哈希数低于该阈值即跳过。
+> 另外，聚类遍历时对每条去重序列会**同时尝试正链与反链**（`fwd_or_rev` 循环，
+> [breaks.cpp#L431-L515](../../../smoothxg-master/src/breaks.cpp#L431)）去匹配组内成员，
+> 两条链都试过才判定未命中——这解释了为什么去重时正反链相同的序列可合并为一个代表。
+
 **对 pgr 的启示**：`pgr paf to-gfa` 当前不做 VNTR 检测，对高拷贝重复区可能产出过大的 POA
 块。若实测有问题，可借鉴 smoothxg 的 `sautocorr` 自相关测重复周期 + WFA/mash 双通道聚类。
 其中 **WFA gap-compressed identity** 比完整 DP 快得多，适合做大规模序列分群；mash（rkmh）
@@ -347,6 +367,21 @@ graph_t，保留 consensus path（`consensus_name`）。**关键认识**：POA �
 `path_mapping` 知道"原 path 的哪段在哪个子图的哪条 path 上"，从而把子图的 step 翻译回
 输出图。
 
+**序列哈希去重 + 权重（两引擎共有，正文此前未展开）**：`smooth_spoa`/`smooth_abpoa` 在进
+POA 前按 `XXH64` 哈希对块内序列去重（[smooth.cpp#L698-L723](../../../smoothxg-master/src/smooth.cpp#L698)
+SPOA、[#L220-L234](../../../smoothxg-master/src/smooth.cpp#L220) abPOA）——**正反链归一化后完全相同的
+序列合并为一个代表**，并用**权重**（`weights[rank] += 1`）记录该代表在块内出现的次数，POA 时把
+权重传给 `AddAlignment(alignment, seq, weight)` / abPOA 对应接口（[smooth.cpp#L747](../../../smoothxg-master/src/smooth.cpp#L747)），
+使 consensus 偏向出现更频繁的单倍型。这既压缩了 POA 输入规模，又天然实现"多数投票式"consensus。
+**对 pgr 的启示**：`pgr libs/poa/` 若要做高深度区域的 consensus，可借鉴"哈希去重 + 权重"而非
+把所有重复序列原样塞进 POA。
+
+**方向归一化与输入顺序**：构造 POA 输入前，若某条 path_range 中反向碱基数多于正向
+（`rev_bp > fwd_bp`），整条序列被原地反向互补（[smooth.cpp#L689-L691](../../../smoothxg-master/src/smooth.cpp#L689)），
+保证同一 locus 的序列以一致方向进 POA；序列按"最长优先"顺序逐条喂入（blocks/breaks 阶段已把
+path_range 按长度降序排好，smooth.cpp 直接按该顺序逐个 `Align`）。SPOA 是增量式 POA，输入顺序
+会影响结果——先喂长序列通常能获得更稳的骨架。
+
 **adaptive POA 打分细节**（`-a`）：仅当块深度 >1 且 ≤ `max_block_depth_for_padding_more` 时启用。
 对块内序列（**丢弃长度 < 8*kmer_size 的短序列**，因其无法可靠计算 k-mer hash）用 `rkmh`
 两两估计 identity，取 **30% 分位**并**下限钳制到 0.7**
@@ -370,7 +405,9 @@ abPOA 下 4 个时 `q,c` 置 0）。**另一个易忽略的细节**：`smooth_sp
 **consensus 时序**：consensus path **只在最后一轮迭代**加入（main.cpp 中
 `current_iter == num_iterations-1` 才用非空 `consensus_base_name`），默认前缀为
 `Consensus_`（`-Q/--consensus-prefix` 可改）；`-V/--vanish-consensus` 则完全不放
-consensus path。
+consensus path。consensus path 的**命名**为 `consensus_base_name + to_string(block_id)`
+即默认 `Consensus_<block_id>`（[smooth.cpp#L1608-L1611](../../../smoothxg-master/src/smooth.cpp#L1608)），
+故每个 block 至多贡献一条 consensus path。
 
 ### 4.5 consensus_graph：共识图构建
 
@@ -392,6 +429,11 @@ consensus path。
 `max_allele_len` 控制最大 allele 长度。**对 pgr 的启示**：共识图是 smoothxg 的"参考路径
 投影"——把泛基因组图简化成参考路径 + 大变异。`pgr paf to-vcf` 走类似思路（POA
 consensus → VCF），但输出格式不同。
+
+> **README 与实现不符的坑**：README 声称共识提取用 "heaviest bundle"（最重束）算法
+> （README.md "algorithm sketch" 末尾），但 `create_consensus_graph` 实际用的是
+> **path-part 几何划分 + link path 遍历**（上文所述），并**没有** heaviest bundle 的实现。
+> 读文档勿被 README 误导，以 consensus_graph.cpp 的实际流程为准。
 
 **解耦的运行模式**：共识图构建可以从"平滑主流程"中**独立拆出**单独跑——用
 `-F/--smoothed-in` 读一份已平滑好的 GFA，再配 `-H/--consensus-from` 从文件读 consensus path

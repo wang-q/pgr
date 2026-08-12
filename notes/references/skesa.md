@@ -116,9 +116,15 @@ Rust `src/` 同名对应：`concurrent_hash.rs`、`sorted_counter.rs`/
   + nt 查后继。**用打包位快速跳过无后继的碱基**，避免逐个探测。
 - **strand 信息**：`PlusFraction = (count>>48)/65535`（`DBGraph.hpp:185-190`），
   供图遍历区分正负链计数。
-- visited 用原子 uint8（1=永久占用、2=临时、3=多 contig），多线程安全标色。
-- Rust `SortedDbGraph` 完全对应（`db_graph.rs`），另有 `HashNode` 对应哈希计数
-  版 `CDBHashGraph`；两个具体图共用 `DBGraph` trait。
+- visited 用原子 uint8（1=永久占用、2=临时、3=多 contig），多线程安全标色
+  （`DBGraph.hpp:204-222`）。
+- **哈希版 visited 复用了 count 的高位**（`CDBHashGraph`，`DBGraph.hpp:432,454`）：
+  排序版 `CDBGraph` 用独立 `m_visited` 数组（`DBGraph.hpp:301`），而
+  `CDBHashGraph` 把 count 的 `[40:47]`（对应 `DBGraph.hpp:180` 的"未用" 8 bit）
+  改作 visited 控制位（`eVisited/eTemp/eMulti = 1<<40 / 1<<41 / 1<<42`，
+  `SetColor` 用 `mask<<40` 打色、`GetColor` 取 `(count>>40)&0xFF`）——省下
+  一个 per-node 数组，是"状态打包进计数"的另一处实例。
+- Rust `SortedDbGraph` 完全对应（`db_graph.rs`），另有 `HashNode` 对应哈希计数版 `CDBHashGraph`；两个具体图共用 `DBGraph` trait。
 
 ## 4. 图遍历与 contig 组装（`graphdigger.hpp` / Rust `graph_digger.rs`）
 
@@ -220,7 +226,7 @@ de Bruijn 图遍历启发式：
    `FilterLowAbundanceNeighbors`（`graphdigger.hpp:1770`）的
    `abundance <= fraction × Σabundance`（`--fraction` 默认 0.1）与
    "`LowCount()==1` 且首后继丰度>5 时删丰度==1 尾巴"；`FilterNeighbors`
-   的不可扩展 fork 剔除（`:1824`）与 strand 平衡检查（`:1862`，
+   的不可扩展 fork 剔除（`:1827`）与 strand 平衡检查（`:1863`，
    `min(plusf,minusf) < 0.1×fraction×max` 剔偏链）。这是"在重复区断裂"的
    成熟多层阈值语义——pgr layout 的 v0 repeat 检测只有 top2 近等边近似
    （`canu.md` §8.5 记录了 6× 低覆盖漏检案例），v1 应移植这层丰度阈值

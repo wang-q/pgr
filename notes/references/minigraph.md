@@ -95,6 +95,15 @@ pgr 移植 `sr` 预设时无需复刻这条路径（`sr` 恒同时置两者，�
 **关键约束**：minigraph 不支持 overlap segments（`mg_gfa_overlap` 检查），所有 arc 的 `ov`/`ow`
 必须为 0。这与 GFA spec 允许 overlap 的设计不同，是 minigraph 的简化。
 
+**图加载的规范化管道**（`gfa_finalize`，gfa-base.c#L421）：`gfa_read` 读完 S/L 行后统一走
+`gfa_fix_no_seg`（清掉只在 L 行出现、无 S 行的空 segment）→ `gfa_arc_sort`（按 `v_lv` 基数排序）→
+`gfa_arc_index`（构建 `idx[]` 邻接索引）→ `gfa_fix_semi_arc`（补对偶弧缺失的 overlap 长）→
+`gfa_fix_symm_add`（补缺失的互补弧 `w^1→v^1`，保证图斜对称）→ `gfa_arc_len`（把 `lv` 填为
+`seg.len - ov`）→ `gfa_cleanup`（物理删除 `del` 弧并重建索引）。**图拓扑不变量**是"每条弧与其
+互补弧成对存在"（`comp` 位标注），`link_id` 把一对对偶弧绑定共享同一 `link_aux[]` tag。
+pgr 若做 GFA 物化（`pgr paf to-gfa`），这段"加载即规范化"的管道（排序+对称补边+去重+索引）
+值得移植为构建后清理步骤。
+
 ### 3.2 rGFA 三 tag
 
 rGFA 是 GFA 1.0 的扩展，给 segment 加三个 tag：
@@ -121,6 +130,22 @@ stable sequence（`rank==0` 即参考路径）。后续插入的 segment 才取 
 - `gfa_edseq_t`（`mg_idx_t` 的 `es` 字段）：每个顶点 `2i`/`2i+1` 存正向与反向互补两条序列缓存，供 GWFA 使用（`gfa_edseq_init`，gfa-ed.c）
 
 这种"出现 1 次特殊编码"的设计在 minimap2/minigraph 中一脉相承，省内存。索引按 `k`/`w`/`bucket_bits` 构建（`mg_index_core`）；**建索引前会先把所有 segment 序列统一转大写**（`mg_index`，index.c#L215）；且 `mg_gfa_overlap` 一旦检测到任何非零 overlap 的 arc 就拒绝建索引。
+
+**minimizer 的位打包编码**（`mg_sketch`，sketch.c#L56）：每个 minimizer 是 `mg128_t{x,y}` 一个 128 位字，
+`x = kMer<<8 | kmerSpan`（低 8 位记 k-mer 的 span，可 < k，用于处理 N 断点），
+`y = rid<<32 | lastPos<<1 | strand`。`mg_sketch` 是标准的**对称 (w,k)-minimizer 滑窗**：
+用大小为 `w` 的环形缓冲 `buf[256]` 维护当前窗口，`seq_nt4_table` 把碱基编码为 2-bit（N 记为 4 会打断窗口），
+正向/反向 k-mer 同时滚动（`kmer[0]` 左移进、`kmer[1]` 右移进并补 `3^c`），取字典序小者为该窗口的 minimizer；
+对"对称 k-mer"（`kmer[0]==kmer[1]`）直接跳过（无法定链）；`hash64`（sketch.c#L28）是一个
+无依赖的整数散列（5 轮乘法/XOR 混合），把 2-bit k-mer 打成 64 位再截断。窗口滑出时**同时输出所有
+相同最小值的重复 minimizer**（保证链上的重复不被漏）。`mg128_t` 的 `x/y` 语义在 `mg_map_frag`
+（map-algo.c#L366-L368）的 collect 阶段贯穿使用，是整个映射层的数据契约。
+
+**索引自适应的 occurrence 阈值**（`mg_opt_update`，options.c#L120）：minimizer 的重复度阈值
+`occ_max1`/`lc_max_occ` 不是写死的——建索引后调用 `mg_idx_cal_quantile`（index.c#L74）统计
+每个 minimizer 出现次数的分位数（0.1 分位和 `occ_max1_frac` 分位），据此把阈值抬到"能覆盖大多数
+非重复 minimizer"的水平，再 clamp 到 `occ_max1_cap`。pgr 若做 k-mer/种子索引，可借鉴这种
+"建索引后按实际数据统计自动调参"的做法，避免用户手调 occurrence 阈值。
 
 ### 3.4 `mg_gchains_t`（图链集合）
 
@@ -179,6 +204,27 @@ for each input assembly:
 **线性 chaining**（`lchain.c`）：DP 和 RMQ 两种实现，把同 segment 内的种子连成链。 **图 chaining**
 （`gchain1.c`）：把线性链当节点，用最短路径算链间图距离，DP 找最优组合。**精细对齐**：segment 内用
 miniwfa（WFA），跨边界用 GWFA（图扩展 WFA）。
+
+### 4.2b 映射后处理与 MAPQ 模型（gcmisc.c）
+
+`mg_map_frag`（map-algo.c#L340）在得到 gchain 集后，串行执行一串后处理，这是
+"原始 hit → 干净 hit 集 + 质量分数"的关键步骤，也是 pgr 的 query 过滤最值得对照的部分：
+
+1. `mg_gchain_set_parent`（gcmisc.c#L74）：按 score 从高到低，为每个 gchain 找重叠的 primary hit，
+   用**未覆盖长度占比**判定是否归为 secondary（`parent` 指向 primary），并累计 `n_sub`。
+2. `mg_gchain_flt_sub`（gcmisc.c#L131）：按 `pri_ratio`/`best_n` 把弱 secondary 标记为过滤
+   （`flt`），同 primary 完全同区间的直接删。
+3. `mg_gchain_drop_flt`（gcmisc.c#L151）：物理压缩数组（`o2n` 旧→新索引映射），同步重写
+   `id/parent`。
+4. `mg_gchain_set_mapq`（gcmisc.c#L191）：**MAPQ 经验模型**——`mapq = pen_cm * 40 * (1 - subsc/score) * log(score) - 4.343*log(n_sub+1)`，
+   其中 `pen_cm` 是 min(score 占比, anchor 数占比) × `uniq_ratio`（primary score 占所有
+   primary score 之和的比），`subsc` 是次级 hit 的最大 score。即 MAPQ 同时惩罚"次级 hit 太强"
+   （`subsc/score` 接近 1）和"重复导致 uniq_ratio 低"，cap 在 60。
+5. 若开 `-c`，再 `mg_gchain_cigar`/`mg_gchain_gen_ds`（map-algo.c#L475-L478）补逐碱基 CIGAR 与差异串 `ds`。
+
+**pgr 启示**：pgr 的 `pgr paf query` 若需输出 mapq 类似的置信度，可复用这套"score 比值 + 次级
+竞争 + 重复度"的三因子模型，而不必照搬 40/log 的常数。第 1-3 步的"parent/flt/压缩"模式与
+[[paf-pangenome.md]] 的传递闭包去重过滤思路同构。
 
 ### 4.3 GWFA：图扩展 WFA（gfa-ed.c）
 
@@ -290,6 +336,16 @@ minigraph 的 bubble（[gfa-bbl.c](../../../minigraph-master/gfa-bbl.c)）
 
 **注意**：这些是传递闭包的**后处理过滤**，不是 BFS 本身的中断条件（查询时无法做全图 SCC）。
 
+**`--call` 的 bubble 变异调用（asm-call.c）**：minigraph 还提供 `--call` 把 bubble 落成变异——
+`mg_call_asm`（asm-call.c#L21）先 `gfa_bubble` 找出 bubble 并把每个 segment 标注 `bid`/`is_stem`/`is_src`，
+再遍历 gchain：凡"两段 stem 之间夹一段非 stem segment"即识别为一个候选变异（含相邻 stem 的纯删除），
+用 query/图两侧的 `mg_intv_overlap`（≠1 丢弃）判 orthology，最后按 `strand` 输出
+`stable\tss\tse\t>seg...<seg\t:glen:strand:qname:qs:qe` 的 BED 行；`is_src` 用于解析反向折叠的
+inversion（`bid` 相同则看谁靠 src）。这展示了"bubble 是结构，变异调用是语义"的完整链路：
+**先 SCC 找拓扑结构，再结合 gchain 映射证据做变异解释**。pgr 的 PAF 隐式图没有 GFA，等价物是
+"传递闭包连通分量 + 每个分量内的路径计数/长度差"，`--call` 的思路可平移为
+"对每个连通分量，用覆盖该分量的 PAF 行数判定是否 orthologous"。
+
 #### (2) `mg_path2seq` 的 reference-guided 思路
 
 `mg_path2seq`（[ggen.c](../../../minigraph-master/ggen.c)）本质是
@@ -324,10 +380,18 @@ chaining 中计算线性链之间的图距离。pgr 的 BFS 传递闭包目前�
 
 #### (4) 覆盖度计算模型
 
-[cal_cov.c](../../../minigraph-master/cal_cov.c) 的 `mg_coverage_asm` 计算：
+[cal_cov.c](../../../minigraph-master/cal_cov.c) 的 `mg_cov_asm`（cal_cov.c#L55，asm 级批量）与
+`mg_cov_map`（cal_cov.c#L8，单映射）计算：
 
-- segment 覆盖度（区间合并）
-- link 覆盖度（arc 计数）
+- **segment 覆盖度**：先把每个 gchain 在 segment 上的区间投影到正向链（`rev` 位翻转），
+  排序后**区间合并**累加覆盖长度，除以 segment 长（cal_cov.c#L123-L133）
+- **link 覆盖度**：用 `gfa_find_arc` 找 lchain 间 arc，`++cnt_link`（cal_cov.c#L106-L116）
+
+`--cov` 入口是 `mg_ggen_cov`（ggen.c#L104）：对每个输入重复 `ggen_map` → `mg_cov_asm`，
+累加后按输入数归一化（`cov_seg[j] /= n_fn`），最后用 `gfa_aux_update_cv(g, "cf", ...)`
+（gfa-base.c#L493）把覆盖度写回 segment/arc 的 `cf:f:` tag——即覆盖度是**落进 GFA 的 tag**，
+而非独立输出。这是"把可量化的质量指标持久化到图里"的一个工程点，pgr 若物化 GFA 可借鉴
+（把覆盖度/置信度写进 S 行/L 行的 tag，而不是单独一张表）。
 
 pgr 的 PAF 区间树已支持区间查询，可类似地计算"每个 query 区间被多少 pairwise 比对覆盖"， 作为
 **传递闭包置信度**的量化指标。这与 [[paf-pangenome.md §6.4]] 的 Degree 过滤对应。

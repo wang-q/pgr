@@ -14,6 +14,8 @@
 - **比对模式**（3 种）: 局部 Smith-Waterman（kSW）、全局 Needleman-Wunsch
   （kNW）、半全局 Overlap（kOV）。
 - **gap 罚分模式**（3 种）: linear、affine、convex（分段 affine，双罚分函数取 min）。
+  判定规则见 §4.1；CLI 默认罚分 `g=-8,e=-6,q=-10,c=-4` 下既不满足 `g>=e` 也不满足
+  `g<=q||e>=c`，故**默认 gap 模式为 convex**。
 - **CLI 默认罚分**（main.cpp）: `-m 5 -n -4 -g -8 -e -6 -q -10 -c -4`；`-l` 比对模式
   （0=local、1=global、2=semi-global）、`-r` 结果模式（0=consensus、1=MSA、
   2=consensus+MSA、3=GFA、4=GFA+consensus 路径）、`-d <file>` DOT 图输出、
@@ -76,6 +78,11 @@ FASTA/FASTQ（bioparser 流式读取）
 - **aligned_nodes（失配分支）**: POA 的核心机制——两条序列比对上同一位置但
   碱基不同时，两个节点通过 `aligned_nodes` 双向互连。失配节点与主节点共享
   MSA 列，同时保持 DAG（不引入边，无环）。
+- **cereal 序列化（可选）**: `save`/`load`（[#L194-L282](../../../spoa-4.1.5/include/spoa/graph.hpp#L194)）
+  不直接序列化裸指针，而是把边写成 `(tail->id, head->id)`、失配写成
+  `(it->id, jt->id)`（id 升序去重）、外加 `sequences_`/`rank_to_node_`/`consensus_`
+  的 id 列表；`load` 时按 id 重建 `nodes_` 后回填 `inedges`/`outedges`/`aligned_nodes`
+  指针——这是"指针图如何持久化"的现成范式，pgr 若未来需缓存构建好的图可参考。
 
 ### 3.2 AddAlignment 插入逻辑（`src/graph.cpp`，693 行）
 
@@ -104,8 +111,10 @@ FASTA/FASTQ（bioparser 流式读取）
 
 ### 3.4 Consensus：TraverseHeaviestBundle
 
-- 逐 rank 节点取**最大权重入边**（tie 时比较前驱分数），累加得到到该节点的
-  heaviest path 分数；全程取全局最大终点。
+- 逐 rank 节点取**最大权重入边**，tie 时比较前驱分数，规则为
+  `scores[it] < jt->weight || (scores[it] == jt->weight && scores[predecessor] <= scores[jt->tail])`
+  （`graph.cpp` `TraverseHeaviestBundle` [#L475-L489](../../../spoa-4.1.5/src/graph.cpp#L475)），
+  累加得到到该节点的 heaviest path 分数；全程取全局最大终点。
 - 若终点仍有出边（路径可继续分支延伸），`BranchCompletion` 从该 rank 之后
   重算，继续追最大分数路径。
 - 回溯得到 `consensus_` 节点序列；`GenerateConsensus(min_coverage)` 用
@@ -131,6 +140,8 @@ FASTA/FASTQ（bioparser 流式读取）
 - `Create(type, m, n, g[, e[, q, c]])`：gap open/extend 必须非正，否则抛异常。
 - **subtype 判定**: `g >= e` → linear；`g <= q || e >= c` → affine；否则
   convex。linear 时折叠 `e = g`；affine 时折叠 `q = g, c = e`。
+  （`alignment_engine.cpp` [#L57-L66](../../../spoa-4.1.5/src/alignment_engine.cpp#L57)；
+  据此 CLI 默认罚分判定为 convex，见 §1。）
 - `WorstCaseAlignmentScore(i,j)`（基类方法，由各引擎在 `Align` 或 SIMD `Prealloc`
   时调用以预检潜在溢出）：最坏分数 = `min(−(m·min(i,j)+gap(|i−j|)), gap(i)+gap(j))`，
   `gap(len)=min(g+(len−1)e, q+(len−1)c)`（len==0 记 0）。溢出下界
@@ -158,7 +169,16 @@ FASTA/FASTQ（bioparser 流式读取）
   - 多入边（图分支）: 对每个前驱重复取 max
   - SW 每格 clamp 0；NW/OV 的行/列边界初始化不同（首列 gap 罚分 vs 0）
 - **回溯**: SW 从最高分回溯到 0；NW 从 (末行, 末列) 到 (0,0)；OV 到行/列边界。
-  输出 Alignment（图节点 id / 序列位置，gap = -1），最后逆序。
+  输出 Alignment（图节点 id / 序列位置，gap = -1），最后逆序。矩阵行按拓扑 rank
+  （`rank_to_node`）排列（而非节点 id），DP/回溯通过 `node_id_to_rank` 把节点 id
+  映射成行号（[#L30-L31](../../../spoa-4.1.5/src/sisd_alignment_engine.cpp#L30)）；
+  回溯的 match/图-gap 方向需在节点的所有前驱（多入边）间逐一比对寻找
+  （[#L395-L445](../../../spoa-4.1.5/src/sisd_alignment_engine.cpp#L395)）。
+- **affine/convex 回溯的 gap 段合并**: 用 `extend_left`（沿序列 gap 走）与
+  `extend_up`（沿图 gap 走）两个标志（[#L645-L674](../../../spoa-4.1.5/src/sisd_alignment_engine.cpp#L645)、
+  convex 版 [#L879-L921](../../../spoa-4.1.5/src/sisd_alignment_engine.cpp#L879)），
+  命中后以 while 循环沿 `E`/`Q` 矩阵一次性吞掉整段连续 gap 再回到主回溯循环，
+  避免逐格产生相邻同类型 gap 对。
 
 ## 5. SIMD 引擎：垂直并行与分派
 
@@ -179,14 +199,30 @@ FASTA/FASTQ（bioparser 流式读取）
 - 对角线依赖 `H_pred[j-1]` 通过字节移位实现：`_mmxxx_slli_si(向量, kLSS)` 把
   每个 lane 左移一位（低位补 0），再与上一向量列提取出的尾元素（
   `_mmxxx_srli_si` 保存的 `x`）OR 拼接，随列推进滚动。
+- **AVX2 跨 128-bit lane 移位技巧**: AVX2 的 `_mm256_slli_si256`/`_mm256_srli_si256`
+  按 128-bit lane 独立操作、不跨 lane 搬字节。spoa 用宏改写
+  `_mmxxx_slli_si`（[#L52-L54](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L52)）：
+  先 `_mm256_permute2x128_si256` 把高/低 128-bit 段挪到相邻 lane，再
+  `_mm256_alignr_epi8` 拼接出真正的 256-bit 内字节左移；`_mmxxx_srli_si`
+  （[#L56-L57](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L56)）
+  同理反向搬运。`permute`+`alignr` 组合正是 README 所称 "high latency shifts" 的来源之一。
+- **首列（`(i,0)` 边界）单独存放**: SIMD 矩阵压缩为 `ceil(seq_len/kNumVar)` 列后
+  没有容纳 `(i,0)` 的列位，因此每行 `(i,0)` 的值单独存进 `first_column[]`
+  （[#L314](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L314)）；
+  对角线搬移的初始 `x` 与回溯的 `j_div==0` 段边界都从 `first_column` 取出，避免
+  为每个节点行额外预留一整列。
 
 ### 5.3 前缀最大值（gap 链）
 
 - 行内 gap 延伸 `max_k(H[j-k] + k·g)` 是前缀最大值：`_mmxxx_prefix_max` 用
-  `log kNumVar` 步的 mask + shift + add + max 完成（penalties 为 2 的幂倍 g），
-  避免每列 O(kNumVar) 的串行扫描。**作用于序列 gap 状态**：affine 里对 `E_row` 调用
-  （`simd_alignment_engine_implementation.hpp` 行 1201），convex 里对 `E_row` 与
-  `Q_row` 调用（Q 用第二组 penalties，行 1681/1691）。README 所称"high latency shifts"
+  `log kNumVar` 步的 mask + shift + add + max 完成，避免每列 O(kNumVar) 的串行扫描。
+  **penalties 是 2 的幂倍**：linear 以 `g_` 为基、affine 以 `e_`、convex 的 E/Q 分别以
+  `e_`/`c_` 为基逐次翻倍（[#L754-L758](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L754)）；
+  `masks` 由位置满足 `(i & (i+1)) == 0` 的 lane 置 `kNegativeInfinity` 构成，用于屏蔽
+  越界的求和（[#L743-L752](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L743)）。
+- **作用状态随 gap 模式变化**: linear 直接作用于 `H_row[j]`（行 835）；affine 对
+  `E_row`（行 1201）；convex 对 `E_row` 与 `Q_row`（Q 用第二组 penalties 偏移
+  `&penalties[kLogNumVar]`，行 1680/1690）。README 所称 "high latency shifts"
   即指这些字节移位/变量移位指令的延迟。
 
 ### 5.4 类型与架构选型
@@ -219,6 +255,27 @@ SIMD 是 SSE 时代的遗产（当时无 wide 类可移植库），多档实例�
 pgr 的 `wide` 回退自动映射到 NEON/SSE/标量，SSE4.1 中间档的额外实例化与
 cpuid 复杂度收益小（README 自评 SIMD 增益 "marginal"）。**pgr 若未来为
 POA 做 SIMD，分派应沿用 HV 式**（见 §7）。
+
+### 5.5 SIMD 回溯与架构标记
+
+- **滚动窗口回溯（不重扫整行）**: SIMD 回溯维护一个小缓冲 `backtrack_storage`
+  （affine 版 `6·kNumVar + 3·kNumVar·max_num_predecessors` 个元素，
+  [#L1272](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L1272)），
+  一次 `store` 把当前向量段及所有前驱段载入标量数组；`load_next_segment` 标志
+  （[#L1031-L1033](../../../spoa-4.1.5/src/simd_alignment_engine_implementation.hpp#L1031)）
+  决定何时跨向量边界（`j_mod==kNumVar-1`）或换前驱行时重新载入段。对角线前驱
+  `H_diag_pred` 与左边前驱 `H_left_pred` 仅在 `j_mod==0`（段边界）时才从矩阵补读，
+  其余位置直接索引缓冲内相邻元素——把对整行矩阵的随机访问压缩成按段的局部访问。
+- **`Architecture` 模板参数实为编译期标签**: `InstructionSet<A,T>` 与
+  `SimdAlignmentEngine<A>` 的 `A` 不参与逻辑，真正的向量宽度/指令集由同一 TU 内的
+  编译期 `#if defined(__AVX2__)` / `__SSE4_1__`（决定 `kRegisterSize` 256 vs 128）决定。
+  运行时分派（`CreateSimdAlignmentEngine` 按 cpuid 选 kAVX2/kSSE4_1/kSSE2）只有在
+  各档以不同 `-march` 编译的构建（`SPOA_GENERATE_DISPATCH` + SIMDe）下才产出不同
+  代码，默认单档构建下三档模板内容相同。这从实现层面印证了 README "marginal" 的自评，
+  也是 pgr 只做单档 AVX2 + `wide` 回退（而非复刻多档模板）的合理性依据（对照见上）。
+- **回溯的 gap 段合并（SIMD 版）**: 与 §4.2 标量版一致，SIMD 回溯同样在向量段的
+  `H`/`F`/`E`（convex 加 `O`/`Q`）间判定 match/图-gap/序列-gap，gap 段连续延伸时
+  一次合并输出，只是作用对象是滚动段内的标量缓冲而非整行矩阵。
 
 ## 6. 与 pgr Rust 移植的对照（`libs/poa/`，1602 行）
 
@@ -285,6 +342,15 @@ POA 做 SIMD，分派应沿用 HV 式**（见 §7）。
    spoa 的 convex 用两套 affine 罚分函数（g/e 与 q/c）逐格取 max（SISD 5 个状态矩阵
    H/F/E/O/Q），可表达"短 gap 与长 gap 不同斜率"的更真实罚分；若未来处理长内含子/
    大 gap 场景，这是 C++ 侧现成的扩展参考（pgr 只需在 `align.rs` 增加 O/Q 两状态）。
+7. **SIMD 实现可直接复刻的三处技巧**（§5.2/§5.5）：
+   - **AVX2 跨 128-bit lane 移位**：`_mm256_alignr_epi8` 不会跨 lane，须配合
+     `_mm256_permute2x128_si256` 手动搬运段——pgr `simd.rs` 若做向量内对角线搬移，
+     `wide` 库的移位是否跨 lane、延迟几何需先 benchmark 确认（§7-1 已指出移位居高
+     延迟）。
+   - **`first_column` 独立存首列**：省去每行额外一列，配合压缩宽度
+     `ceil(len/kNumVar)`，是 SIMD 矩阵内存布局的省内存关键。
+   - **滚动窗口回溯 + `load_next_segment`**：回溯时按需载入当前段与前驱段，仅在
+     跨段/换行时重载，避免对整行矩阵随机访问——pgr `simd.rs` 回溯可参考此布局。
 
 ## 8. 移植与实现状态（原 `design/spoa_port.md`，2026-08-09 合并）
 

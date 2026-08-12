@@ -115,6 +115,17 @@ ProcessRepeats（外部脚本）：读 .cat，做 final 处理（合并重叠、
   `size=int((len+(divisor-1)*overlapLen)/divisor)`，相邻片重叠 2000 bp；含切片的 batch
   `completeSeqs=0`（`isBatchFragmented` 为真），其批注坐标后续由 `adjustFragmentPositions`
   修正回原序列（`RepeatMasker:1399`），并用 `overlapMiddle=overlapLen/2=1000` 做边界换算。
+- **fork 并行调度**（`RepeatMasker:834-1193`）：主进程维护 `%batchStatus`/`%children`，
+  `numberChildren = min(-pa, batchCount)`，`JOBLOOP` 里 `wait()` 回收子进程。子进程
+  产出一个 `_batch-N.masked`（`SimpleBatcher::writeBatchFile`）+ 一个 `_batch-N.cat`；父进程
+  用 `nextBatchToConcatenate` 按 batch 序号**严格有序**地追加进 `$file.cat.all`（并行完成
+  顺序不定，未就绪就 `last` 等下一轮，`RepeatMasker:993-1016`）。batch 失败自动重试
+  `retryLimit=2` 次，连续 `badForkMax=20` 次坏 fork 才退出（`RepeatMasker:837-839,921-932`）；
+  单序列 batch 完成后若 `isBatchFragmented` 由子进程就地跑 `adjustFragmentPositions`
+  （`RepeatMasker:1153-1160`）。
+- **.cat 输出与合并**：`totseqlen > 10Mb` 时整个 `.cat` 用 gzip 输出为 `$file.cat.gz`
+  （`RepeatMasker:831,1222-1226`），否则为 `$file.cat`；头部 `##` 行与 `## RAW Annotations:`
+  结束标记由父进程写（`RepeatMasker:1216-1251`），各 batch 的 raw 批注追加其后。
 - **GC 相关矩阵**：搜索矩阵名实为 `{div}p{GC}g.matrix`（如 `20p43g.matrix`），`div` 来自
   `searchParams->{matrix}` 的 `\d+` 前缀、`GC` 由 `chooseMatrices` 按实测 GC 分档
   （35/37/39/…/51/53g，`RepeatMasker:4229-4266`）。GC 背景默认 43%，仅当
@@ -149,6 +160,23 @@ HMMER 路径 `RepeatMasker:3362-3363`）。
 bitScore；仅 PERFECT 阶段额外做 `maskLevelFilter(1)`（因它要 excision，不允许重叠，
 `RepeatMasker:2780-2785`）。这是 pgr 复刻 TRF 时可直接对齐的阈值链。
 
+### E. coli 插入元件（IS）专项处理（locateISElements）
+
+每个 batch 在正式 `runSearchStages` 之前，若存在 `generalLibDir/is.lib` 且未 `-no_is`，
+先跑 `locateISElements`（`RepeatMasker:1508,1087-1104`）。E. coli 专用，pgr 处理细菌基因组
+时可参考：
+
+- **搜索参数**：`minscore=17、minmatch=15、matrix=identity.matrix`、无 gap/bandwidth/masklevel
+  （`RepeatMasker:1535-1541`），用 `is.lib`（各类 IS 元件序列）对每个 batch 搜一次，输出
+  `*.iscat`（`RepeatMasker:1545`）。
+- **完整元件判定**：`beginis==1 && leftis==0`（比对覆盖到 IS 的 5' 端到 3' 端）才算完整
+  （`RepeatMasker:1668`）；跨测序 gap 的两段 IS 若 `begin - lastend <= 2` 且方向/名一致可合并
+  （`RepeatMasker:1645-1660`）。
+- **TSD（靶位点重复）检测**：按元件类型查表 `%dupLengths`——IS1→9/8/10 bp、IS2→5、IS3→3、
+  IS5→4、IS10→9、IS30→2、IS150→3/4、IS186→10/11、Tn1000→5（`RepeatMasker:1673-1703`），
+  取左右侧翼 `dupLength` 长的序列验证是否成对；`-is_clip` 把 IS+TSD 整段从序列中剪掉
+  （输出 `$file.withoutIS` 供后续 maskSource 使用，`RepeatMasker:1284-1286`）。
+
 ### rmblast 搜索与 outfmt
 
 - **outfmt**：`-outfmt="6 score perc_sub perc_query_gap perc_db_gap qseqid qstart
@@ -162,14 +190,21 @@ bitScore；仅 PERFECT 阶段额外做 `maskLevelFilter(1)`（因它要 excision
   `cpg_kdiv→pctKimuraDiverge`（CpG 校正）、`cpg_sites→cpGSites` 直接装入 SearchResult；
   主 `pctDiverge` 用的是 `perc_sub`（flds[1]），`qseq/sseq`（flds[18/19]）即为比对序列。
   `pgr rept` 的 `parse_tab_row` 只取 qseqid/qstart/qend 三列做区间，无需这些列。
-- **search() 失败重试**（`RepeatMasker:2037-2087`）：rmblastn 返回错误时循环降参重试——
-  先 `bandwidth→14`，再 `bandwidth→1`，再 `minmatch++`（<10 时），否则退出（HMMER 直接退出）。
+- **search() 失败重试**（`RepeatMasker:2037-2087`）：rmblastn 返回错误时循环降参重试。
+  **注意：各分支是互斥的 if/elsif，不是顺序降档**——`bandwidth > 14 → 14`；
+  `bandwidth == 4 → 1`（注释为 "Extreme measures for very long simple satellites"，仅 TRF
+  长简单卫星的二/三次重检走这里）；`minmatch < 10 → minmatch++`；均不满足则打印引擎参数后
+  `exit(-1)`（HMMER 引擎任何错误直接退出）。
 - **搜索参数映射**（`NCBIBlastSearchEngine::getParameters`，`NCBIBlastSearchEngine.pm:444-668`）：
+  恒定追加 `-num_alignments 9999999`（`NCBIBlastSearchEngine.pm:456`，让 rmblastn 返回所有
+  可能的比对而非默认 top hits）；
   `minscore/bandwidth → -xdrop_ungap/-xdrop_gap/-xdrop_gap_final/-min_raw_gapped_score`（带宽
-  "+"走 MaskerAid 旧换算、"-"按 gap 罚分推 band、"0"按 minScore 倍数）；
-  `gap_init → -gapopen`、`ins_gap_ext → -gapextend`、`minmatch → -word_size`、
-  `masklevel → -mask_level`、非 basic 评分模式追加 `-complexity_adjust`、`-dust no`、
-  `-num_threads 4`（有 cores 则用之）。
+  "+"走 MaskerAid 旧换算、"-"按 gap 罚分推 band、"0"按 minScore 倍数：`xdrop_ungap=minScore*2、
+  xdrop_gap_final=minScore*4、xdrop_gap=int(minScore/2)`）；
+  `gap_init/ins_gap_ext → -gapopen abs(gap_init − ins_gap_ext)`（如 -lib 的 -30−(-6)=24，
+  **并非直接取 gap_init**）与 `-gapextend abs(ins_gap_ext)`（=6）、`minmatch → -word_size`、
+  `masklevel → -mask_level`（>0 才加）、非 basic 评分模式追加 `-complexity_adjust`、
+  `-dust no`、`-num_threads 4`（有 cores 则用之）。
 - **过滤链**（`runStage`，`RepeatMasker:2918-2952`）：
   1. `search`：调 rmblastn + makeblastdb（对自定义库 `processCustomLib` 先建库）；
   2. `filterContainedResults`（可选，`filterContained=1` 时滤掉被更长 hit 包含的）；
@@ -233,6 +268,26 @@ Satellite/Simple/Low_complexity 分类列出 `number of elements / length occupi
 sequence`。`-excln` 时以 `NonMask`（排除 ≥20 bp 的 N/X 段）为分母算百分比。`-maskSource` 缺省时
 百分比无法计算（打警告略过）。其他输出：`-a`→`.align`、`-xm`→`.out.xm`、`-ace`→`.out.ace`、
 `-poly`→`.polyout`、`-gff`→`.out.gff`（gff3）、`-html`→`.out.html`。
+
+**`.out.gff` GFF3 字段**（`generateOutput`，`ProcessRepeats:5533-5536,5667-5694`）：首行
+`##gff-version 3`；每条序列首个批注前打 `##sequence-region <query> 1 <seqLen>`；
+feature 行 9 列依次为——
+`<query>  RepeatMasker  dispersed_repeat  <qstart>  <qend>  <PctSubst>  <+/->  .  ID=<id>;Target "Motif:<hitName>" <subjStart> <subjEnd>`。
+注意 **score 列用的是 `PctSubst`（div. 百分比）而非 SW score**；`ID` 为 RM 内部分配的
+`printid`（`-no_id` 时打印"empty"占位），strand 由 orientation（"C"→`-`，其余→`+`）决定。
+
+**`.masked` 屏蔽输出**（`ProcessRepeats::maskSequence`，`ProcessRepeats:9459-9552`）：默认把
+批注区间替换为 `N`；`-x` 替换为 `X`；`-xsmall` 替换为小写（`lc`）。屏蔽前按 `getQueryName`
+归并批注，对重叠区间做**包含裁剪**——被前一条完全包含者跳过、部分重叠者从 `prevEnd+1` 起算
+（`ProcessRepeats:9483-9490`），与 `pgr fa mask` 的区间合并语义一致。序列输出按 50 bp 折行。
+
+**FastaDB 长度统计口径**（`FastaDB.pm`，`SeqDBI.pm` 同）：`getSeqLength`=全长；
+`getSubtLength`=去掉所有非 ACGT 模糊碱基（`XNRYMK`，`FastaDB.pm:1035`）后的可替换长度；
+`getXNLength`=再去掉 **≥20 bp 连续 X/N 段**（`([X,N]{20,})`，`FastaDB.pm:1032`）；`getGCLength`=
+G/C 计数。三者在读取/重建 FASTA 索引时一并算好缓存（`FastaDB.pm:1007-1009`）。`.cat` 头部
+`Total NonMask`/`Total NonSub` 即分别对应 `getXNLength`/`getSubtLength`。`maxIDLength`（RM 用 50）
+超长会 `croak`（`FastaDB.pm:1052-1058`）。pgr `fa mask`/`rept` 若要复现 RM 的 `NonMask`
+百分比分母，需按"≥20bp 连续 X/N 段"这一口径实现。
 
 ### 对 pgr rept 的启示
 

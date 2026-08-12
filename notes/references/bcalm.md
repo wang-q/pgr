@@ -21,6 +21,13 @@
   partition），桶内用 `graph3` 做**局部压缩**产出部分 unitig（写 `*glue*` 文件），
   最后用 **union-find（UF）把各桶产出的单元片段 "glue" 拼成完整 unitig**，并
   用 `LinkTigs` 重算 unitig 间 `L:` 边。完整三段流水线见 §3。
+- **计数是精确的，不用 Bloom filter**：BCALM 2 的 k-mer 计数走 GATB 的 **DSK**
+  （磁盘外部排序），把每个 k-mer 的**精确出现次数**写进 `.h5`；全程**没有用到
+  Bloom filter**（`gatb-core/src` 下无任何 bloom 实现）。凡需要"过滤掉测序错误"
+  都是事后读 `.h5` 时按丰度阈值判定的，而不是靠近似集合去重。这一点与许多其它
+  k-mer 工具（如依赖 Bloom/`minhash` 近似的工具）形成鲜明对比，对 pgr 的意义：
+  `KmerTable` 的精确计数路线与 BCALM 2 一致，可借鉴其"先精确数、后按阈值过滤"的
+  解耦。
 - **双链语义**：所有 k-mer 转 canonical 表示（k-mer 与其反向互补视为同一对象，
   RC 后只出现一次）；unitig 方向不保证跨 run 一致。
 - **输入输出**：`-in`（单文件或多文件列表 `ls -1 *.fastq > list_reads`）；
@@ -83,6 +90,16 @@ BCALM 2 把 cdBG 构建拆成三段：**分桶压缩（bcalm2）→ UF 全局拼
 
 主循环 `for each superbucket (= DSK partition) p`，词表："partition/super-bucket"
 = 一个 DSK partition；"bucket" = 一个 minimizer 对应的桶。
+
+> **超级桶的构成**：一个 partition（超级桶）实际由 `nb_passes` 个 DSK pass 的
+> 同名分片合成——`bcalm_algo.cpp` 开头校验 `nb_h5_partitions == nb_passes *
+> nb_partitions`（`:303`），内层 `for pass_index in 0..nb_passes` 取
+> `interm_partition_index = p + pass_index*nb_partitions` 的 Count 迭代器合并喂给
+> `InsertIntoQueues`（`:429-433`）。`nb_passes`/`nb_partitions` 从 `.h5` 的
+> `configuration` 组 XML 里读出（`:292-296`）。k-mer → 超级桶的映射由
+> `Repartitor`（`PartiInfo.hpp:292`）给出：它把全部 `4^m` 个 minimizer 值映射到
+> `N` 个 partition 号（`computeDistrib` 依据输入的 minimizer 分布做负载均衡分组）。
+
 
 1. **扩展超级桶**（`InsertIntoQueues`）：对 partition 内每个 solid k-mer，若丰度
    ≥ 阈值则保留；用 `modelK1`（k-1 长 minimizer 模型）求其**左/右 minimizer**；
@@ -277,6 +294,16 @@ overlap 恰好构成类型 4 的镜像对——所以 overlap 天然满足双向
 | `-minimizer-size` | minimizer 长度（分桶粒度，示例用 5-8） |
 | `-minimizer-type` | 0 = 字典序 minimizer；1 = frequency-based（默认 1） |
 
+**frequency-based minimizer 的实现**（`-minimizer-type 1`，默认）：DSK 计数阶段会
+额外统计每个 minimizer 的出现频率，存入 minimizers 组的 `minimFrequency`
+（`uint32[4^m]`，`bcalm_algo.cpp:321-326` 读出）。构造模型时传入
+`ComparatorMinimizerFrequencyOrLex`（`Model.hpp:910-977`），该比较器**优先比较
+minimizer 的观察频率，频率低的判为"更小"，频率相同再退回字典序**（`:964-966`）。
+这样选出的 minimizer 往往是**罕见（低重复）的 m-mer**，从而让各 minimizer 桶的
+k-mer 数更均匀——对 §3.1 的线程池逐桶压缩负载均衡有利（`minimizerMin/max` 宏也
+用同一比较器，`bcalm_algo.cpp:118-119`）。`-minimizer-type 0` 则纯按字典序比较
+（`ComparatorMinimizer`，`Model.hpp:901-905`）。
+
 **更大的 k**：源码编译时用 `cmake -DKSIZE_LIST="32 64 ... 320"` 指定 k 的
 倍数（只能 32 的倍数，必须含 32），运行时可用到列表最大值；中间值用更小的
 模板实例加速。`KSIZE_LIST="32 320"` 时 k>32 的速度等同 k=320。
@@ -327,6 +354,11 @@ overlap 恰好构成类型 4 的镜像对——所以 overlap 天然满足双向
      可参考此分层。
   8. **minimizer 分桶 + traveller k-mer 落盘**（§3.1）：跨桶边落盘延迟处理，避免
      内存膨胀——内存-磁盘权衡的典型设计。
+  9. **minimizer 选择策略直接影响负载均衡**（§6）：frequency-based minimizer 偏爱
+     罕见 m-mer，使桶更均匀；DSK 计数与 minimizer 分布（`Repartitor` 负载均衡分组）
+     在计数阶段一次性算好，压缩阶段直接复用。对 pgr 的 `kmer`/`fq ec_kmer`
+     minimizer 方案，若想用 minimizer 做并行分桶，可借鉴"先用频率分布把 minimizer
+     值域做均衡分区、再按桶并行"的两层思路，而不是简单按 minimizer 取模。
 - **pgr 的差异优势**：`KmerTable` 是精确计数（无近似/无哈希碰撞），内存中建表；
   BCALM 2 依赖外部排序（dsk）+ minimizer 分桶以在低内存跑超大基因组。对 pgr
   的定位（单机、精确、内存友好场景），unitig 压缩更可能在 `fas`/`kmer` 层面的

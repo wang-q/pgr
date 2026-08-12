@@ -67,6 +67,15 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
   `Logex` 计算：单倍体 `A&.B[<thresh>-]`（asm ∩ reads 的高计数）；双倍体
   用 `A&.D[thresh-]`/`B&.D[thresh-]`/`C&.D[thresh-]` 分别求 asm1/asm2/并集
   覆盖 solid reads 的比例，分母统一为 `SOLID_COUNT`。
+  - **"Found" 读的是 `hist[1]`**：这些集合用 `Logex -H1 ...` 产出（交集
+    **集合**，每个 k-mer 恰好一次），`-H1` 让直方图以 unique 模式写出，
+    此时 `H->hist[1]` = 集合内**不同** k-mer 总数 = 被 asm/并集覆盖的 solid
+    reads 数（MerquryFK.c:930-932 / 992-1006）。分母 `SOLID_COUNT` 是 reads
+    全部 solid k-mer 数（§SOLID 阈值处累加）。
+  - **`_only.bed` 格式**：`scan_asm`（MerquryFK.c:151-168）对每条 scaffold 把
+    `aprof[x]!=0 && rprof[x]==0`（asm 有、reads 相对 profile 为 0）的**连续
+    miss 段合并**成一个区间，写 `scaffold_id \t start \t end`（`end` 追到
+    `last = x+KMER`）；与逐 scaffold 的 `.qv` 共用同一次 profile 扫描。
 - **SOLID 阈值自动推断**（MerquryFK.c 的 `SOLID_THRESH` 与 HAPmaker.c 的
   `reliable_cutoff`，注意**并非同款**）：
   - MerquryFK：对 reads 的 `.hist` 从 `low+1` 起
@@ -74,8 +83,12 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
     **不再严格下降**处 = 错误峰下滑结束/固体峰上升起点，取该 `k` 为
     `SOLID_THRESH`；随后 `SOLID_COUNT` 累加 `[SOLID_THRESH, high]` 的计数
     （completeness 的分母）。
-  - HAPmaker：用 **`<=`**（非严格，`hist[k] <= hist[k-1]`），即停在第一个
-    不再下降或持平处，判据更"提前"；且它**不算 SOLID_COUNT**，只取阈值。
+  - HAPmaker：用 **`<=`**（非严格，`cvec[k] <= cvec[k-1]`，HAPmaker.c:60-62），
+    即**穿过平台（`==`）继续往下扫**，直到第一个**严格上升**点才停——比
+    MerquryFK 的 `<` 判据**更靠后（阈值 k 更大）**，并非"提前"。
+    **两者的 `==`/`<` 差异方向恰好相反**：MerquryFK 在第一个 `>=`（不再严格
+    下降或持平）处停；HAPmaker 在第一个 `>`（严格上升）处停。且它**不算
+    SOLID_COUNT**，只取阈值。
   - 两者扫描前都先 `Modify_Histogram(hist,low,high,1)` 把直方图归一化到
     **unique 计数模式**（`hist[i]` = 出现 i 次的**不同** k-mer 数，而非实例
     数；切换时 `*i` / `/i` 互转）。**上下溢出边界桶**藏在 `hist[high+1/+2]`，
@@ -91,6 +104,11 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
   标签 `read-only / 1 / 2 / 3 / 4 / >4`（H[0..5]；H[6]=A-B 仅用于 `-z`）。
   核心思想 = 把 reads 的 k-mer 按其
   在 assembly 中的**拷贝数**分桶——这正是 copy-number 谱的精髓。
+  - **CN/ASM 谱是 instance 计数**：`Logex -H1000` 建的直方图随后被
+    `Modify_Histogram(...,0)` 统一转成 **instance 模式**（cn_plotter.c:77、
+    asm_plotter.c:111）——与 SOLID 阈值用的 unique 模式相反；`.cni` 输出头为
+    `Copies \t kmer_multiplicity \t Count`（cn_plotter.c:267）。`-H1000` 把
+    直方图覆盖度上界设到 1000（超出部分并入 `high` 桶）。
 - **坐标轴自适应**（CNplot/ASMplot 同款）：`-X/-Y` 未给时，先在各直方图
   （STACK 模式对各桶求和）上从 low+1 起找"首个不单调下降点"再沿上升段扫
   全局最大得主峰 `(xmax,ymax)`；再在主峰右侧找**次峰 `xsec`**（≥10%·ymax），
@@ -121,6 +139,11 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
     N50 由排序后的 `<troot>.block.sizes` 累积到 `≥ BTOT/2` 得到。
 - 内部组合 CNplot/ASMplot/HAPplot；`-k` 保留 `.cni/.asmi/.hpi` 中间数据
   供重复绘图。
+  - **三种中间文件格式不一**：`.cni`/`.hpi` 是**文本**（`.cni` 头
+    `Copies\tkmer_multiplicity\tCount`；`.hpi` 头
+    `Assembly\tContig\t<mat>\t<pat>\tSize`，hap_plotter.c:67），而 `.asmi`
+    是**二进制**（`int nhist` + 两个 `int len`+label + `2*nhist-1` 个直方图，
+    asm_plotter.c:353-367）——pgr 若复刻 `.asmi` 需按二进制解析。
 - **MerquryFK 本质是驱动脚本**：它自己不实现计数/集合并，而是通过 `system()`
   串联 **FastK**（给 asm 建表 `-t1 -p`、产相对 profile `-p:<reads>`）、**Logex**
   （`A&.B[%d-]`、`A|+B` 等集合表达式）、**Fastrm**（清理临时文件）。assembly
@@ -220,6 +243,26 @@ OUT.completeness.stats                      # solid read k-mer 被 asm/并集覆
      初始值 1-2 字节）。供 per-scaffold QV / 相位块用。
    这正是 kmer.md §10.2 三种格式（`.pkt`/`.pkp`/`.hist`）的**对照系**：
    pgr 的 `.pkt`/`.pkp` 自建单文件不兼容 FASTK，`.hist` 刻意兼容。
+6. **共享 C 工具层 `gene_core.c`**（被 libfastk.c 与所有工具 `#include`）：
+   对 pgr 有直接参考价值的工程手法：
+   - **`SystemX`**（gene_core.c:25-30）：所有 FastK/Logex/Fastrm/Rscript 子进程
+     统一用 `sprintf` 拼命令 + `system()` 执行，失败即 `exit(1)`——MerquryFK
+     本质靠它串联外部二进制。pgr 若做同类驱动宜用 `std::process::Command`（
+     避免 shell 注入面），而非 C 的 `system()` 拼串。
+   - **`MyTemp`**（gene_core.c:19-23）：`mkstemp` 生成 `._XXXXXX` 模板再
+     `unlink`，把模板名当后续 `sprintf` 拼临时文件名的"根"。
+   - **`PathnRoot`/`Root`/`PathTo`**（gene_core.c:84-141）：去后缀/取根/取目录
+     的统一字符串工具，实现 README 的"已知类型后缀可省略"约定。
+   - **`Catenate`/`Numbered_Suffix`**（gene_core.c:143-189）：带静态复用缓冲的
+     路径拼接，避免反复分配。
+   - **2-bit 碱基压缩** `Compress_Read`/`Uncompress_Read` 与 `code[]`/`comp[]`
+     字节查表（A/C/G/T→0..3 与补体），`is_minimal`+`compress_norm`/
+     `compress_comp` 判最小化 k-mer（libfastk.c:628-717）。
+   - **`big_read`**（libfastk.c:357-375）：按 ≤0x70000000 分块读，规避 >2GB
+     单次 `read` 在部分系统失败的问题。
+   - **`Fetch_Profile` 流式解压**（libfastk.c:1657-1804）：`.prof` 的
+     delta+RLE 码流用 4096 字节双缓冲滚动解压，内存常数级——pgr 读大
+     profile 无需整载入内存。
 
 ## 5. 局限
 

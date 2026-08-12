@@ -78,6 +78,15 @@
 > 注：即使 `-t 1`，phase 1 的 worker 数也固定为 `num_threads * 2 + 1`（即 3 个），Rayon 全局池
 > 则按 `num_threads` 建。
 
+**依赖 vs 实际实现（值得警惕）**：[Cargo.toml](../../../seqwish-master/Cargo.toml) 声明了
+`uf_rush`（无锁并查集）、`rdst`（并行基数排序）、`sucds`（succinct rank/select）、`parking_lot`、
+`bitvec`(atomic) 等依赖，但 `src/` 中 **`uf_rush`/`rdst`/`sucds`/`parking_lot` 一处都没用到**
+（对源码 `Grep` 全 0 命中）——实际代码手写了 `DisjointSetsAsm` 无锁并查集、用 `Vec<AtomicU64>` 做
+原子位向量、用 Rayon 的 `par_sort_unstable`（而非 rdst 基数排序）、用 `std::sync::Mutex/RwLock`
+（而非 parking_lot）。这是 C++ 移植时"预设未来需求"堆出来的依赖，与真实实现脱节。**对 pgr 的
+启示**：判断项目真正用什么，应以源码 `use`/调用为准，不能只看 Cargo.toml；pgr 应避免这种"声明
+一堆不用依赖"的做法（也符合 CLAUDE.md 的"不引入新依赖"精神）。
+
 ## 3. 关键数据结构
 
 ### 3.1 PosT：offset + 方向的单 u64 编码
@@ -97,9 +106,15 @@ pub fn is_rev(pos: PosT) -> bool { (pos & 1) != 0 }
 所有区间树都以 `PosT` 为 value，单棵树同时表达"位置 + 链方向"。pgr 的 `pgr paf` 模块若要支持
 反链投影，可直接借鉴此编码。
 
-同文件还定义了 `AlnPosT { pos: PosT, aln_length: u64 }`（`#[repr(C)]`，供 FFI）：其 `Ord` 比较
-`pos`，仅当 `pos` 相等时才用 `aln_length` 分胜负——把"位置 + 匹配长度"打包成单个可排序值，供比对
-匹配排序用（本 Rust 移植中主要在 PAF 稀疏化/排序场景使用）。
+同文件还定义了 `AlnPosT { pos: PosT, aln_length: u64 }`（`#[repr(C)]`，供 FFI），把"位置 +
+匹配长度"打包成单个可排序值，供比对匹配排序用（本 Rust 移植中主要在 PAF 稀疏化/排序场景使用）。
+
+> **修正（非标准 `Ord`，勿照抄）**：其 `Ord` 实现（[pos.rs#L20-L35](../../../seqwish-master/src/pos.rs#L20-L35)）
+> **并不是标准全序**：先比 `pos`，但在 `pos < other.pos` 分支里还会**再**比 `aln_length`——仅当
+> `aln_length` 也更小时才返回 `Less`，否则返回 `Equal`；而 `pos > other.pos` 分支无条件返回 `Greater`。
+> 这违反 `Ord` 的反称律（可能出现 `a.cmp(b) == Equal` 而 `b.cmp(a) == Greater`），注释明确写
+> 着 "Match C++ behavior"，是 C++ 遗产的刻意保留。pgr 若要复用"位置+长度"排序，应写满足全序的
+> 正确比较器（`pos` 相同才比 `aln_length`），不要照抄这个有缺陷的实现。
 
 ### 3.2 SeqIndex：FM-index + SparseBitVec
 
@@ -277,8 +292,13 @@ eprintln!("[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduc
    `explore_overlaps_discovery` 查 `aln_iitree`。
 3. **关键过滤**：`explore_overlaps_discovery` 内只追 `spanning_adj.contains(source, target)`
    的对齐，非树边直接跳过。
-4. 发现新位置时 `curr_bv.set` 用 `fetch_or`（编译成 `LOCK OR`），返回旧值判断是否新， 新的才 push
+4. 发现新位置时 `curr_bv.set` 用 `fetch_or`（编译成 `LOCK OR`），返回旧值判断是否新，新的才 push
    回 `todo_in`。
+5. **无锁队列的自旋收敛法**（[transclosure.rs#L692-L705](../../../seqwish-master/src/transclosure.rs#L692-L705)）：
+   worker 无任务时 `yield_now()` 自旋并累计 `empty_count`，仅当 `todo_in`/`todo_out` 全空、
+   `active_workers == 0` 且连续空闲超过 1000 次才退出；manager（[transclosure.rs#L712-L747](../../../seqwish-master/src/transclosure.rs#L712-L747)）
+   同样等 `todo`/`todo_in`/`todo_out` 全空且无活跃 worker 才收敛。`active_workers` 是
+   `AtomicU64` 计数器（进出 worker 时 `fetch_add/fetch_sub`），用于避免"队列刚好空"时提前收敛。
 
 Phase 1 **只做位置发现**，不做 union-find，不收集 overlap 列表。这是相对 C++ 原版的关键改进—— C++
 版 phase 1 同时收集 ovlp_q 用于 phase 2，内存压力大；Rust 版用 spanning tree 把 phase 1 瘦身为纯
@@ -302,7 +322,11 @@ BFS 标记，phase 2 用 per-sequence 查询独立完成。
 phase 1b 收敛后，`q_curr_bv` 标记了当前 chunk 的全部相关位置。phase 2 对这些位置做 union-find：
 
 1. 并行收集 `q_curr_positions: Vec<u64>`（所有 1-bit 的位置）。
-2. 建 `rank_table: Vec<u32>`（位置→rank 的直接查表，O(1) 查找，比 sdsl rank 快）。
+2. 建 `rank_table: Vec<u32>`（位置→rank 的直接查表，O(1) 查找，比 sdsl rank 快）。填充是
+   **并行 + unsafe 裸指针写**（[transclosure.rs#L867-L877](../../../seqwish-master/src/transclosure.rs#L867-L877)）：
+   `q_curr_positions.par_iter().enumerate().for_each` 里直接 `*ptr.add(pos) = rank`——因为每个位置在
+   `q_curr_positions` 中唯一、恰好写一次，不存在数据竞争，`unsafe` 只为绕过借用检查。这是"以不变量
+   换取并行写入"的典型，pgr 若仿写应保留注释说明该不变量。
 3. 对每条 component sequence 查 `aln_iitree`，对每个对齐区间内同时被 `q_curr_bv` 标记的 (j, t)
    位置对，调 `dsets.unite(rank_table[j], rank_table[t])`。
 4. 输出 `(dset_id, position)` 列表，按 dset_id 排序、压缩、按最小 position 重命名， 再排序一次。
@@ -793,6 +817,10 @@ gfa 阶段则是顺序实现（`node_sequences` 用 `.map`、P 行用 `for` 循�
 
 - **写阶段独占**（`Mutex`）：`alignments.rs` 写 `aln_iitree` 用 `Arc<Mutex<...>>`， 多 worker
   串行写入。
+- **写完即降级**（[main.rs#L256-L262](../../../seqwish-master/src/main.rs#L256-L262)）：`aln_iitree`
+  建完索引后，用 `Arc::try_unwrap` + `Mutex::into_inner()` 把 `Arc<Mutex<T>>` 降级成**纯 `Arc<T>`**
+  （只读无锁），再传给 transclosure 供并行查询。这是"写时互斥、读完即退锁"的务实收尾——比对树一旦
+  建好就再也不写，不必继续背着 Mutex。
 - **读阶段共享**（`RwLock`）：compact/links/gfa 读 `path_iitree`/`node_iitree` 用
   `Arc<RwLock<...>>`，多线程 `read()` 并发查。
 - **不可变共享**（`Arc` 无锁）：`SeqIndex` 构建后只读，直接 `Arc<SeqIndex>` clone 到各线程，

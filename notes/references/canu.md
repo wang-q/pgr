@@ -59,6 +59,9 @@ canu-2.3/src/
 │   ├── falconsense.C               # 每 read 一个 consensus 的 CLI
 │   └── computeGlobalScore.C / errorEstimate.C
 ├── overlapBasedTrimming/    # 修剪（trimReads-bestEdge / splitReads-*）
+├── readErrorDetection/      # 读端错误谱估计（供 overlap 误差率调整）
+├── overlapErrorAdjustment/  # 按每 read 的错误谱调整 overlap 误差率（unitig 段）
+├── overlapCheck/            # overlap 质量检查
 ├── overlapAlign/            # overlap 的碱基比对（计算 alignments）
 ├── stores/                  # seqStore / ovStore / tigStore（二进制存储）
 └── utility/                 # 基础设施（bits、strings、system、libbacktrace）
@@ -66,7 +69,9 @@ canu-2.3/src/
 
 ## 3. 流水线（`pipelines/canu.pl`）
 
-三段各跑一遍 `meryl 计数 → overlap → 下游`：
+三段各跑一遍 `meryl 计数 → overlap → 下游`（行号指 `main` 主流程的
+调度点，即 `doCorrection/doTrimming/doUnitigging` 三个子程序被调用的位置；
+子程序定义分别在 `canu.pl:926/968/1010`）：
 
 ```
 doCorrection(1144)  meryl → overlap(cor, mhap) → buildCorrectionLayouts →
@@ -78,10 +83,13 @@ doUnitigging(1179)  meryl → overlap(utg, mhap) → readErrorDetection →
 ```
 
 - overlapper 默认全部 `mhap`（`canu.pl:125-127`）；`overlapInCore` 走
-  `ovlOverlapper=ovl`，`canu.pl:718` 有醒目的 `DO-NOT-USE` / `LUDICROUSLY SLOW`
-  警告。
+  `ovlOverlapper=ovl`，`canu.pl:710-720` 有醒目的 `DO-NOT-USE` /
+  `LUDICROUSLY SLOW` 警告框（原笔记写 `:718`，实际是 710–720 的整块警告）。
 - correction 是 Canu 相对 Celera 8 的新增阶段：Celera 8 直接用原始 reads
   做 overlap；Canu 先把每条 read 按 overlap 布局纠错成 consensus 再组装。
+- 每阶段按 `-canuIterationMax`（默认 1）可迭代重跑：各 `*Check` 子程序以
+  `foreach (1..canuIterationMax+1)` 循环（`canu.pl:1146-1147` 等），
+  迭代会改写脚本并重新提交。
 
 ## 4. overlap 检测
 
@@ -132,35 +140,88 @@ GENERATE OUTPUTS(754)                findCircularContigs → setParentAndHang �
 - **BestOverlapGraph**（`AS_BAT_BestOverlapGraph.C:67` `findInitialEdges`）：
   每条 read 的 5'/3' 端各选一个 best edge（按质量/长度/误差率排序）；若 best
   edge 覆盖的 reads 比例不足 `minReadsBest`（默认 0.8），自动放宽误差率到
-  `erateMax` 重算（自适应阈值）。
+  `erateMax` 重算（自适应阈值）。建图前的过滤链（都在 BestOverlapGraph 内）：
+  先 `findContains()` 剔除 contained，再按标签过滤 coverage gap / lopsided /
+  spur / high-error 四类"问题 reads"，最后才 `findEdges()`。
+- **OverlapCache**（`AS_BAT_OverlapCache.C`）：`loadOverlaps:485` 从 ovlStore
+  读入后按 `_maxEvalue`（＝误差率）与 `_minOverlap` 过滤（`filterOverlaps:416`），
+  再去重（`filterDuplicates:320`）并把 overlap 对称化（`symmetrizeOverlaps:635`）；
+  内存由 `-M` 预算约束（`computeOverlapLimit:202`）。→ 对 pgr 的意义：
+  OLC 前先按长度/质量过滤 overlap 集、去重、保证对称，能大幅减小 layout 图。
 - **greedy 建 tig**（`AS_BAT_PopulateUnitig.C`）：种子 read 要求两端 best edge
-  互惠（`edgeTo5 && edgeTo3`），沿 best edge 单向延伸、已放置即停；非互惠
-  的 read 不种子（避免错装）。
-- **repeat breaking**（`AS_BAT_MarkRepeatReads.C:973`）：用 AssemblyGraph 找
-  "与 tig 外 read 也有 overlap"的 read（双定位），投影回 tig，若无 read 跨越
-  该区域则打断。这是 OLC 处理重复的核心手段。
+  互惠（`edgeTo5 && edgeTo3`，`:154-155`），沿 best edge 单向延伸、已放置即停；
+  非互惠的 read 不种子（避免错装）。种子按 **chunk 长度降序**取
+  （`bogart.C:545` `nextReadByChunkLength`）——最长 read 先建 tig，与 pgr
+  `layout` 的"按 unitig 长度降序取种子"一致。
+- **repeat breaking**（`AS_BAT_MarkRepeatReads.C:973` `markRepeatReads`）：
+  内部是证据驱动的一条流水线（每 tig）：
+  `annotateRepeatsOnRead:83`（从 AssemblyGraph 收集"外部 reads 对 tig 的 overlap"
+  → `mergeAnnotations:117`（按证据 read 折叠成 tig 坐标区间）
+  → `discardSpannedRepeats`（被 tig 内 read 完整跨越的区间不算重复）
+  → `mergeAdjacentRegions`（先外扩 `MIN_ANCHOR_HANG` 再合并相邻区间）
+  → `findConfusedEdges`（找"confused edge"：某 read 的 best edge 落在重复区，
+  但存在强度相近的 near-best edge 指向 tig 外）
+  → `buildBreakPoints` + `splitTigAtReadEnds`（打断）。
+  关键常量在文件顶：`MIN_ANCHOR_HANG=500`（重复区边界至少要锚定这么多碱基）、
+  `REPEAT_OVERLAP_MIN=50`、`REPEAT_FRACTION=0.5`。**这是"外部 reads 证据 +
+  无跨越则打断"的图级实现**——注意 Canu 2.3 并无固定的
+  `SPURIOUS_COVERAGE_THRESHOLD`/`ISECT_NEEDED_TO_BREAK` 两个常量（那是 Celera
+  8.3 bogart 血统的，见 §8.5），Canu 用 confused-edge + deviationRepeat 判定。
 - **气泡**（`mergeOrphans` 第二遍，`bogart.C:639`）：按相似度阈值
   `similarityBubble` 合并平行路径——正是用户裁定"不处理"的那种启发式。
 
+### 5.1 关键参数默认值（`bogart.C:87-128`）
+
+> 注意：`bogart.C` 的 usage help 文本（`:376-423`）与代码实际默认值有**多处不符**
+> （help 文本过时），下表以代码默认值为准。
+
+| 参数 | 代码默认 | 含义 |
+|---|---|---|
+| `erateGraph` / `erateMax` / `erateForced` | 0.075 / 0.100 / 1.0 | best-edge 建图误差率 / 放宽上限 / 强制值（<1.0 才用） |
+| `minReadsBest` | 0.8 | 有 best edge 的 reads 比例下限，低于则放宽到 erateMax（help 写 0.9，代码是 0.8） |
+| `deviationGraph` / `deviationBubble` / `deviationRepeat` | 6.0 / 6.0 / 3.0 | 三场景下与均值相差的标准差倍数 |
+| `confusedAbsolute` / `confusedPercent` | 2500 / 15.0 | repeat 检测里 confused-edge 的绝对碱基差 / 百分比差（help 写 2100/200，代码是 2500/15.0） |
+| `minOverlapLen` / `minIntersectLen` / `maxPlacements` | 500 / 500 / 2 | 最小 overlap / 最小交集（建 unitig）/ 最大放置数 |
+| `spurDepth` | 3 | spur 检测回溯深度 |
+| `lopsidedDiff` | 25.0 | 判定 lopsided read 的 5'/3' 百分比差 |
+| `fewReadsNumber` / `tooShortLength` / `spanFraction` / `lowcovFraction` / `lowcovDepth` | 2 / 0 / 1.0 / 0.5 / 3 | 未组装（unassembled）分类的覆盖/长度/跨度阈值（`classifyTigsAsUnassembled:681`） |
+
+→ 对 pgr 的意义：`deviationGraph=6`（best-edge 用均值±6σ 的宽松窗口）、
+`confusedAbsolute/Percent`（repeat 区判定）与 `minReadsBest`（自适应放宽）
+都是**经验参数**，pgr 的 `asm olc` 目前用固定阈值（top2 边长度比 ≥0.9），
+这些是 v1 调参的直接参考来源。
+
 ## 6. consensus（utgcns）
 
-`unitigConsensus::generate`（`unitigConsensus.C:1466`）按算法分发：
+`unitigConsensus::generate`（`unitigConsensus.C:1466`）先做
+`switchToUncompressedCoordinates:164`（把 homopolymer 压缩坐标解回），再按
+consensus 算法字符分发：
 
 - **默认 `P` = pbdagcon**（`generatePBDAG:854`）：
   1. `generateTemplateStitch:259`：按 layout 顺序用 edlib（Myers O(ND)）把 reads
-     逐步"缝"成一条模板（带 homopolymer 压缩坐标，`switchToUncompressedCoordinates:164`）。
-  2. 所有 reads 用 edlib 重比对到模板（`alignEdLib`：band 递增、错误率递增重试，
-     `MAX_RETRIES`）。
+     逐步"缝"成一条模板（带 homopolymer 压缩坐标）。关键细节：对每个待加
+     read，只用**期望 overlap 长度**（layout 坐标差）取模板的 80%（`templateSize=0.90`
+     实际是 90%）与 read 的 10%（`extensionSize`）做带 band 的 edlib 对齐，
+     失败则降 min overlap、升误差率重试（`alignAgain` 标签，`:427` 起）。
+  2. 所有 reads 用 edlib 重比对到模板（`alignEdLib:675`：band 递增、错误率
+     递增重试；`ERROR_RATE_FACTOR=4`、`NUM_BANDS=2` ⇒ `MAX_RETRIES=8`，
+     见 `unitigConsensus.C:35-38`）。
   3. 比对建成 PacBio 的 AlnGraphBoost POA-DAG（`libpbutgcns/AlnGraphBoost.C`），
      `mergeNodes:188` 合并等价节点。
   4. `bestPath:490`（heaviest path）→ `consensusNoSplit:386`：沿 best path 取
      base，低于 `minCoverage` 的段截掉（Canu 的 min-coverage 修剪）。
+  → 对 pgr 的意义：Canu 的 template stitch 是"逐步缝合"，每一步只用一个
+  局部 banded 对齐来决定接缝位置；pgr 的 `asm cns` 因 overlap 全精确，坐标
+  已由 layout 对齐，缝合不需要 edlib——但 Canu 的"取期望 overlap 的局部窗口
+  对齐来确定接缝"思想，在 pgr 未来引入错配 overlap 时可直接复用。
 - **`Q` = quick**（`generateQuick:976`）：只做 template stitch，不做 consensus——
-   拼贴序列直接当 contig（文档说适合做中间检查/抛光输入）。
+  拼贴序列直接当 contig（文档说适合做中间检查/抛光输入）。
 - **`S` = singleton**（`generateSingleton:1012`）：单 read 原样输出。
 - **correction 的 consensus**（`correction/falconConsensus.C:69`）：FALCON 移植，
   证据 reads 对齐到模板后按列 DP + link 回溯打分（`getConsensus`），不是
   AlnGraphBoost。
+- **对齐器**：`utgcns.C:316-317` 明说 edlib 是唯一（也是默认）的 aligner——
+  `-pbdagcon` 选项只切换 POA 图的构建/遍历算法，碱基对齐一律走 edlib。
 
 ## 7. Canu vs Celera（改进清单）
 
@@ -229,8 +290,16 @@ unitigs 当"伪 reads"，直接在 unitig 层做 OLC 拼接**。
   `markRepeatReads` 图级双定位在 unitig 层的简化，不携带覆盖度证据。
   合成数据观察：6× 低覆盖时随机基因组仍出现重复区**环形错装**（contig 在
   重复处把基因组两段接反；当时该 unitig 只有唯一 best 边且连的就是错误副本，
-  top2 近似不触发）——印证 Canu 覆盖度证据（`SPURIOUS_COVERAGE_THRESHOLD=6` /
-  `ISECT_NEEDED_TO_BREAK=15`）的必要性，v1 优先补。
+  top2 近似不触发）——印证覆盖度证据的必要性，v1 优先补。
+  **勘误**：`SPURIOUS_COVERAGE_THRESHOLD=6` / `ISECT_NEEDED_TO_BREAK=15`
+  这两个常量**不在 Canu 2.3 源码里**（本笔记初版误标为"Canu"），它们属于
+  **Celera 8.3 bogart** 血统（`wgs-8.3rc2/src/AS_BAT/AS_BAT_MergeSplitJoin.C:46-47`：
+  "Need to have more than this coverage … to call it a repeat area" /
+  "Need at least this number of reads confirming a repeat junction"）。
+  Canu 2.3 重写的 repeat breaker（`AS_BAT_MarkRepeatReads.C`，见 §5）改用
+  confused-edge + `deviationRepeat=3` + `MIN_ANCHOR_HANG=500` 锚定，无固定
+  覆盖度阈值。两者共性（**外部 reads 证据区分重复/唯一**）才是 pgr v1 要补
+  的方向；`design/olc.md` §10 沿引的这两常量应改指 celera.md 而非 canu.md。
 - **consensus：精确缝合即共识**：unitig 无错 + overlap 全精确时，overlap 已
   把坐标完全对齐，缝合即共识（`asm cns`，重叠区不一致会友好报错）；Canu 的
   template stitch + edlib 重比对 + POA-DAG bestPath 是为高噪声长读设计的。
@@ -245,17 +314,38 @@ unitigs 当"伪 reads"，直接在 unitig 层做 OLC 拼接**。
   检测的用武之地）。跨 k 的 contain/延伸重叠天然存在，使 overlap 图稀疏；
   合成数据 30× 下 3 条 contigs 全部为基因组精确子串。
 
+### 8.6 工程实现细节（对 pgr 的借鉴）
+
+- **内存有界的 all-pairs overlap（`overlapInCore.C:204-219`）**：不是一次把
+  所有 reads 的 k-mer 装进哈希表，而是**按 read id 分块**——循环
+  `Build_Hash_Index(bgnHashID, endHashID)` 建一块的哈希，再对该块内的 reads
+  查 `[bgnRefID, endRefID]` 的参考范围，处理完即释放下一块。→ pgr 的
+  `asm ovlp` 目前把全部 unitigs 一次建索引（unitig 数远小于 reads），
+  宏基因组数据量大时可参照此"分块建索引 + 滑窗查询"以控内存峰值。
+- **并行按块划分（`bogart.C:977-978` / `MarkRepeatReads` blockSize）**：
+  Canu 用 `tiLimit` 与线程数把 tig 分成近似均匀的块（`blockSize`），
+  repeat 检测等阶段按 tig 并行。pgr 用 rayon 按 unitig 并行，思路一致。
+- **overlap 对称化**：`OverlapCache::symmetrizeOverlaps` 保证图边双向一致，
+  避免 layout 方向歧义。pgr 的 `ovlp` 已通过 canonical 索引 + 双向验证
+  天然对称（§8.5 第 4 条）。
+- **二进制存储中间件（`stores/` seqStore/ovlStore/tigStore）**：Canu 把
+  reads/overlaps/tigs 存为二进制 store 以便断点续跑与跨进程传递。pgr 的
+  `asm olc` 阶段间走内存（`--keep-dir` 才落地文本中间件），当前规模足够，
+  暂不需要二进制 store。
+
 ## 9. 关键文件清单（速查）
 
 | 组件 | 文件:行 | 内容 |
 |---|---|---|
-| 流水线 | `pipelines/canu.pl:1144/1165/1179` | cor/obt/utg 三段 |
+| 流水线 | `pipelines/canu.pl:1144/1165/1179` | cor/obt/utg 三段（main 调度点；子程序定义 `:926/968/1010`） |
+| overlap | `overlapInCore/overlapInCore.C:204-219` | 分块建哈希索引（内存有界） |
 | overlap | `overlapInCore/overlapInCore-Find_Overlaps.C:235` | k-mer 滑窗查哈希 |
-| overlap | `overlapInCore/overlapInCore-Process_String_Overlaps.C:442` | Myers 扩展 |
+| overlap | `overlapInCore/overlapInCore-Process_String_Overlaps.C:581/442` | 对角合并 / Myers 扩展 |
 | layout | `bogart/bogart.C:491-754` | BOG → greedy → repeat breaking |
 | layout | `bogart/AS_BAT_BestOverlapGraph.C:67` | best edge + 自适应误差率 |
-| layout | `bogart/AS_BAT_PopulateUnitig.C` | 互惠种子 + 单向延伸 |
-| layout | `bogart/AS_BAT_MarkRepeatReads.C:973` | repeat breaking |
+| layout | `bogart/AS_BAT_PopulateUnitig.C:154-155` | 互惠种子 + 单向延伸 |
+| layout | `bogart/AS_BAT_MarkRepeatReads.C:973` | repeat breaking（confused-edge 证据） |
+| layout | `bogart/AS_BAT_OverlapCache.C:485` | overlap 过滤/去重/对称化 |
 | consensus | `utgcns/unitigConsensus.C:854` | template stitch + edlib 重比对 + DAG |
 | consensus | `utgcns/libpbutgcns/AlnGraphBoost.C:386/490` | bestPath + min-coverage 修剪 |
 | correction | `correction/falconConsensus.C:69` | FALCON 列 DP consensus |
