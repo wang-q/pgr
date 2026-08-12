@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::plot::histogram::{
-    calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex,
+    calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex, HhData,
 };
 use std::io::Write;
 
@@ -148,24 +148,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let axis = compute_hh_axis(&density_data, *bins, &bin_edges, unit);
 
-    // Context
-    let mut context = tera::Context::new();
-
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    context.insert("table", &table);
-    context.insert("xlabel", &xlabel);
-    context.insert("ylabel", &ylabel);
-    context.insert("width", &axis.width);
-    context.insert("height", &axis.height);
-    context.insert("xticks", &axis.xticks);
-    context.insert("xtick_labels", &axis.xtick_labels);
-    context.insert("ygroups", &axis.ygroups);
-    context.insert("yticks", &axis.yticks);
-    context.insert("label_len", &axis.label_len);
+    let data = HhData {
+        table,
+        xlabel,
+        ylabel,
+        width: axis.width,
+        height: axis.height,
+        xticks: axis.xticks,
+        xtick_labels: axis.xtick_labels,
+        ygroups: axis.ygroups,
+        yticks: axis.yticks,
+        label_len: axis.label_len,
+    };
 
-    render_hh_tex(&context, &mut writer)?;
+    render_hh_tex(&data, &mut writer)?;
 
     writer.flush()?;
     Ok(())

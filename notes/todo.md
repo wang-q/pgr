@@ -271,10 +271,11 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
 
 ## 5. 低风险审计记录项（可顺手修）
 
-- [ ] `pgr align pgi` 不带序列路径（geometric blocks，未精化）易被误当
-      精化比对使用（2026-08-12 本人误用过一次，见 `pgi-align.md`
-      §7.4.1）——帮助文本已有说明，可考虑在 `after_help` 加一句显式警告
-      或输出时提示"unrefined"。
+- [x] `pgr align pgi` 不带序列路径（geometric blocks，未精化）易被误当
+      精化比对使用——已加运行时 `log::warn!` 显式警告（2026-08-12：
+      "writing unrefined geometric blocks ... pass --ref-seq/--query-seq"），
+      集成测试 `command_align_pgi_warns_without_extension_sequences` /
+      `_no_warning_with_extension_sequences` 锚定。
 - [ ] `syncmer.rs` 重复发射同一位置：**暂缓**——消费方已去重，收益小风险高
       （来源：`audit/audit-rept-sd.md`）。
 

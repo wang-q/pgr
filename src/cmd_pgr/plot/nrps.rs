@@ -72,16 +72,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         all_tex.push('\n');
     }
 
-    // Context
-    let mut context = tera::Context::new();
-
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    context.insert("outfile", outfile);
-    context.insert("all_tex", &all_tex);
-    context.insert("is_legend", &is_legend);
-    context.insert("default_color", &default_color);
 
-    pgr::libs::plot::nrps::gen_nrps(&context)?;
+    pgr::libs::plot::nrps::gen_nrps(outfile, &all_tex, is_legend, &default_color)?;
 
     Ok(())
 }

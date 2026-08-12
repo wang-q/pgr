@@ -1,8 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::io::Write;
 
-use super::common::{context_get_str, render_and_write, replace_section};
+use super::common::replace_section;
 
 /// Parsed NRPS modules: per-module domain lists and module metadata.
 pub struct NrpsData {
@@ -138,60 +139,68 @@ pub fn gen_module(
     info: &HashMap<String, String>,
     domains: &Vec<HashMap<String, String>>,
 ) -> Result<String> {
-    let mut context = tera::Context::new();
-    context.insert("info", info);
-    context.insert("domains", domains);
     let last_domain = domains
         .last()
         .ok_or_else(|| anyhow!("empty domains in gen_module"))?;
     let first_domain = domains
         .first()
         .ok_or_else(|| anyhow!("empty domains in gen_module"))?;
-    context.insert("last_domain", last_domain);
-    context.insert("first_domain", first_domain);
 
-    let template = r###"
-    \begin{scope}[shift={([shift={({{ first_domain.dx_before }}cm,0)}]{{ info.prev }}.east)}]
-{% for domain in domains -%}
-        \node[{{ domain.type }}, {{ domain.color }}] ({{ domain.id }}) at ({{ domain.pos }}cm,0) {};
-{% if domain.text != "" -%}
-        \node[text=white,anchor=center,align=left] at ({{ domain.id }}) { {{ domain.text }}};
-{% endif -%}
-{% endfor -%}
-        \begin{scope}[on background layer]
-            \draw[{{ first_domain.color }}, line width=0.5mm, yshift=-1cm]
-                let \p1 = ({{ first_domain.id }}), \p2 = ({{ last_domain.id }}) in
-                (\x1,0) -- (\x2,0)
-                node[midway, below, text={{ first_domain.color }}] { {{ info.id }} };
-            \draw[{{ first_domain.color }}, line width=2mm]
-                let \p1 = ({{ last_domain.id }}) in
-                (-{{ first_domain.dx_before }}cm,0) -- (\x1 + {{ last_domain.dx_after }}cm,0)
-                coordinate ({{ info.id }});
-        \end{scope}
-    \end{scope}"###;
-
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])
-        .context("failed to register nrps module template")?;
-
-    let rendered = tera
-        .render("t", &context)
-        .context("failed to render nrps module template")?;
-    Ok(rendered)
+    // Replicates the former Tera module template byte-for-byte: `-%}` tags
+    // trimmed the newline after each loop/conditional tag.
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str(&format!(
+        "    \\begin{{scope}}[shift={{([shift={{({}cm,0)}}]{}.east)}}]\n",
+        first_domain["dx_before"], info["prev"]
+    ));
+    for domain in domains {
+        out.push_str(&format!(
+            "\\node[{}, {}] ({}) at ({}cm,0) {{}};\n",
+            domain["type"], domain["color"], domain["id"], domain["pos"]
+        ));
+        if !domain["text"].is_empty() {
+            out.push_str(&format!(
+                "\\node[text=white,anchor=center,align=left] at ({}) {{ {}}};\n",
+                domain["id"], domain["text"]
+            ));
+        }
+    }
+    out.push_str(&format!(
+        "\\begin{{scope}}[on background layer]\n            \
+         \\draw[{}, line width=0.5mm, yshift=-1cm]\n                \
+         let \\p1 = ({}), \\p2 = ({}) in\n                \
+         (\\x1,0) -- (\\x2,0)\n                \
+         node[midway, below, text={}] {{ {} }};\n            \
+         \\draw[{}, line width=2mm]\n                \
+         let \\p1 = ({}) in\n                \
+         (-{}cm,0) -- (\\x1 + {}cm,0)\n                \
+         coordinate ({});\n        \
+         \\end{{scope}}\n    \
+         \\end{{scope}}",
+        first_domain["color"],
+        first_domain["id"],
+        last_domain["id"],
+        first_domain["color"],
+        info["id"],
+        first_domain["color"],
+        last_domain["id"],
+        first_domain["dx_before"],
+        last_domain["dx_after"],
+        info["id"],
+    ));
+    Ok(out)
 }
 
 /// Render the full NRPS LaTeX file by substituting color/module/legend sections
-/// into the file template, then rendering via Tera and writing to `outfile`.
-pub fn gen_nrps(context: &tera::Context) -> Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let all_tex = context_get_str(context, "all_tex")?;
+/// into the file template and writing it to `outfile`.
+pub fn gen_nrps(outfile: &str, all_tex: &str, is_legend: bool, default_color: &str) -> Result<()> {
     let mut writer = crate::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../assets/nrps.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
     // Section color
-    let default_color = context_get_str(context, "default_color")?;
     let color_section = format!(
         r###"%
         draw={},
@@ -211,15 +220,10 @@ pub fn gen_nrps(context: &tera::Context) -> Result<()> {
     replace_section(&mut template, "%MODULE_BEGIN%", "%MODULE_END%", all_tex)?;
 
     // Section legend
-    let is_legend = context
-        .get("is_legend")
-        .ok_or_else(|| anyhow!("missing context key: is_legend"))?
-        .as_bool()
-        .ok_or_else(|| anyhow!("context key is_legend is not a bool"))?;
     if !is_legend {
         replace_section(&mut template, "%LEGEND_BEGIN%", "%LEGEND_END%", "")?;
     }
 
-    render_and_write(&template, context, &mut writer)?;
+    writer.write_all(template.as_bytes())?;
     Ok(())
 }

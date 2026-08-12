@@ -263,6 +263,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             );
         }
         if ref_seqs.is_empty() {
+            log::warn!(
+                "no extension sequences: writing unrefined geometric blocks \
+                 (one per chained seed tube, not refined alignments); pass \
+                 --ref-seq/--query-seq (or genome inputs) for refined scored \
+                 alignments"
+            );
             pgr::libs::pgi::align::align_to_psl_streaming(&mut a, &b, &params, self_mode)
         } else {
             pgr::libs::pgi::align::align_to_psl_ext_streaming(

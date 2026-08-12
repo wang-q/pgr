@@ -1,9 +1,10 @@
 use crate::libs::ds::IntSpan;
 use anyhow::anyhow;
 use indexmap::IndexMap;
+use std::io::Write;
 use std::path::Path;
 
-use super::common::{context_get_str, render_and_write, replace_section};
+use super::common::replace_section;
 
 /// Build named IntSpan sets from a list of input files (one item per line).
 /// Each set is labeled by the file's basename (extension stripped); duplicate
@@ -264,25 +265,58 @@ pub const VENN_4: &str = r###"
 \node[text centered] at (0,    -0.2) { {{ inter.10 }} }; % ABCD
     "###;
 
+/// Substitutes `{{ label.N }}` / `{{ excls.N }}` / `{{ inter.N }}` placeholders
+/// in a Venn body template with the given values.
+fn fill_body(template: &str, labels: &[String], excls: &[i32], inter: &[i32]) -> String {
+    let mut s = template.to_string();
+    for (i, l) in labels.iter().enumerate() {
+        s = s.replace(&format!("{{{{ label.{i} }}}}"), l);
+    }
+    for (i, e) in excls.iter().enumerate() {
+        s = s.replace(&format!("{{{{ excls.{i} }}}}"), &e.to_string());
+    }
+    for (i, v) in inter.iter().enumerate() {
+        s = s.replace(&format!("{{{{ inter.{i} }}}}"), &v.to_string());
+    }
+    s
+}
+
+fn venn_body_2(labels: &[String], excls: &[i32], inter: &[i32]) -> String {
+    fill_body(VENN_2, labels, excls, inter)
+}
+
+fn venn_body_3(labels: &[String], excls: &[i32], inter: &[i32]) -> String {
+    fill_body(VENN_3, labels, excls, inter)
+}
+
+fn venn_body_4(labels: &[String], excls: &[i32], inter: &[i32]) -> String {
+    fill_body(VENN_4, labels, excls, inter)
+}
+
 /// Render the Venn diagram LaTeX file by substituting the body template
-/// selected by `n` (2, 3, or 4) into the file template, then rendering via Tera.
+/// selected by `n` (2, 3, or 4) into the file template and writing it.
 /// For unsupported `n`, returns `Ok(())` without writing.
-pub fn gen_venn(context: &tera::Context, n: usize) -> anyhow::Result<()> {
+pub fn gen_venn(
+    outfile: &str,
+    n: usize,
+    labels: &[String],
+    excls: &[i32],
+    inter: &[i32],
+) -> anyhow::Result<()> {
     let out_string = match n {
-        2 => VENN_2,
-        3 => VENN_3,
-        4 => VENN_4,
+        2 => venn_body_2(labels, excls, inter),
+        3 => venn_body_3(labels, excls, inter),
+        4 => venn_body_4(labels, excls, inter),
         _ => return Ok(()),
     };
 
-    let outfile = context_get_str(context, "outfile")?;
     let mut writer = crate::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../assets/venn.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
-    replace_section(&mut template, "%VENN_BEGIN", "%VENN_END", out_string)?;
+    replace_section(&mut template, "%VENN_BEGIN", "%VENN_END", &out_string)?;
 
-    render_and_write(&template, context, &mut writer)?;
+    writer.write_all(template.as_bytes())?;
     Ok(())
 }

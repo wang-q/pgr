@@ -97,16 +97,17 @@ fn density_to_heatmap(density: IndexMap<String, Vec<f64>>, xmax: usize) -> GcHea
 
 /// Render a heatmap to a LaTeX writer (pgfplots, compile with tectonic).
 pub fn render_heat<W: Write>(w: &mut W, hm: &GcHeatmap) -> anyhow::Result<()> {
-    let mut context = tera::Context::new();
-    context.insert("table", &hm.table);
-    context.insert("xlabel", "k-mer coverage");
-    context.insert("ylabel", "GC content");
-    context.insert("width", &hm.width);
-    context.insert("height", &hm.height);
-    context.insert("xticks", &hm.xticks);
-    context.insert("xtick_labels", &hm.xtick_labels);
-    context.insert("ygroups", &hm.ygroups);
-    context.insert("yticks", &hm.yticks);
-    context.insert("label_len", &hm.label_len);
-    super::histogram::render_hh_tex(&context, w)
+    let data = super::histogram::HhData {
+        table: hm.table.clone(),
+        xlabel: "k-mer coverage".to_string(),
+        ylabel: "GC content".to_string(),
+        width: hm.width,
+        height: hm.height,
+        xticks: hm.xticks.clone(),
+        xtick_labels: hm.xtick_labels.clone(),
+        ygroups: hm.ygroups.clone(),
+        yticks: hm.yticks.clone(),
+        label_len: hm.label_len,
+    };
+    super::histogram::render_hh_tex(&data, w)
 }

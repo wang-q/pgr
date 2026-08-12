@@ -1074,3 +1074,51 @@ fn command_align_pgi_extreme_parallel_errors_not_panics() {
         assert!(!stderr.contains("panicked"), "got {stderr}");
     }
 }
+
+/// Running `.pgi` inputs without extension sequences emits a warning that
+/// the output is unrefined geometric blocks (not scored alignments).
+#[test]
+fn command_align_pgi_warns_without_extension_sequences() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let (_, a) = build_pgi(out_dir.path(), "a");
+    let (_, b) = build_pgi(out_dir.path(), "b");
+    let out = out_dir.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&["align", "pgi", &a, &b, "-o", out.to_str().unwrap()])
+        .run();
+    assert!(
+        stderr.contains("unrefined geometric blocks"),
+        "expected the unrefined-geometric-blocks warning, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--ref-seq/--query-seq"),
+        "warning should point at the refined path, got: {stderr}"
+    );
+}
+
+/// With `--ref-seq/--query-seq` no unrefined warning is emitted.
+#[test]
+fn command_align_pgi_no_warning_with_extension_sequences() {
+    let out_dir = tempfile::tempdir().unwrap();
+    let (fa_a, a) = build_pgi(out_dir.path(), "a");
+    let (fa_b, b) = build_pgi(out_dir.path(), "b");
+    let out = out_dir.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &a,
+            &b,
+            "--ref-seq",
+            &fa_a,
+            "--query-seq",
+            &fa_b,
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        !stderr.contains("unrefined geometric blocks"),
+        "no warning expected with extension sequences, got: {stderr}"
+    );
+}

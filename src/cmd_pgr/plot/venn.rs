@@ -64,16 +64,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         _ => (Vec::new(), Vec::new()),
     };
 
-    // Context
-    let mut context = tera::Context::new();
-
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    context.insert("outfile", outfile);
-    context.insert("label", &ints_of.keys().collect::<Vec<&String>>());
-    context.insert("excls", &excls);
-    context.insert("inter", &inter);
+    let labels = ints_of.keys().cloned().collect::<Vec<String>>();
 
-    pgr::libs::plot::venn::gen_venn(&context, ints_of.len())?;
+    pgr::libs::plot::venn::gen_venn(outfile, ints_of.len(), &labels, &excls, &inter)?;
 
     Ok(())
 }

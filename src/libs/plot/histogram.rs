@@ -1,4 +1,28 @@
 use indexmap::IndexMap;
+use std::io::Write;
+
+/// Render-ready inputs for the hh (histo-heatmap) LaTeX document.
+pub struct HhData {
+    pub table: String,
+    pub xlabel: String,
+    pub ylabel: String,
+    pub width: f64,
+    pub height: f64,
+    pub xticks: Vec<f64>,
+    pub xtick_labels: Vec<String>,
+    pub ygroups: Vec<String>,
+    pub yticks: Vec<f64>,
+    pub label_len: usize,
+}
+
+/// `f64` values joined by `", "` (Rust `{}` formatting, matching Tera).
+fn join_f64(values: &[f64]) -> String {
+    values
+        .iter()
+        .map(|v| format!("{v}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 /// Axis-layout parameters for a histo-heatmap (hh) plot.
 pub struct HhAxis {
@@ -59,38 +83,50 @@ pub fn compute_hh_axis(
     }
 }
 
-/// Render the hh LaTeX document from `context` and write it to `writer`.
-pub fn render_hh_tex<W: std::io::Write>(
-    context: &tera::Context,
-    writer: &mut W,
-) -> anyhow::Result<()> {
+/// Render the hh LaTeX document from `data` and write it to `writer`.
+pub fn render_hh_tex<W: Write>(data: &HhData, writer: &mut W) -> anyhow::Result<()> {
     static FILE_TEMPLATE: &str = include_str!("../../assets/heatmap.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
-    let out_string = r###"%
-width={{ width }}cm,
-height={{ height }}cm,
-xlabel={ {{ xlabel }} },
-ylabel={ {{ ylabel }} },
-extra x ticks={ {{ xticks | join(sep=", ") }} },
-extra x tick labels={ {{ xtick_labels | join(sep=", ") }} },
-yticklabels={ {{ ygroups | join(sep=", ") }} },
-extra y ticks={ {{ yticks | join(sep=", ") }} },
-y tick label style={
-    text width={{ label_len }}ex,
-},
-    "###;
+    let out_string = format!(
+        "%
+width={width}cm,
+height={height}cm,
+xlabel={{ {xlabel} }},
+ylabel={{ {ylabel} }},
+extra x ticks={{ {xticks} }},
+extra x tick labels={{ {xtick_labels} }},
+yticklabels={{ {ygroups} }},
+extra y ticks={{ {yticks} }},
+y tick label style={{
+    text width={label_len}ex,
+}},
+    ",
+        width = data.width,
+        height = data.height,
+        xlabel = data.xlabel,
+        ylabel = data.ylabel,
+        xticks = join_f64(&data.xticks),
+        xtick_labels = data.xtick_labels.join(", "),
+        ygroups = data.ygroups.join(", "),
+        yticks = join_f64(&data.yticks),
+        label_len = data.label_len,
+    );
     crate::libs::plot::common::replace_section(
         &mut template,
         "%AXIS_BEGIN",
         "%AXIS_END",
-        out_string,
+        &out_string,
     )?;
 
-    let table = crate::libs::plot::common::context_get_str(context, "table")?;
-    crate::libs::plot::common::replace_section(&mut template, "%TABLE_BEGIN", "%TABLE_END", table)?;
+    crate::libs::plot::common::replace_section(
+        &mut template,
+        "%TABLE_BEGIN",
+        "%TABLE_END",
+        &data.table,
+    )?;
 
-    crate::libs::plot::common::render_and_write(&template, context, writer)?;
+    writer.write_all(template.as_bytes())?;
     Ok(())
 }
 
