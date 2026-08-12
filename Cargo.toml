@@ -224,7 +224,6 @@ rand_pcg = "0.3.1"
 
 # ANN / sketch experiments (GSearch reference implementation)
 hnsw_rs = "0.3"
-probminhash = "0.1"
 
 # SQLite vector-store comparison (sqlite-vector-rs: PGVector-like vtab + usearch HNSW;
 # MIT/Apache-2.0; dev-dep only. NOTE: rqlite's "sqlite-vector" is Elastic-2.0 -> excluded,
@@ -235,7 +234,6 @@ probminhash = "0.1"
 sqlite3-ext-vtab = { version = "0.2", features = ["bundled"] }
 sqlite-vector-rs = "0.1"
 linflate = "0.1.11"
-isal-rs = "0.5.3"
 isal-sys = "0.5.3"
 miniz_oxide = "0.8"
 noodles-bgzf = "0.45.0"
