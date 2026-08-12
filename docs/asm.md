@@ -9,6 +9,11 @@ reads and mapping reads back to an assembly.
 *   `unitig`: Assemble reads into maximal unitigs (BCALM-style compaction).
 *   `map`: Map reads to a reference requiring perfect matches (bbmap
     perfectmode replacement).
+*   `ovlp`: Find exact overlaps between unitigs (OLC stage 1).
+*   `layout`: Chain unitigs into layouts from an overlap PAF (OLC stage 2).
+*   `cns`: Stitch layouts into consensus contigs (OLC stage 3).
+*   `olc`: Assemble reads into contigs via multi-k unitig OLC (full
+    pipeline).
 
 ---
 
@@ -195,4 +200,161 @@ pgr asm map [OPTIONS] <ref.fa> <reads.fq...>
 4.  **Use a longer seed k-mer**:
     ```bash
     pgr asm map ref.fa reads.fq.gz -k 41 --outm mapped.sam
+    ```
+
+---
+
+## ovlp
+
+Finds exact overlaps between unitigs by seeding a canonical k-mer index
+with the boundary k-mers of every unitig and verifying each candidate by
+extension, so overlaps are exact and error-free (unitigs come from the de
+Bruijn graph). This is the overlap stage of the OLC assembly pipeline; the
+caller is expected to assemble unitigs at several k values first and pass
+the FASTA files here.
+
+Overlaps are written as PAF with an `ov:A:D` (dovetail) or `ov:A:C`
+(contain) tag. Unitig names are prefixed with the input file stem
+(`stem:name`) so identical `unitig_<id>` names across k files stay unique.
+
+```bash
+pgr asm ovlp [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `-o, --outfile <file>`: Output PAF filename (default: stdout).
+*   `--overlap-k <int>`: Seed k-mer length (default 17; clamped to the
+    shortest unitig).
+*   `--min-overlap <int>`: Minimum accepted overlap length in bases
+    (default 34).
+
+### Examples
+
+1.  **Overlap unitigs from two k values**:
+    ```bash
+    pgr asm ovlp k21.fa k51.fa -o ovlp.paf
+    ```
+
+2.  **Raise the seed and minimum overlap**:
+    ```bash
+    pgr asm ovlp unitigs.fa -o ovlp.paf --overlap-k 21 --min-overlap 51
+    ```
+
+---
+
+## layout
+
+Builds greedy layouts from the exact overlaps produced by `pgr asm ovlp`:
+every unitig end gets its best extension edge, unplaced unitigs are seeded
+longest-first, and chains grow in both directions through mutual-best
+junctions. Ambiguous junctions (two near-equal best partners, e.g. repeats)
+and non-reciprocal edges stop the chain, so branches stay separate and no
+heuristic picks a bubble path.
+
+The unitig FASTA files must be the same files passed to `pgr asm ovlp` (the
+`stem:name` prefixes are re-derived here and must match the PAF names). The
+PAF file is the first positional argument.
+
+Output is a layout TSV (no header), one line per step:
+`contig_id<TAB>step<TAB>unitig_name<TAB>strand<TAB>q_start<TAB>q_end<TAB>overlap_len`
+where `q_start`/`q_end` is the unitig's interval in the contig and
+`overlap_len` is the exact overlap with the previous step (0 for the first
+step).
+
+```bash
+pgr asm layout <paf> <infiles>... -o layout.tsv
+```
+
+### Examples
+
+1.  **Layout overlaps from two k values**:
+    ```bash
+    pgr asm layout ovlp.paf k21.fa k51.fa -o layout.tsv
+    ```
+
+---
+
+## cns
+
+Stitches the layouts produced by `pgr asm layout` into consensus contigs.
+Overlaps are exact, so each layout is walked in order, every unitig is
+oriented by its strand, and only the bases beyond the exact overlap with
+the previous step are appended. A layout whose overlapping bases disagree
+with the already-stitched contig is reported as an error (exact overlaps
+must agree).
+
+The unitig FASTA files must be the same files passed to `pgr asm ovlp` and
+`pgr asm layout`. The layout TSV is the first positional argument.
+
+Output is FASTA (`>contig_<id>,len=...,cov=...`, 70-column wrap, longest
+first); `cov` is the approximate unitig depth (sum of unitig lengths over
+the contig length).
+
+```bash
+pgr asm cns <layout.tsv> <infiles>... -o contigs.fa
+```
+
+### Options
+
+*   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
+*   `--min-contig-len <int>`: Minimum contig length (default 500).
+
+### Examples
+
+1.  **Consensus from a layout**:
+    ```bash
+    pgr asm cns layout.tsv k21.fa k51.fa -o contigs.fa
+    ```
+
+2.  **Drop short contigs**:
+    ```bash
+    pgr asm cns layout.tsv unitigs.fa -o contigs.fa --min-contig-len 500
+    ```
+
+---
+
+## olc
+
+Runs the full OLC pipeline in memory: for every k in `--kmer` the reads are
+assembled into maximal unitigs (`pgr asm unitig` semantics), all unitigs are
+pooled as pseudo-reads, exact overlaps are found (`pgr asm ovlp`), layouts
+are built greedily (`pgr asm layout`), and each layout is stitched into a
+consensus contig (`pgr asm cns`). See `notes/design/olc.md`.
+
+Unitigs are named `k<k>:unitig_<id>` so the per-k sets stay distinguishable
+and reproducible. Overlaps are exact (error-free unitigs), layouts stop at
+ambiguous junctions and non-reciprocal edges, and no bubble heuristics are
+applied.
+
+```bash
+pgr asm olc [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `-k, --kmer <int,int,...>`: Comma-separated k-mer lengths for the unitig
+    sets (default `21,51,81`).
+*   `-o, --outfile <file>`: Output FASTA filename (default: stdout).
+*   `--min-count-seed <int>`: Solid k-mer count threshold for unitig
+    assembly (default 3).
+*   `--overlap-k <int>`: Seed k-mer length for overlap detection (default
+    17).
+*   `--min-overlap <int>`: Minimum accepted overlap length in bases (default
+    34).
+*   `--min-contig-len <int>`: Minimum output contig length (default 500).
+*   `--keep-dir <dir>`: Write the intermediate unitigs/ovlp/layout files
+    for debugging or re-running the stage commands separately.
+
+### Examples
+
+1.  **Assemble a small metagenome with three k values**:
+    ```bash
+    pgr asm olc reads.fq.gz -o contigs.fa --kmer 21,51,81
+    ```
+
+2.  **Keep the intermediates and raise the minimum contig length**:
+    ```bash
+    pgr asm olc R1.fq.gz R2.fq.gz -o contigs.fa \
+        --kmer 21,51,81 --min-contig-len 1000 --keep-dir stage/
     ```

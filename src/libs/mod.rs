@@ -20,6 +20,7 @@ pub mod map;
 pub mod ms;
 pub mod nt;
 pub mod nt_simd;
+pub mod olc;
 pub mod paf;
 pub mod par;
 pub mod pbit;

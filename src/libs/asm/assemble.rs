@@ -294,35 +294,11 @@ pub fn assemble_unitigs<W: Write>(
     out: &mut W,
     opts: &AssembleOptions,
 ) -> Result<AssembleStats> {
-    anyhow::ensure!(
-        opts.k >= 1,
-        "k-mer length must be at least 1, got {}",
-        opts.k
-    );
-    let records = read_records(infiles)?;
-    let reads: Vec<(Vec<u8>, Vec<u8>)> = records
-        .iter()
-        .map(|r| {
-            (
-                r.sequence().to_vec(),
-                to_phred(r.sequence(), r.quality_scores()),
-            )
-        })
-        .collect();
-    let table = TadpoleTable::build(&reads, opts.k, opts.min_prob);
-    let bases_in: u64 = reads.iter().map(|(s, _)| s.len() as u64).sum();
-
-    let mut unitigs = build_unitigs(&table, opts);
-    unitigs.sort_by(unitig_cmp);
+    let (mut unitigs, mut stats) = assemble_unitigs_core(infiles, opts)?;
     let links = if opts.emit_links || opts.emit_gfa {
         compute_links(&unitigs, opts.k)
     } else {
         vec![Vec::new(); unitigs.len()]
-    };
-    let mut stats = AssembleStats {
-        reads_in: records.len() as u64,
-        bases_in,
-        ..AssembleStats::default()
     };
     if opts.emit_gfa {
         writeln!(out, "H\tVN:Z:1.0\tks:i:{}", opts.k)?;
@@ -361,6 +337,55 @@ pub fn assemble_unitigs<W: Write>(
         }
     }
     Ok(stats)
+}
+
+/// Assembles reads into maximal unitigs and returns (id, bases) in memory,
+/// longest-first, skipping the FASTA writer (pipeline composition).
+pub fn assemble_unitigs_buf(
+    infiles: &[String],
+    opts: &AssembleOptions,
+) -> Result<Vec<(usize, Vec<u8>)>> {
+    let (unitigs, _) = assemble_unitigs_core(infiles, opts)?;
+    let min_len = opts.resolved_min_contig_len();
+    Ok(unitigs
+        .into_iter()
+        .enumerate()
+        .filter(|(_, u)| u.bases.len() >= min_len)
+        .map(|(i, u)| (i, u.bases))
+        .collect())
+}
+
+/// Shared core of the unitig assemblers: builds and sorts unitigs.
+fn assemble_unitigs_core(
+    infiles: &[String],
+    opts: &AssembleOptions,
+) -> Result<(Vec<Unitig>, AssembleStats)> {
+    anyhow::ensure!(
+        opts.k >= 1,
+        "k-mer length must be at least 1, got {}",
+        opts.k
+    );
+    let records = read_records(infiles)?;
+    let reads: Vec<(Vec<u8>, Vec<u8>)> = records
+        .iter()
+        .map(|r| {
+            (
+                r.sequence().to_vec(),
+                to_phred(r.sequence(), r.quality_scores()),
+            )
+        })
+        .collect();
+    let table = TadpoleTable::build(&reads, opts.k, opts.min_prob);
+    let bases_in: u64 = reads.iter().map(|(s, _)| s.len() as u64).sum();
+
+    let mut unitigs = build_unitigs(&table, opts);
+    unitigs.sort_by(unitig_cmp);
+    let stats = AssembleStats {
+        reads_in: records.len() as u64,
+        bases_in,
+        ..AssembleStats::default()
+    };
+    Ok((unitigs, stats))
 }
 
 /// One directed unitig link, starting at the owning unitig's right end.

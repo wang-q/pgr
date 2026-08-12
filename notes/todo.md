@@ -19,6 +19,12 @@
 `d2c422a`（k-mer 统一 FastK 字节格式 + 长 k）。
 
 **本会话成果**：
+- **OLC 组装落地（2026-08-12，新）**：`pgr asm ovlp`/`layout`/`cns`/
+  `olc` 四命令 + `libs/olc/`（overlap/layout/consensus），设计
+  `design/olc.md`；精确 seed-verify overlap、互惠 best-edge greedy layout、
+  精确缝合 consensus；合成基因组 30× 重建验证（contigs 全为基因组精确
+  子串，最长覆盖 97.5%）、确定性、阶段管道与驱动器等价；
+  `asm unitig` 新增内存版 `assemble_unitigs_buf`
 - `design/kmer.md` §12：长 k-mer 统一到 FastK 表示，M1–M5 全部落地
 - 性能优化：count_mg1655 297 → 158 ms（双窗口滚动、收集直落字节、
   append 移动缓冲、emit 传引用）；单线程快 FastK 28%、8 线程快 16%
@@ -135,13 +141,11 @@ repeat masking 标定（等真核数据）/ paf 查询层扩展；3) OLC 挂账�
   {{opt.reads}}` + `sam ihist`（reformat ihist 替代，Picard 保留外部；
   完美匹配对足以估计插入长度，见 `asm-map.md` §2.6）。已知偏差：contig
   的 bubble 解析与 tadpole 有少量差异（`-Xmx` 相关），已接受确定性输出。
-- **多 k unitig 的 OLC 拼接**（2026-08-12 记录，`references/canu.md` §8）：
-  用户设计意图 = 不对 reads 做 OLC，而是把不同 k（21/51/81）各自生成的
-  unitigs 当"伪 reads"，在 unitig 层做 OLC（overlap → layout → consensus）。
-  数据量小、规避气泡、多 k 互补；可借鉴 Canu consensus 后半段（放回投票 +
-  min-coverage 修剪，pgr 用 `asm map`/`sam`/`rg` 现成设施）与 repeat
-  breaking 思路。unitig 间 overlap 是否允许少量错配、不同 k unitig 冗余去重
-  待真实宏基因组数据验证后再定，暂不立项。
+- **多 k unitig 的 OLC 拼接**：**已实现**（2026-08-12，`pgr asm olc`
+  等四命令，`design/olc.md`，承接 `references/canu.md` §8）。剩余待真实
+  宏基因组数据验证：overlap 是否允许少量错配、不同 k unitig 冗余去重、
+  repeat breaking 覆盖度证据阈值（Canu 6/15 的单元化版本）、列投票
+  consensus（v1）。
 
 ## 4. 待验证 / 等数据或场景到位
 
