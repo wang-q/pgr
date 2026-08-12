@@ -50,6 +50,8 @@ fn banded_align_refs_inner(
     // then makes the bounds monotone and expands them into a radius-wide
     // sausage around the reference diagonal. Without this the free end-gaps
     // would let the DP dump the column-count difference at the block ends.
+    // The caller slices both blocks to their shared overlap region first, so
+    // base k of ref_a and ref_b sit at the same reference position.
     let radius = cfg.radius;
     let mut lb = vec![0usize; n + 1];
     let mut rb = vec![m; n + 1];

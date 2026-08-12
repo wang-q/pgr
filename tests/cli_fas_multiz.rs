@@ -49,7 +49,7 @@ fn command_fas_multiz_merges_conflicting_refs() {
     fs::write(
         &a_path,
         format!(
-            ">S288c.I(+):100-199\n{}\n>RM11_1a.I(+):500-599\n{}\n",
+            ">S288c.I(+):100-179\n{}\n>RM11_1a.I(+):500-579\n{}\n",
             seq_a, seq_a
         ),
     )
@@ -57,7 +57,7 @@ fn command_fas_multiz_merges_conflicting_refs() {
     fs::write(
         &b_path,
         format!(
-            ">S288c.I(+):100-199\n{}\n>RM11_1a.I(+):500-599\n{}\n",
+            ">S288c.I(+):100-179\n{}\n>RM11_1a.I(+):500-579\n{}\n",
             seq_b, seq_a
         ),
     )
@@ -75,8 +75,8 @@ fn command_fas_multiz_merges_conflicting_refs() {
 
     let content = fs::read_to_string(&out_path).unwrap();
     // Merged block must contain both species.
-    assert!(content.contains(">S288c.I(+):100-199"));
-    assert!(content.contains(">RM11_1a.I(+):500-599"));
+    assert!(content.contains(">S288c.I(+):100-179"));
+    assert!(content.contains(">RM11_1a.I(+):500-579"));
 
     tempdir.close().unwrap();
 }

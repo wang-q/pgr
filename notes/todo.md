@@ -6,17 +6,19 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
-## 0. 会话交接（2026-08-12 晚，依赖清理 + 二进制瘦身 + 下一步规划）
+## 0. 会话交接（2026-08-12 晚，repeat masking 标定 + paf 查询层 + fas_multiz 修复）
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1744 测试通过，fmt/clippy 干净；repeat masking 标定已提交
-（`f5f7798`，用户 2026-08-12 提交）；工作树有未提交改动 = paf
-`--min-tree-coverage`（见 §1，本环境 `.git` 只读无法 commit，需用户本地提交）。
+**当前状态**：1746 测试通过，fmt/clippy 干净；repeat masking 标定
+（`f5f7798`）与 paf `--min-tree-coverage`（`ee914d6`）已由用户提交；工作树
+未提交改动 = **fas_multiz 合并修复 + 差异本质分析**（9 个文件，见 §1；本
+环境 `.git` 只读无法 commit，需用户本地提交）。
 **最近提交**：`638fbf3`（依赖清理收尾：probminhash/isal-rs 删除）、
 `6290d7d`（tera 移除 + regex 挪 dev-deps + pgi no-seq 警告）、`d167ac3`
 （pgi A1 + 键错位修复）、`f5bb2e7`（unitig 级 contain 预过滤）、
-`d9b478b`（paf coverage + OLC 修复 + 输出级去重）。
+`d9b478b`（paf coverage + OLC 修复 + 输出级去重）、`f5f7798`（repeat
+masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`）。
 
 **本会话成果（依赖审计 + 瘦身）**：
 - **release 17.0 → 12.62 MB**：bio（死依赖）、tera（plot 4 条渲染路径
@@ -32,6 +34,17 @@
   clap 0.26 / 压缩 C 0.18 / crossbeam 0.12 / anyhow 0.11 / serde_json
   0.10 / noodles 0.08 MB。
 
+**本会话新增（2026-08-12 晚，三项收尾）**：
+- **repeat masking 真核标定**：`rept e-align` 默认 f100/ms16 定稿（S288c
+  + repbase 对 `rept masker` 参考 recall 67.6%、over-mask 0.029%），已提交
+  `f5f7798`（见 §1）；
+- **paf `--min-tree-coverage`**：Caf Tree Coverage 查询层近似（block 级
+  支持度过滤，与区域级 `--min-degree` 互补），3 测试，已提交 `ee914d6`；
+- **fas_multiz 合并修复**：真实数据暴露的覆盖丢失 87–100% 已按 multiz.c
+  块流合并重写修复（16/16 染色体恢复 100%）；残余列差异经分析为 multiz
+  列重排而非 pgr 误差，且会被 `fas refine` 消化，判定不解决（见 §1 两条
+  与 `design/fas-multiz.md` §6.6/§6.7）。
+
 **关键裁定（必须遵守，自旧交接保留）**：
 - k-mer 只保留一套，以 FASTK-master 为准（不用 tadpole `Vec<u64>`、不做
   定长对象键）——**已落地（M1–M5 完成）**；存储 = FastK 式连续打包；
@@ -39,13 +52,11 @@
 - OLC 已落地（见 §1/§3）；v1 覆盖度 repeat breaking 待真实宏基因组数据调参
 - 气泡处理不做（明确不做区）
 
-**下一步（按优先级，用户已确认方向）**：
-1) **fas_multiz best_crossover 真实多基因组验证**（`chain-algorithms.md`
-   §12.3）：合成测试已覆盖；本地数据已确认齐备（`~/data/egaz/multi6/`
-   的 4/6 路酵母 multiz `.maf.gz` + `.fas` + refined）。
-2) 等数据：OLC 长读（本地无 HiFi/ONT）、4 万 E. coli cohort、人类规模
+**下一步（按优先级）**：
+1) 等数据：OLC 长读（本地无 HiFi/ONT）、4 万 E. coli cohort、人类规模
    pgi（GRCh38/CHM13）。pgi 结构性重写（收集时分桶）挂账，等真实大基因
-   组场景证明必要性。
+   组场景证明必要性。功能层待实现区当前为空（§2），后续方向以验证与
+   数据驱动扩展为主。
 
 **参考源码（本地，gitignore 参考目录）**：`FASTK-master/`（长 k 第一参考）、
 `FASTGA-main/`（pgi 参考，k-mer 与 FastK 同套）、`canu-2.3/`、`wgs-8.3rc2/`、
@@ -124,6 +135,28 @@
   过滤）。CLI 已加（`pgr paf query/to-bed/...` 通用），3 个合成测试覆盖
   （sparse 过滤 / 阈值下界 / 传递 2-hop 单例丢弃）→ `paf-pangenome.md`
   §6.4。`--end-trim` 仍推迟（需 per-interval 修剪 CIGAR，见 §3）。
+- **fas_multiz best_crossover 真实数据验证（2026-08-12）**：multi6 4 路酵母
+  真实 multiz 数据（`~/data/egaz/multi6/`，pairwise synNet MAF 与真实 4 路
+  输入一致）。**机制验证通过**：130 kb 真实 block 受控参考冲突下拼接后参考
+  100% 等于原始、单侧物种 100% 保留（切点在中部）。**同时暴露编排缺口**：
+  原始 pairwise 输入合并覆盖保留仅 0–12.5%（16 条染色体；根因 = 每窗口每
+  输入只取第一个 block + 不同物种对无共享非参考物种，正常 DP 与 crossover
+  路径都无法合并）→ `design/fas-multiz.md` §6；缺口已修复（见下条）。
+- **fas_multiz 窗口合并修复（2026-08-12，对照 multiz.c 块流合并重写）**：
+  真实数据暴露的覆盖丢失 87–100% 已修复——`merge_window` 收集每输入全部
+  重叠块成单覆盖流，`merge_two_streams` 镜像 multiz() 逐重叠区合并
+  （前端块/前端部分/重叠切片 DP/keep_from 尾部/尾随插入列），补流推进后的
+  `end < start → continue` 重检（最后根因）。**16/16 染色体参考覆盖恢复
+  100%**（chr I 1.2s vs >240s），参考碱基与真实 multiz 100% 一致、物种
+  内容保真 99.995%+，列级对照 RM 100%/YJM 99.7–100%/Spar ~98%；输出结构
+  变为 canonical 多块 → `design/fas-multiz.md` §6.6。
+- **fas_multiz 残余列差异本质分析（2026-08-12，判定不解决）**：与真实
+  multiz 的 ~2% Spar 列差异 = 65% 插入列摆放 + 35% 真实错配（成段滑移，
+  等价对齐）；决定性证据 = 65,992 个错配处 99.997% pgr 与输入 pairwise
+  一致（multiz 侧 7 个），全染色体 pgr 偏离输入 Spar 0.001% vs multiz
+  0.600%——pgr 是输入忠实 union，差异来自 multiz 渐进合并的列重排；且
+  `fas refine` 会对每 block 重新 MSA，列摆放差异被下游消化。**不解决**
+  → `design/fas-multiz.md` §6.7。
 - **pgi 真实数据验证 + 优化**（2026-08-12）：E. coli 4 基因组
   （~20 Mb）build 817 ms（vs GIXmake 505 ms，1.62×）、峰值内存
   145 MB（迁移前 ~180 MB，-19%）；并行收集（+17%）、分组
@@ -226,11 +259,11 @@
 - [x] chain 算法验证（2026-08-12）：**KD-tree 已由 UCSC 管线字节级验证
       覆盖**——`verify-ucsc-pipeline.sh:71` 跑 `pgr psl chain`（KD-tree
       链式化，`libs/chain/connect.rs`）并与 axtChain 逐字节一致（E. coli
-      mg1655×sakai 主流程 + --syn + medium）。`best_crossover` 仍有
-      fas_multiz 真实多基因组数据验证待做（合成测试已覆盖交叉合并语义，
-      `tests/cli_fas_multiz.rs`）；KD-tree 用于 PAF 链式化 / POA 排序
-      仍待评估（PAF 当前未明确需要链式化）（来源：`chain-algorithms.md`
-      §12.3）。
+      mg1655×sakai 主流程 + --syn + medium）。`best_crossover` 真实数据
+      验证已闭环（multi6 4 路酵母，机制正确 + 合并修复后覆盖 100%，见
+      §1 与 `design/fas-multiz.md` §6）；KD-tree 用于 PAF 链式化 / POA
+      排序仍待评估（PAF 当前未明确需要链式化）（来源：
+      `chain-algorithms.md` §12.3）。
 
 ## 5. 低风险审计记录项（可顺手修）
 

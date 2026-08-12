@@ -70,6 +70,7 @@ impl fmt::Display for FasEntry {
 }
 
 /// A block FA alignment block, containing one or more aligned sequence entries.
+#[derive(Clone)]
 pub struct FasBlock {
     /// Aligned sequence entries in this block.
     pub entries: Vec<FasEntry>,

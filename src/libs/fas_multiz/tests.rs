@@ -89,7 +89,7 @@ fn merge_window_without_coverage_returns_none() {
     };
 
     let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
-    assert!(merged.is_none());
+    assert!(merged.is_empty());
 }
 
 #[test]
@@ -110,9 +110,8 @@ fn merge_window_skips_missing_inputs() {
         end: *ref_entry.range().end() as u64,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
-        .unwrap()
-        .unwrap();
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let merged = merged.into_iter().next().expect("one merged block");
     assert_eq!(merged.names.len(), 2);
     assert_eq!(merged.names[0], "ref");
     assert_eq!(merged.names[1], "A");
@@ -147,9 +146,8 @@ fn merge_window_keeps_species_union() {
         end: *ref_entry1.range().end() as u64,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
-        .unwrap()
-        .unwrap();
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let merged = merged.into_iter().next().expect("one merged block");
 
     let mut names: Vec<String> = merged.names.clone();
     names.sort();
@@ -192,7 +190,10 @@ fn merge_window_mismatched_reference_splices_at_crossover() {
     let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
     // Mismatched reference sequences are spliced at the best crossover point
     // instead of being dropped; the merged block keeps both species.
-    let block = merged.expect("mismatched refs should merge via crossover");
+    let block = merged
+        .into_iter()
+        .next()
+        .expect("mismatched refs should merge via crossover");
     assert!(block.names.contains(&"ref".to_string()));
     assert!(block.names.contains(&"A".to_string()));
 }
@@ -225,7 +226,7 @@ fn merge_window_mismatched_reference_no_shared_species_returns_none() {
     let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
     // Without a shared non-reference species there is nothing to score the
     // crossover with, so the merge is still refused.
-    assert!(merged.is_none());
+    assert!(merged.is_empty());
 }
 
 #[test]
@@ -263,7 +264,10 @@ fn merge_window_conflicting_refs_keeps_single_block_species() {
     };
 
     let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
-    let block = merged.expect("conflicting refs should merge via crossover");
+    let block = merged
+        .into_iter()
+        .next()
+        .expect("conflicting refs should merge via crossover");
     assert!(block.names.contains(&"B".to_string()));
     assert!(block.names.contains(&"C".to_string()));
 
@@ -457,7 +461,9 @@ fn merge_window_multi_input_dp_progressive() {
 
     let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
         .unwrap()
-        .unwrap();
+        .into_iter()
+        .next()
+        .expect("one merged block");
     let mut names = merged.names.clone();
     names.sort();
     assert_eq!(
@@ -527,6 +533,8 @@ fn merge_window_output_independent_of_input_order() {
         let blocks_per_input: Vec<Vec<FasBlock>> = ordered.into_iter().map(|b| vec![b]).collect();
         let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
             .unwrap()
+            .into_iter()
+            .next()
             .expect("merge should succeed");
         let seqs: Vec<String> = merged
             .entries
@@ -546,14 +554,16 @@ fn merge_window_output_independent_of_input_order() {
 fn merge_window_preserves_species_content() {
     // Two blocks with the same genome reference but different gap placements;
     // every species must keep all its ungapped bases after the merge.
-    let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 6, "AC--GT");
-    let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 6, "AC--GT");
+    // MAF coordinate semantics: the reference range spans its non-gap bases
+    // (4 bases here), so both blocks cover reference positions 1-4.
+    let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "AC--GT");
+    let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "AC--GT");
     let block1 = make_block(vec![
         (ref_entry1, ref_name1, ref_header1),
         (a_entry1, a_name1, a_header1),
     ]);
 
-    let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 6, "ACG-T-");
+    let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 4, "ACG-T-");
     let (b_entry2, b_name2, b_header2) = make_entry("B", 1, 6, "ACGTGT");
     let block2 = make_block(vec![
         (ref_entry2, ref_name2, ref_header2),
@@ -564,25 +574,120 @@ fn merge_window_preserves_species_content() {
     let window = Window {
         chr: "ref".to_string(),
         start: 1,
-        end: 6,
+        end: 4,
     };
 
     let blocks_per_input = vec![vec![block1], vec![block2]];
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
-        .unwrap()
-        .expect("merge should succeed");
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    assert!(!merged.is_empty(), "merge should succeed");
 
-    let seq_of = |name: &str| -> String {
+    let total_ungapped = |name: &str| -> String {
         merged
-            .entries
             .iter()
-            .zip(merged.names.iter())
-            .find(|(_, n)| n.as_str() == name)
-            .map(|(e, _)| String::from_utf8(e.seq().to_vec()).unwrap())
-            .expect("species present")
+            .flat_map(|block| {
+                block
+                    .entries
+                    .iter()
+                    .zip(block.names.iter())
+                    .find(|(_, n)| n.as_str() == name)
+                    .map(|(e, _)| {
+                        e.seq()
+                            .iter()
+                            .filter(|&&b| b != b'-')
+                            .copied()
+                            .collect::<Vec<u8>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .map(|b| b as char)
+            .collect()
     };
-    // Reference and A keep "ACGT" (4 bases); B keeps its 6 bases.
-    assert_eq!(seq_of("ref").replace('-', ""), "ACGT");
-    assert_eq!(seq_of("A").replace('-', ""), "ACGT");
-    assert_eq!(seq_of("B").replace('-', ""), "ACGTGT");
+    // Reference and A keep "ACGT" (4 bases); B keeps its 6 bases across the
+    // merged overlap and the separately-emitted trailing insertion block.
+    assert_eq!(total_ungapped("ref"), "ACGT");
+    assert_eq!(total_ungapped("A"), "ACGT");
+    assert_eq!(total_ungapped("B"), "ACGTGT");
+}
+
+#[test]
+fn merge_window_union_of_multi_block_inputs() {
+    // Real multi-pairwise style input: input 1 has two disjoint blocks
+    // ([1-10], [21-30]) with species A; input 2 has one block [6-25] with
+    // species B. The stream merge must keep the union of reference coverage
+    // (1-30): front parts, merged overlaps and tails as separate blocks.
+    let (ref1, n1, h1) = make_entry("ref", 1, 10, "ACGTACGTAC");
+    let (a1, na1, ha1) = make_entry("A", 1, 10, "ACGTACGTAC");
+    let block1a = make_block(vec![(ref1, n1, h1), (a1, na1, ha1)]);
+    let (ref2, n2, h2) = make_entry("ref", 21, 30, "ACGTACGTAC");
+    let (a2, na2, ha2) = make_entry("A", 21, 30, "ACGTACGTAC");
+    let block1b = make_block(vec![(ref2, n2, h2), (a2, na2, ha2)]);
+    // Same reference build: position p carries "ACGT"[(p-1) % 4], so block 2
+    // (range 6-25) starts with CGTAC... and matches block 1 at positions 6-10.
+    let (ref3, n3, h3) = make_entry("ref", 6, 25, "CGTACGTACGTACGTACGTA");
+    let (b3, nb3, hb3) = make_entry("B", 6, 25, "CGTACGTACGTACGTACGTA");
+    let block2 = make_block(vec![(ref3, n3, h3), (b3, nb3, hb3)]);
+
+    let cfg = default_config();
+    let window = Window {
+        chr: "ref".to_string(),
+        start: 1,
+        end: 30,
+    };
+    let blocks_per_input = vec![vec![block1a, block1b], vec![block2]];
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+
+    // Union reference coverage 1-30 must be preserved across the output
+    // blocks, and every species must keep its ungapped bases.
+    let ref_cov: u64 = merged
+        .iter()
+        .map(|b| {
+            let e = find_ref_entry(b, "ref").unwrap();
+            (*e.range().end() as u64) - (*e.range().start() as u64) + 1
+        })
+        .sum();
+    assert_eq!(ref_cov, 30, "union coverage 1-30, got {ref_cov}");
+
+    let total_ungapped = |name: &str| -> usize {
+        merged
+            .iter()
+            .map(|block| {
+                block
+                    .entries
+                    .iter()
+                    .zip(block.names.iter())
+                    .find(|(_, n)| n.as_str() == name)
+                    .map(|(e, _)| e.seq().iter().filter(|&&b| b != b'-').count())
+                    .unwrap_or(0)
+            })
+            .sum()
+    };
+    assert_eq!(total_ungapped("A"), 20);
+    assert_eq!(total_ungapped("B"), 20);
+}
+
+#[test]
+fn merge_window_disjoint_blocks_both_kept() {
+    // Two inputs whose blocks do not overlap at all: the stream merge emits
+    // both as-is instead of dropping one.
+    let (ref1, n1, h1) = make_entry("ref", 1, 10, "ACGTACGTAC");
+    let (a1, na1, ha1) = make_entry("A", 1, 10, "ACGTACGTAC");
+    let block1 = make_block(vec![(ref1, n1, h1), (a1, na1, ha1)]);
+    let (ref2, n2, h2) = make_entry("ref", 20, 30, "ACGTACGTAC");
+    let (b2, nb2, hb2) = make_entry("B", 20, 30, "ACGTACGTAC");
+    let block2 = make_block(vec![(ref2, n2, h2), (b2, nb2, hb2)]);
+
+    let cfg = default_config();
+    let window = Window {
+        chr: "ref".to_string(),
+        start: 1,
+        end: 30,
+    };
+    let blocks_per_input = vec![vec![block1], vec![block2]];
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    assert_eq!(merged.len(), 2, "both disjoint blocks kept");
+    let starts: Vec<i32> = merged
+        .iter()
+        .map(|b| *find_ref_entry(b, "ref").unwrap().range().start())
+        .collect();
+    assert_eq!(starts, vec![1, 20]);
 }

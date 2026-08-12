@@ -83,9 +83,7 @@ pub fn merge_fas_files(
 
     let mut merged_blocks = Vec::new();
     for window in windows {
-        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg)? {
-            merged_blocks.push(block);
-        }
+        merged_blocks.extend(merge_window(ref_name, window, &blocks_per_input, cfg)?);
     }
 
     Ok(merged_blocks)
@@ -128,9 +126,7 @@ pub fn merge_fas_files_auto_windows(
 
     let mut merged_blocks = Vec::new();
     for window in &windows {
-        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg)? {
-            merged_blocks.push(block);
-        }
+        merged_blocks.extend(merge_window(ref_name, window, &blocks_per_input, cfg)?);
     }
 
     Ok(merged_blocks)
