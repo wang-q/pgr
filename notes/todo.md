@@ -6,20 +6,22 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
-## 0. 会话交接（2026-08-12 晚，repeat masking 标定 + paf 查询层 + fas_multiz 修复）
+## 0. 会话交接（2026-08-13，fq/asm/sam 迁移完成 + 全量文档整理）
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1746 测试通过，fmt/clippy 干净；repeat masking 标定
-（`f5f7798`）、paf `--min-tree-coverage`（`ee914d6`）、fas_multiz 合并修复
-（`4431788`）与 2026-08-12 全量文档（`db4f47a`，含 anchr.md 边界划分与
-变长种子实验结论）均已提交，工作树干净。
+**当前状态**：1556 测试通过，fmt/clippy 干净；`fq`/`asm`/`sam` 命令组已
+迁移到 anchr（双轨 golden 核对后从 pgr 删除，阶段 1–4 完成），pgr 保留
+基础层（fmt/fq::qual/pairs/kmer/paf/io/ds/loc/sys，供 anchr 依赖）与
+`rg coverage`。工作树待提交：本次审查修正（§3 命令表、todo §0）。
 **最近提交**：`638fbf3`（依赖清理收尾：probminhash/isal-rs 删除）、
 `6290d7d`（tera 移除 + regex 挪 dev-deps + pgi no-seq 警告）、`d167ac3`
 （pgi A1 + 键错位修复）、`f5bb2e7`（unitig 级 contain 预过滤）、
 `d9b478b`（paf coverage + OLC 修复 + 输出级去重）、`f5f7798`（repeat
 masking 默认参数定稿 f100/ms16）、`ee914d6`（paf `--min-tree-coverage`）、
-`4431788`（fas_multiz 块流合并修复）、`db4f47a`（2026-08-12 全量文档）。
+`4431788`（fas_multiz 块流合并修复）、`db4f47a`（2026-08-12 全量文档）、
+`414cff7`（fq/asm 命令与 libs 删除）、`ace4ee8`/`526cec1`（迁移收尾 +
+sam 删除）。
 
 **本会话成果（依赖审计 + 瘦身）**：
 - **release 17.0 → 12.62 MB**：bio（死依赖）、tera（plot 4 条渲染路径

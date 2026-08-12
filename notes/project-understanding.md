@@ -155,7 +155,7 @@ src/
 | `fa`     | 18       | FASTA 全能操作：统计、筛选、切分、转换、mask、索引    |
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
-| `pbit`   | 7        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa） |
+| `pbit`   | 8        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa/to-paf） |
 | `gff`    | 2        | GFF 注释：rg (提取 feature 区间为 range 列表)、runlist (GFF → runlist JSON) |
 
 **fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
@@ -187,7 +187,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 
 | 模块  | 子命令数 | 核心能力                                                                 |
 |-------|----------|--------------------------------------------------------------------------|
-| `paf` | 10       | PAF 隐式图：索引、查询、to-bed、to-fas、to-maf、graph、to-gfa、to-vcf、stat、validate |
+| `paf` | 11       | PAF 隐式图：索引、查询、to-bed、to-fas、to-maf、graph、to-gfa、to-vcf、stat、validate、coverage |
 
 `paf` 模块是 pgr 走向泛基因组的核心载体。基于 PAF (Pairwise mApping Format) 的 all-vs-all
 比对，构建隐式泛基因组图：
@@ -215,7 +215,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 |--------|----------|---------------------------------------------------|
 | `ms`   | 1        | Hudson's ms 模拟器输出转 DNA 序列                 |
 | `pl`   | 4        | 集成流程：chainnet、p2m、prefilter、ucsc |
-| `plot` | 4        | 图：dot (SVG 共线性图)、Venn、HH (hedgehog)、NRPS   |
+| `plot` | 6        | 图：dot (SVG 共线性图)、Venn、HH (hedgehog)、NRPS、heat (GC×覆盖度热图)、spectra (k-mer 谱) |
 
 `pl` (pipelines) 模块定位特殊——它**编排命令与外部工具**（`chainnet`/`p2m`/`prefilter`
 完全用 pgr 自身命令，`ucsc` 需要 kent-tools），充当工作流 glue。这与 `chain`/`net` 模块的
@@ -231,7 +231,7 @@ k-mer 计数、profile 与 run 提取已原生化为 `libs/kmer/`，无外部依
 
 | 模块 | 子命令数 | 核心能力 |
 |------|----------|----------|
-| `kmer` | 7        | 通用 k-mer 分析：table (计数表 .pkt)、profile (逐序列谱 .pkp)、hist (直方图 .hist，FASTK 兼容)、gc (GC×覆盖度矩阵 .kgc + `--tex` 热图，KatGC 兼容)、qhist (质量偏置直方图，quorum 兼容)、qcheck (read 错误判定，quorum 语义)、gsize (峰值/基因组大小估计 + `--model` GenomeScope 完整拟合) |
+| `kmer` | 6        | 通用 k-mer 分析：table (计数表 .pkt)、profile (逐序列谱 .pkp)、hist (直方图 .hist，FASTK 兼容)、gc (GC×覆盖度矩阵 .kgc + `--tex` 热图，KatGC 兼容)、qhist (质量偏置直方图，quorum 兼容)、gsize (峰值/基因组大小估计 + `--model` GenomeScope 完整拟合) |
 | `sd`   | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
 | `rept` | 6        | 重复检测与遮蔽：e-kmer / e-align / s-kmer / s-align / trf / masker (RepeatMasker 模拟) |
 
