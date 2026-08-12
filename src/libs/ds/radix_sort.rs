@@ -336,8 +336,11 @@ fn partition_at_bytes<T: Copy>(
 ) -> [usize; 257] {
     let n = payloads.len();
     let mut counts = [0usize; 256];
-    for r in 0..n {
-        counts[key_byte_at(keys, key_bytes, r, byte)] += 1;
+    // Incremental byte offsets avoid a multiply per record in this hot pass.
+    let mut off = byte;
+    for _ in 0..n {
+        counts[keys[off] as usize] += 1;
+        off += key_bytes;
     }
     let mut offsets = [0usize; 256];
     let mut cum = 0usize;
@@ -367,12 +370,14 @@ fn partition_at_bytes<T: Copy>(
                     break;
                 }
                 let mut u = next[t];
-                while key_byte_at(keys, key_bytes, u, byte) == t {
+                let mut off = u * key_bytes + byte;
+                while keys[off] as usize == t {
                     u += 1;
+                    off += key_bytes;
                 }
                 next[t] = u + 1;
                 stack.push(u);
-                t = key_byte_at(keys, key_bytes, u, byte);
+                t = keys[off] as usize;
             }
             let last = stack[stack.len() - 1];
             let mut lk = [0u8; 64];
@@ -380,9 +385,9 @@ fn partition_at_bytes<T: Copy>(
             let lp = payloads[last];
             for k in (1..stack.len()).rev() {
                 let (to, from) = (stack[k], stack[k - 1]);
-                for b in 0..key_bytes {
-                    keys[to * key_bytes + b] = keys[from * key_bytes + b];
-                }
+                let mut tmp = [0u8; 64];
+                tmp[..key_bytes].copy_from_slice(&keys[from * key_bytes..(from + 1) * key_bytes]);
+                keys[to * key_bytes..(to + 1) * key_bytes].copy_from_slice(&tmp[..key_bytes]);
                 payloads[to] = payloads[from];
             }
             keys[stack[0] * key_bytes..(stack[0] + 1) * key_bytes]

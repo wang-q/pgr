@@ -1,15 +1,17 @@
 //! Build a `.pgi` index from FASTA or 2bit sequences.
 
 use super::{pack_kmer, pack_position, PgiEntry, PgiIndex};
+use crate::libs::ds::radix_sort::radix_sort_bytes_par;
 use crate::libs::nt::rc_key;
 use crate::libs::syncmer::SyncmerParams;
 use anyhow::Context;
 use rayon::prelude::*;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 
 /// Parallel growable buffers for (key, contig, pos, strand) records.
 struct RecordBuf {
-    keys: Vec<u128>,
+    /// Packed FastK keys (`key_bytes` per record, big-endian byte order).
+    keys: Vec<u8>,
     payloads: Vec<u64>,
 }
 
@@ -34,6 +36,7 @@ fn collect_one_contig(
         return;
     }
     let factor = crate::libs::syncmer::hash_factor(7);
+    let key_bytes = k.div_ceil(4);
     let smask = (1u64 << (2 * smer)) - 1;
     let sshift = (64 - 2 * smer) as u32;
     let kmask = if 2 * k >= 128 {
@@ -77,8 +80,9 @@ fn collect_one_contig(
     // Positions already queued. The closed-syncmer rule can select the same
     // position twice (it is the minimal s-mer at the last position of one
     // window and at the first position of the next); dedupe so the index
-    // holds exactly one record per k-mer position.
-    let mut queued: HashSet<usize> = HashSet::new();
+    // holds exactly one record per k-mer position. A bit vector (instead of
+    // a hash set) keeps this hot path allocation- and hashing-free.
+    let mut queued: Vec<bool> = vec![false; n];
 
     for (i, &b) in seq.iter().enumerate() {
         let code = codes[b as usize];
@@ -99,7 +103,7 @@ fn collect_one_contig(
                 break;
             }
             pending.pop_front();
-            queued.remove(&pos);
+            queued[pos] = false;
             // The rolling key is `seq[i-k+1..=i]`, which equals the k-mer at
             // `pos` only when this iteration completes exactly that window
             // (`pos + k - 1 == i`). Positions selected twice (already
@@ -113,10 +117,13 @@ fn collect_one_contig(
                 kmer_key_at(seq, pos, k, &codes)
             };
             if let Some(key) = key {
-                out.keys.push(key);
+                let mut packed = [0u8; 16];
+                pack_kmer(key, k, &mut packed);
+                out.keys.extend_from_slice(&packed[..key_bytes]);
                 out.payloads.push(pack_position(cid, pos as u32, 0));
                 if !no_rev {
-                    out.keys.push(rc_key(key, k));
+                    pack_kmer(rc_key(key, k), k, &mut packed);
+                    out.keys.extend_from_slice(&packed[..key_bytes]);
                     out.payloads.push(pack_position(cid, pos as u32, 1));
                 }
             }
@@ -145,10 +152,12 @@ fn collect_one_contig(
                 let min_idx = dq_idx[dq_head & dq_mask];
                 let min_val = dq_hash[dq_head & dq_mask];
                 if min_idx == start {
-                    if start + k <= n && queued.insert(start) {
+                    if start + k <= n && !queued[start] {
+                        queued[start] = true;
                         pending.push_back(start);
                     }
-                } else if ch == min_val && j + k <= n && queued.insert(j) {
+                } else if ch == min_val && j + k <= n && !queued[j] {
+                    queued[j] = true;
                     pending.push_back(j);
                 }
             }
@@ -220,6 +229,7 @@ pub fn build_from_seqs(
         .iter()
         .map(|(_, s)| (s.len() / window).saturating_mul(4) + 64)
         .sum();
+    let key_bytes = k.div_ceil(4);
     // Collect each contig into a growable buffer, in parallel when there is
     // more than one contig (GIXmake does the same with per-thread buckets;
     // the per-contig work is independent and the sort below makes the merge
@@ -227,7 +237,7 @@ pub fn build_from_seqs(
     // dispatch overhead.
     let mut buf = if contigs.len() == 1 {
         let mut b = RecordBuf {
-            keys: Vec::with_capacity(est),
+            keys: Vec::with_capacity(est * key_bytes),
             payloads: Vec::with_capacity(est),
         };
         collect_one_contig(&contigs[0].1, 0, k, &params, no_rev, &mut b);
@@ -239,7 +249,7 @@ pub fn build_from_seqs(
             .map(|(cid, (_, seq))| {
                 let cap = est / contigs.len() + 64;
                 let mut b = RecordBuf {
-                    keys: Vec::with_capacity(cap),
+                    keys: Vec::with_capacity(cap * key_bytes),
                     payloads: Vec::with_capacity(cap),
                 };
                 collect_one_contig(seq, cid as u32, k, &params, no_rev, &mut b);
@@ -247,7 +257,7 @@ pub fn build_from_seqs(
             })
             .collect();
         let mut b = RecordBuf {
-            keys: Vec::with_capacity(est),
+            keys: Vec::with_capacity(est * key_bytes),
             payloads: Vec::with_capacity(est),
         };
         for mut pb in per_contig {
@@ -259,75 +269,32 @@ pub fn build_from_seqs(
 
     log::debug!(
         "pgi build: collect {} records in {:?}",
-        buf.keys.len(),
+        buf.keys.len() / key_bytes,
         std::time::Instant::now().duration_since(t_start)
     );
     let t_sort = std::time::Instant::now();
-    // Sort globally by k-mer with an in-place MSD radix sort (no auxiliary
-    // arrays); equal k-mers stay contiguous so the grouping below produces
-    // entries strictly ascending by k-mer. The parallel variant distributes
-    // by the top byte and sorts each byte bucket concurrently.
-    crate::libs::ds::radix_sort::radix_sort_u128_par(
-        &mut buf.keys,
-        &mut buf.payloads,
-        2 * k as u32,
-    );
+    // Sort globally by packed k-mer with an in-place MSD radix sort (no
+    // auxiliary arrays); equal k-mers stay contiguous so the grouping below
+    // produces entries strictly ascending by k-mer. The parallel variant
+    // distributes by the top byte and sorts each byte bucket concurrently.
+    radix_sort_bytes_par(&mut buf.keys, key_bytes, &mut buf.payloads);
     log::debug!("pgi build: sort in {:?}", t_sort.elapsed());
-    let keys = buf.keys;
-    let mut payloads = buf.payloads;
     anyhow::ensure!(
-        payloads.len() <= u32::MAX as usize,
+        buf.payloads.len() <= u32::MAX as usize,
         "too many k-mer records: {} (max {})",
-        payloads.len(),
+        buf.payloads.len(),
         u32::MAX
     );
 
-    let key_bytes = k.div_ceil(4);
-    let mut packed_keys: Vec<u8> = Vec::with_capacity(keys.len() * key_bytes);
-    let mut entries: Vec<PgiEntry> = Vec::with_capacity(keys.len());
-    let mut positions: Vec<u64> = Vec::with_capacity(keys.len());
+    let keys = buf.keys;
+    let mut payloads = buf.payloads;
+    let n_records = payloads.len();
     let t_group = std::time::Instant::now();
-    let mut i = 0usize;
-    while i < keys.len() {
-        let kmer = keys[i];
-        let pos_start = positions.len() as u32;
-        let mut j = i + 1;
-        // A syncmer position can be selected twice (it is the minimum of two
-        // adjacent windows); `collect_one_contig` dedups via `queued` only
-        // while the position is still pending, so when the position is
-        // flushed before its second selection (small-k parameters) the same
-        // (kmer, pos, strand) record is emitted twice. Drop the exact
-        // duplicate payloads here so the index holds one record per physical
-        // position (a diff frequency would falsely trip the `--freq` filter).
-        // Most groups hold a single record; skip the dedup machinery there.
-        // Larger groups dedup by sorting their (small) payload run and
-        // dropping adjacent duplicates -- cheaper than a hash set for the
-        // typical group size of 2-4.
-        if j >= keys.len() || keys[j] != kmer {
-            positions.push(payloads[i]);
-        } else {
-            while j < keys.len() && keys[j] == kmer {
-                j += 1;
-            }
-            payloads[i..j].sort_unstable();
-            positions.push(payloads[i]);
-            let mut prev = payloads[i];
-            for &p in &payloads[i + 1..j] {
-                if p != prev {
-                    positions.push(p);
-                    prev = p;
-                }
-            }
-        }
-        let mut packed = [0u8; 16];
-        pack_kmer(kmer, k, &mut packed);
-        packed_keys.extend_from_slice(&packed[..key_bytes]);
-        entries.push(PgiEntry {
-            pos_start,
-            freq: (positions.len() - pos_start as usize) as u32,
-        });
-        i = j;
-    }
+    // The sorted array is fully sorted, so a single serial run walk groups
+    // equal keys (a parallel bucket walk was tried but doubled peak memory
+    // for ~40 ms of group time; not worth it for a memory-sensitive tool).
+    let (packed_keys, entries, positions) =
+        group_run(&keys, &mut payloads, key_bytes, 0, n_records);
     log::debug!("pgi build: group in {:?}", t_group.elapsed());
 
     Ok(PgiIndex {
@@ -342,6 +309,88 @@ pub fn build_from_seqs(
         entries,
         positions,
     })
+}
+
+/// Groups the sorted record range `[s, e)` into (packed keys, entries,
+/// positions). All records in the range share the same top key byte, and
+/// equal keys are adjacent (the range is fully sorted).
+fn group_run(
+    keys: &[u8],
+    payloads: &mut [u64],
+    key_bytes: usize,
+    s: usize,
+    e: usize,
+) -> (Vec<u8>, Vec<PgiEntry>, Vec<u64>) {
+    let mut packed_keys = Vec::with_capacity((e - s) * key_bytes / 2);
+    let mut entries = Vec::with_capacity(e - s);
+    let mut positions = Vec::with_capacity(e - s);
+    let mut i = s;
+    while i < e {
+        let key = &keys[i * key_bytes..(i + 1) * key_bytes];
+        packed_keys.extend_from_slice(key);
+        let pos_start = positions.len() as u32;
+        let mut j = i + 1;
+        // A syncmer position can be selected twice (it is the minimum of two
+        // adjacent windows); `collect_one_contig` dedups via the queued bit
+        // only while the position is still pending, so when the position is
+        // flushed before its second selection (small-k parameters) the same
+        // (kmer, pos, strand) record is emitted twice. Drop the exact
+        // duplicate payloads here so the index holds one record per physical
+        // position (a diff frequency would falsely trip the `--freq` filter).
+        // Most groups hold a single record; skip the dedup machinery there.
+        // Larger groups dedup by sorting their (small) payload run and
+        // dropping adjacent duplicates -- cheaper than a hash set for the
+        // typical group size of 2-4.
+        if j >= e || !keys_eq(keys, key_bytes, j, i) {
+            positions.push(payloads[i]);
+        } else {
+            while j < e && keys_eq(keys, key_bytes, j, i) {
+                j += 1;
+            }
+            payloads[i..j].sort_unstable();
+            positions.push(payloads[i]);
+            let mut prev = payloads[i];
+            for &p in &payloads[i + 1..j] {
+                if p != prev {
+                    positions.push(p);
+                    prev = p;
+                }
+            }
+        }
+        entries.push(PgiEntry {
+            pos_start,
+            freq: (positions.len() - pos_start as usize) as u32,
+        });
+        i = j;
+    }
+    (packed_keys, entries, positions)
+}
+
+/// Equality of the keys at record indices `a` and `b` (avoids a libc memcmp
+/// in the hot group walk: for `key_bytes > 8` compare the first and last
+/// 8-byte words, whose conjunction covers the whole key).
+#[inline]
+fn keys_eq(keys: &[u8], key_bytes: usize, a: usize, b: usize) -> bool {
+    if key_bytes <= 8 {
+        keys[a * key_bytes..(a + 1) * key_bytes] == keys[b * key_bytes..(b + 1) * key_bytes]
+    } else {
+        let x = u64::from_ne_bytes(keys[a * key_bytes..a * key_bytes + 8].try_into().unwrap());
+        let y = u64::from_ne_bytes(keys[b * key_bytes..b * key_bytes + 8].try_into().unwrap());
+        if x != y {
+            return false;
+        }
+        let xt = u64::from_ne_bytes(
+            keys[(a + 1) * key_bytes - 8..(a + 1) * key_bytes]
+                .try_into()
+                .unwrap(),
+        );
+        let yt = u64::from_ne_bytes(
+            keys[(b + 1) * key_bytes - 8..(b + 1) * key_bytes]
+                .try_into()
+                .unwrap(),
+        );
+        xt == yt
+    }
 }
 
 /// Read all sequences from a FASTA file (plain or gzipped).
@@ -414,6 +463,7 @@ pub fn build_from_path(
 
 #[cfg(test)]
 mod tests {
+    use super::super::unpack_kmer;
     use super::*;
     use crate::libs::fmt::twobit::TwoBitWriter;
     use crate::libs::nt::{rc_key, rolling_kmer_keys};
@@ -585,13 +635,14 @@ mod tests {
                 payloads: Vec::new(),
             };
             collect_one_contig(&seq, 0, k, &params, false, &mut buf);
+            let kb = k.div_ceil(4);
             let mut single_recs: Vec<(u128, u32, u32, u8)> = buf
                 .keys
-                .into_iter()
-                .zip(buf.payloads)
-                .map(|(key, rec)| {
+                .chunks_exact(kb)
+                .zip(buf.payloads.iter())
+                .map(|(key, &rec)| {
                     let (cid, pos, strand) = unpack_position(rec);
-                    (key, cid, pos, strand)
+                    (unpack_kmer(key, k), cid, pos, strand)
                 })
                 .collect();
             single_recs.sort_unstable();
@@ -629,13 +680,14 @@ mod tests {
             payloads: Vec::new(),
         };
         collect_one_contig(&long, 0, k, &params, false, &mut buf);
+        let kb = k.div_ceil(4);
         let mut single_recs: Vec<(u128, u32, u32, u8)> = buf
             .keys
-            .into_iter()
-            .zip(buf.payloads)
-            .map(|(key, rec)| {
+            .chunks_exact(kb)
+            .zip(buf.payloads.iter())
+            .map(|(key, &rec)| {
                 let (cid, pos, strand) = unpack_position(rec);
-                (key, cid, pos, strand)
+                (unpack_kmer(key, k), cid, pos, strand)
             })
             .collect();
         single_recs.sort_unstable();
@@ -670,13 +722,14 @@ mod tests {
             payloads: Vec::new(),
         };
         collect_one_contig(&with_n, 0, k, &params, false, &mut buf);
+        let kb = k.div_ceil(4);
         let mut single_recs: Vec<(u128, u32, u32, u8)> = buf
             .keys
-            .into_iter()
-            .zip(buf.payloads)
-            .map(|(key, rec)| {
+            .chunks_exact(kb)
+            .zip(buf.payloads.iter())
+            .map(|(key, &rec)| {
                 let (cid, pos, strand) = unpack_position(rec);
-                (key, cid, pos, strand)
+                (unpack_kmer(key, k), cid, pos, strand)
             })
             .collect();
         single_recs.sort_unstable();
@@ -730,13 +783,14 @@ mod tests {
                 payloads: Vec::new(),
             };
             collect_one_contig(&seq, 0, k, &params, false, &mut buf);
+            let kb = k.div_ceil(4);
             let mut single_recs: Vec<(u128, u32, u32, u8)> = buf
                 .keys
-                .into_iter()
-                .zip(buf.payloads)
-                .map(|(key, rec)| {
+                .chunks_exact(kb)
+                .zip(buf.payloads.iter())
+                .map(|(key, &rec)| {
                     let (cid, pos, strand) = unpack_position(rec);
-                    (key, cid, pos, strand)
+                    (unpack_kmer(key, k), cid, pos, strand)
                 })
                 .collect();
             single_recs.sort_unstable();
@@ -863,5 +917,36 @@ mod tests {
         .unwrap();
         let fwd = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, true, false).unwrap();
         assert!(both.n_positions() >= fwd.n_positions());
+    }
+
+    /// Every entry's key must equal the genome k-mer at each of its
+    /// positions (regression: the packed-key refactor once keyed entries by
+    /// the raw record index instead of the run representative).
+    #[test]
+    fn grouped_entries_match_positions() {
+        let seq: Vec<u8> = (0..20_000u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
+        let contigs = vec![(String::from("c1"), seq)];
+        let idx = build_from_seqs(contigs.clone(), 40, 8, 5, false, false).unwrap();
+        let kb = idx.k.div_ceil(4);
+        for (i, e) in idx.entries.iter().enumerate() {
+            let key = unpack_kmer(&idx.keys[i * kb..(i + 1) * kb], idx.k);
+            for &prec in &idx.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize] {
+                let (cid, pos, strand) = unpack_position(prec);
+                let seq = &contigs[cid as usize].1;
+                let mut x: u128 = 0;
+                for &b in &seq[pos as usize..pos as usize + idx.k] {
+                    x = (x << 2)
+                        | match b {
+                            b'A' => 0u64,
+                            b'C' => 1,
+                            b'G' => 2,
+                            b'T' => 3,
+                            _ => unreachable!("ACGT-only test sequence"),
+                        } as u128;
+                }
+                let truth = if strand == 0 { x } else { rc_key(x, idx.k) };
+                assert_eq!(truth, key, "entry {i} position {pos} key mismatch");
+            }
+        }
     }
 }

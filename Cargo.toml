@@ -200,6 +200,10 @@ harness = false
 name = "bgzf_write_benchmark"
 harness = false
 
+[[bench]]
+name = "pgi_build_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]

@@ -121,6 +121,45 @@ cat "$B/bench-result.md"
 
 ### 额外发现
 
+### 2026-08-12 复测：打包字节键 + 关键 bug 修复（A1）
+
+> 正式回归基准已固化：`benches/pgi_build_benchmark.rs`（criterion）。
+> 2026-08-12 基线：mg1655 k40 = 187 ms、mg1655+sakai k40 = 348 ms、
+> mg1655 k21 = 176 ms（`build_from_seqs` 内存内，不含 FASTA 读与写盘）。
+
+`pgr pgi build` 的排序中间表示从 u128 键改为 FastK 打包字节键
+（`Vec<u8>`，k=40 时 10 B/键 vs 16 B/键）+ `radix_sort_bytes_par`，
+collect 去重从 HashSet 改位图，`partition_at_bytes` 计数/扫描改增量偏移。
+E. coli 4 基因组（20.6 Mb，11,816,976 记录）release 复测：
+
+| 阶段 | 优化前 | 优化后 |
+|---|---:|---:|
+| collect | 275–364 ms | 245 ms |
+| sort | 112–148 ms（u128） | 138 ms（字节，partition 复制优化后） |
+| group | 160–174 ms | 176 ms |
+| 总 wall | 0.83–0.96 s | 0.84 s |
+| 峰值 RSS | ~522 MB | ~472 MB（-10%） |
+
+**结论**：内存 -10%，wall 时间与基线持平（collect 位图 -30 ms、partition
+逐字节复制改 `copy_from_slice` sort -12%、group 键比较 u64 双段 -5%，
+相互抵消字节排序相对 u128 的劣势）；与 GIXmake 505 ms 的差距仍 ~1.66×，
+未达 1.2× 目标。剩余热点：collect 245 ms（syncmer 逐碱基，~12 ns/碱基
+已很紧）+ group 176 ms（串行分组）+ ~280 ms I/O/写盘。进一步收敛需要
+结构性改动（GIXmake 式"收集时按 1024 桶直接写入"避免全局排序，或
+group 按桶并行 + 缓冲复用——曾验证提速但 RSS +240 MB 已回退）。
+
+**⚠️ 修复的严重 bug（本次复测的核心价值）**：打包键重构时把 `packed_keys`
+从"每 entry 一个键"误改成"整个排序数组"，而 entries 按 entry 索引取键——
+entry 数（6.9M）远小于记录数（11.8M），导致**每个 entry 的键错位**（键与
+位置不匹配，`.pgi` 静默损坏，仅前 ~20 条记录碰巧正确）。经基因组回验
+（逐位置重算 k-mer 对比）抓出，修复为 group 时按 run 代表压实键，并加
+回归测试 `grouped_entries_match_positions`。**教训：`.pgi` 这类排序索引的
+正确性必须用"键↔位置"基因组回验验证，不能只看 stat/排序性。**
+
+**下一步候选**（若继续追性能）：u128 排序实测更快（112–148 ms vs 字节
+159 ms），可评估"collect 出 u128 → u128 排序 → group 时打包"的混合方案；
+group 按顶字节并行曾提速 74 ms 但 RSS +240 MB（已回退，需按桶缓冲复用）。
+
 1. **低字节分桶是排序 bug**：原实现按 k-mer 最低字节分 256 桶再按桶合并，
    并非全局升序（如 `0x0100` 排到 `0x01` 前面），而 `dist pgi` 的归并要求
    entries 全局有序，会导致交集漏算。已由 radix 全局排序修复并加回归测试。

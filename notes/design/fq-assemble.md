@@ -225,4 +225,19 @@ unitigs 组装）影响可忽略。
 
 边集合由（unitig 端点 (k-1)-mer + 阈值）唯一确定，输出排序去重后
 确定性。单测 `links_directions_branch_and_rc` 锚定三种方向组合；
-与 bcalm 真实输出对照待 todo §5。
+与 bcalm 真实输出对照（2026-08-12，MG1655 1M 纠错 reads，k=31）：
+
+* **unitig 序列 100% 一致**（2403/2403，canonical 方向归一后逐条相同，
+  聚合统计完全相同：总数/总长/N50/最长）——`asm unitig` 本体验证通过；
+* **L: 边集部分一致**：pgr 无向边 3801 条 vs bcalm 3331 条，共同 2577
+  （bcalm 边的 77%），pgr 多 1224、缺 754。**深层定位（2026-08-12）**：
+  bcalm 的边 = "canonical 端点 (k-1)-mer 共享图"（5019 条）的**子集**
+  （3325/3331 在图内），多出的 1694 条图边 bcalm 不发——过滤条件不在
+  README、也不在本地源码（`bcalm/` 无 LinkTigs 实现；安装的
+  `/home/wangq/.cbp/bin/bcalm` 可能带补丁）。曾尝试按 README
+  outcoming-edge 语义（源最后/rc 最后 k-mer → 目标第一个 k-mer）重写
+  `compute_links`：边集未对齐（共同 2512）且因 pgr 存 canonical 方向、
+  同一物理端在两工具中可能是前缀或后缀，**回归丢失真实边**（如
+  71245 unitig → 其 rc 方向邻居），已回退。结论：`--links` 保持现有
+  简化语义（`fq-assemble.md` §8.1 方向规则），逐边对齐需 bcalm 链接
+  实现源码（或读取其 L: 过滤逻辑），暂不立项。

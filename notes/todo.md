@@ -6,19 +6,34 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
-## 0. 会话交接（2026-08-12，长 k 落地 + 性能 + pgi 真实验证）
+## 0. 会话交接（2026-08-12，OLC + 参考盘点 + pgi A1）
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1701 测试通过，fmt/clippy 干净。
-**未提交变更（用户自行提交）**：`src/libs/pgi/build.rs`（分组去重 +
-阶段计时日志）、`src/libs/pgi/mod.rs`（pack_kmer 大端拷贝）、
-`notes/benchmarks/bench-pgi-vs-gixmake.md`、
-`notes/benchmarks/bench-pgi-align-vs-fastga.md`、本文件。
-最近提交：`0e62692`（pgi 并行收集）、`5eaaecf`（kmer 性能）、
-`d2c422a`（k-mer 统一 FastK 字节格式 + 长 k）。
+**当前状态**：1739 测试通过，fmt/clippy 干净。
+**最近提交**：`f5bb2e7`（unitig 级 contain 预过滤）、`d9b478b`（paf
+coverage + OLC 修复 + 输出级去重）、`20ce7a3`（2026-08-12 全量笔记）、
+`5fc711a`（OLC 四命令）。
+**未提交变更（本会话末尾，用户自行提交）**：`src/libs/pgi/build.rs`
+（打包字节键 + 位图去重 + entry 键错位严重 bug 修复 + 回归测试）、
+`src/libs/ds/radix_sort.rs`（partition copy_from_slice + 增量偏移）、
+`notes/benchmarks/bench-pgi-vs-gixmake.md`、`notes/design/olc.md` §12.4、
+`notes/todo.md`。
 
 **本会话成果**：
+- **pgi build A1（2026-08-12）**：排序中间表示 u128 → FastK 打包字节
+  （内存 -10%，472MB）；collect 去重 HashSet → 位图（-30ms）；
+  partition 逐字节复制改 copy_from_slice（sort -12%）；group 键比较
+  u64 双段（-5%）。wall 0.84s vs GIXmake 505ms ≈ 1.66×，**1.2× 目标
+  未达**——perf 显示排序已内存带宽主导（memmove 36%），剩余差距需
+  结构性重写（GIXmake 式收集时分桶），收益 ~50-100ms、风险高，暂缓。
+  **关键产出**：抓出并修复"打包键重构致 entry 键错位、.pgi 静默损坏"
+  严重 bug（基因组逐位置回验暴露），回归测试
+  `grouped_entries_match_positions`；`align pgi` 兼容确认。详见
+  `bench-pgi-vs-gixmake.md`。
+- **A2：Lambda reads 回贴验证（2026-08-12）**：48,387bp 全长 contig 的
+  86.7% reads 完美贴回（vs 参考 85.2%，+628 条变异区 reads）、无覆盖
+  缺口——确认 unitig 预过滤后的单 contig 正确。`design/olc.md` §12.4。
 - **OLC 真实数据验证（Lambda）+ 两个 v1 改进（2026-08-12）**：用
   `tests/bbtools/Lambda`（40× 原始 reads）验证 `asm olc`——抓出并修复
   左向延伸坐标下溢 bug（真实数据触发，合成数据漏测）；参考菌株差异
@@ -27,6 +42,12 @@
   （`filter_contained`，布局前）后 Lambda 从 16 条碎片**合并为 1 条全长
   基因组 contig**（48,387 bp，旧 16 条全是其子串）：unitigs 90→22、
   overlaps 386→50。详见 `design/olc.md` §12/§13。
+
+**下一步（按优先级）**：1) 提交本会话变更；2) pgi 结构性重写（收集时
+分桶）或放弃（收益小、风险高，建议等真实大基因组场景证明必要性）；
+3) OLC v1 覆盖度 repeat breaking 待真实宏基因组数据调参
+（`design/olc.md` §13）；4) 队列中的数据驱动项（4 万 cohort、人类规模
+pgi、repeat masking 真核标定等）。
 - **`pgr paf coverage` 新增（2026-08-12）**：PAF `cg:Z` → 每 target
   恒定深度段（TSV），补 wgatools 对照的 pafcov 缺口；`libs/paf/cov.rs`
   扫描线 + 3 单测 + 2 集成测试。
@@ -125,6 +146,14 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
   HashSet → 组内排序去重（-30%）、pack_kmer 大端拷贝（-47%）；
   align mg1655×sakai 738 PSL 与迁移前逐条一致（`.pgi` 兼容确认）
   → `benchmarks/bench-pgi-vs-gixmake.md`、`bench-pgi-align-vs-fastga.md`。
+- **pgi build 打包字节键 + 关键 bug 修复（2026-08-12，A1）**：排序中间
+  表示 u128 → FastK 打包字节（内存 -10%，wall 0.84 s vs GIXmake
+  505 ms ≈ 1.66×，未达 1.2×）；collect 去重 HashSet → 位图（-30 ms）、
+  partition 逐字节复制改 copy_from_slice（sort -12%）、group 键比较
+  u64 双段（-5%）。**抓出并修复严重 bug**：打包键重构致 entry 键错位
+  （`.pgi` 静默损坏），经基因组回验修复 + 回归测试
+  `grouped_entries_match_positions`；进一步收敛需结构性改动
+  （GIXmake 式收集时分桶）→ `bench-pgi-vs-gixmake.md`。
 
 ## 2. 待实现
 
@@ -165,7 +194,9 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
 
 ## 4. 待验证 / 等数据或场景到位
 
-- [ ] 稀疏 s=1 完整 45 对 cohort 复测：等 10 株数据（5 株 10 对已验 ρ=0.988）。
+- [x] 稀疏 s=1 完整 45 对 cohort 复测（2026-08-12，10 株本地数据已齐）：
+  mash 排序 Spearman 0.9814 / Pearson 0.9969 / max |Δ| 0.0035
+  （10 对子集为 0.988/0.0025，全 cohort 略降但一致）→ `design/hv.md`。
 - [ ] 4 万 E. coli cohort 端到端：核心步骤就绪，等真实 cohort 数据
       （来源：`ecoli-cohort.md`）。
 - [ ] 人类规模（GRCh38/CHM13）验证：`.pgi` 字段上限、内存/耗时与 FastGA
@@ -186,13 +217,16 @@ breaking 待真实宏基因组数据调参（`design/olc.md` §13）。
       `benchmarks/bench-scale-and-pbit.md` #8b）；pbit **多参考**样本验证待做
       （高分歧已在 #14g 实测：E. albertii ANI≈90%，delta/gzip 78–81%）；
       §7.4 #10/#9/#14/#19 状态见 `genome-nn-query.md`。
-- [ ] **pgr asm unitig 真实数据验证**：已实现为独立命令（借鉴 BCALM
-      graph3，顺序无关/无气泡；设计 `fq-assemble.md` §8）；待用 anchr
-      `pe.cor.fa` 与 bcalm 输出对照 unitig 集合与连续性。
-- [ ] **pgr asm unitig L: 边/GFA 真实对照**：`--links`/`--gfa` 已实现
-      （LinkTigs 语义，方向规则见 `fq-assemble.md` §8 + 单测）；待与
-      bcalm `LinkTigs` 输出（`.unitigs.fa` 的 `L:` 头）在真实数据上对照
-      方向与边集合。
+- [x] **pgr asm unitig 真实数据验证**（2026-08-12）：MG1655 1M 纠错 reads
+      （`/home/wangq/data/anchr/mg1655/2_illumina/merge/pe.cor.fa.gz` 采样）
+      × k=31，与 `/home/wangq/.cbp/bin/bcalm` 对照——**unitig 序列 100%
+      一致**（2403/2403 canonical 归一后逐条相同）。→ `fq-assemble.md` §8.1。
+- [x] **pgr asm unitig L: 边/GFA 真实对照**（2026-08-12）：无向边集 pgr
+      3801 vs bcalm 3331，共同 2577（bcalm 的 77%）、pgr 多 1224/缺 754
+      ——bcalm 边 = canonical 端点共享图（5019）的子集，过滤条件不在
+      README/本地源码；尝试按 README 语义重写后边集未对齐且回归真实
+      边，已回退。**结论：保持简化语义，逐边对齐需 bcalm 链接实现
+      源码，暂不立项**（`fq-assemble.md` §8.1 已记录）。
 - [ ] **pgr asm map 真实数据验证**：已实现（`asm/map.rs`，设计
       `asm-map.md`）；待用真实 UT.fasta + reads 与 bbmap 输出对照 mapped
       比例与覆盖度（`sam to-rg` + `rg coverage`，本机 Java 配对读 gz 失败，
