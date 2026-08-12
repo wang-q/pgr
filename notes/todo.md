@@ -10,7 +10,9 @@
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1741 测试通过，fmt/clippy 干净，工作树干净。
+**当前状态**：1744 测试通过，fmt/clippy 干净；repeat masking 标定已提交
+（`f5f7798`，用户 2026-08-12 提交）；工作树有未提交改动 = paf
+`--min-tree-coverage`（见 §1，本环境 `.git` 只读无法 commit，需用户本地提交）。
 **最近提交**：`638fbf3`（依赖清理收尾：probminhash/isal-rs 删除）、
 `6290d7d`（tera 移除 + regex 挪 dev-deps + pgi no-seq 警告）、`d167ac3`
 （pgi A1 + 键错位修复）、`f5bb2e7`（unitig 级 contain 预过滤）、
@@ -38,11 +40,10 @@
 - 气泡处理不做（明确不做区）
 
 **下一步（按优先级，用户已确认方向）**：
-1) **paf 查询层 `--min-tree-coverage`**（`paf-pangenome.md` §Caf）：纯代码，
-   查询时传递闭包后处理过滤。
-2) **fas_multiz best_crossover 真实多基因组验证**（`chain-algorithms.md`
-   §12.3）：合成测试已覆盖，真实数据待确认本地是否有合适多基因组比对。
-3) 等数据：OLC 长读（本地无 HiFi/ONT）、4 万 E. coli cohort、人类规模
+1) **fas_multiz best_crossover 真实多基因组验证**（`chain-algorithms.md`
+   §12.3）：合成测试已覆盖；本地数据已确认齐备（`~/data/egaz/multi6/`
+   的 4/6 路酵母 multiz `.maf.gz` + `.fas` + refined）。
+2) 等数据：OLC 长读（本地无 HiFi/ONT）、4 万 E. coli cohort、人类规模
    pgi（GRCh38/CHM13）。pgi 结构性重写（收集时分桶）挂账，等真实大基因
    组场景证明必要性。
 
@@ -117,6 +118,12 @@
   min-identity 0.60≡0.70；漏检 192 kb 以 <100 bp 真实 Ty LTR 碎片为主
   （种子敏感度边界，非参数问题），MITO 为参考侧 AT 富集 over-mask；
   MG1655 对照 1.29% 更接近 RM 1.06% → `design/repeat-masking.md` §2.5.1。
+- **paf 查询层 `--min-tree-coverage`（2026-08-12）**：Caf Tree Coverage 的
+  查询层近似——传递闭包后对每个输出区间统计目标区间上重叠的不同查询序列数
+  （多跳同源计入），低于阈值丢弃；与区域级 `--min-degree` 互补（block 级
+  过滤）。CLI 已加（`pgr paf query/to-bed/...` 通用），3 个合成测试覆盖
+  （sparse 过滤 / 阈值下界 / 传递 2-hop 单例丢弃）→ `paf-pangenome.md`
+  §6.4。`--end-trim` 仍推迟（需 per-interval 修剪 CIGAR，见 §3）。
 - **pgi 真实数据验证 + 优化**（2026-08-12）：E. coli 4 基因组
   （~20 Mb）build 817 ms（vs GIXmake 505 ms，1.62×）、峰值内存
   145 MB（迁移前 ~180 MB，-19%）；并行收集（+17%）、分组
@@ -134,13 +141,13 @@
 
 ## 2. 待实现
 
-- [ ] **paf 查询层扩展**：`--min-tree-coverage`（Caf Tree Coverage 过滤维度，
-      查询时无法全图计算，作传递闭包后处理过滤）；`--end-trim` 推迟（需
-      per-interval 修剪 CIGAR，待序列输出引入时一并处理）
-      （来源：`paf-pangenome.md` §Caf 过滤维度对照表）。
+（当前无条目；`--min-tree-coverage` 已完成见 §1，`--end-trim` 推迟见 §3）
 
 ## 3. 挂账 / 待决
 
+- **`paf query --end-trim` 推迟**：需 per-interval 修剪 CIGAR 两端，与当前
+  "区间整体投影"的输出模型不兼容，待序列输出引入时一并处理
+  （来源：`paf-pangenome.md` §6.4）。
 - **norm 精确 vs 近似定稿**（`anchr-trim-replace.md` §4.8 未定）：pgr 走
   精确表 + 外部桶（1TB 答案）；bbnorm bits=16 近似表结果依赖 -Xmx。
   差异 = 定义差异不是 bug。

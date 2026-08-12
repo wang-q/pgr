@@ -441,3 +441,105 @@ C\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
     );
     assert!(stdout.contains("C\t0\t30"), "C should be kept (filter off)");
 }
+
+// ── paf query --min-tree-coverage ───────────────────────────────
+
+#[test]
+fn command_paf_query_min_tree_coverage_filters_sparse_intervals() {
+    // A and C cover B:0-100, D only B:0-30, E only B:50-80.
+    // Per-interval support (distinct overlapping query sequences):
+    // A/C -> {A,C,D,E} = 4, D -> {A,C,D} = 3, E -> {A,C,E} = 3.
+    // --min-tree-coverage 4 keeps only A and C.
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M
+D\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
+E\t100\t50\t80\t+\tB\t100\t50\t80\t25\t30\t255\tcg:Z:30M
+";
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "B:0-100",
+            "--min-tree-coverage",
+            "4",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("A\t0\t100") && stdout.contains("C\t0\t100"),
+        "A/C (support 4) should be kept, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("D\t") && !stdout.contains("E\t"),
+        "D/E (support 3 < 4) should be dropped, got: {stdout}"
+    );
+    assert!(
+        stderr.contains("min-tree-coverage: dropped 2"),
+        "should log 2 dropped intervals, got: {stderr}"
+    );
+}
+
+#[test]
+fn command_paf_query_min_tree_coverage_lower_threshold_keeps_all() {
+    // Same input as above; --min-tree-coverage 3 keeps every interval.
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M
+D\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
+E\t100\t50\t80\t+\tB\t100\t50\t80\t25\t30\t255\tcg:Z:30M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "B:0-100",
+            "--min-tree-coverage",
+            "3",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("A\t0\t100")
+            && stdout.contains("C\t0\t100")
+            && stdout.contains("D\t0\t30")
+            && stdout.contains("E\t50\t80"),
+        "all intervals (support >= 3) should be kept, got: {stdout}"
+    );
+}
+
+#[test]
+fn command_paf_query_min_tree_coverage_transitive_drops_two_hop_singleton() {
+    // A and C align to B; D aligns to A (2-hop via transitive BFS).
+    // On target B the locus has support {A,C} = 2; D's target locus (on A)
+    // has only itself. --min-tree-coverage 2 keeps A/C, drops D.
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M
+D\t100\t0\t100\t+\tA\t100\t0\t100\t85\t100\t255\tcg:Z:100M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--transitive",
+            "--max-depth",
+            "2",
+            "--min-tree-coverage",
+            "2",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("A\t100\t0\t100\t+\tB") && stdout.contains("C\t100\t0\t100\t+\tB"),
+        "A/C (target B, support 2) should be kept, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("D\t"),
+        "D (target A, support 1) should be dropped, got: {stdout}"
+    );
+}

@@ -42,6 +42,8 @@ pub struct QueryOptions {
     pub merge_distance: i32,
     /// Minimum distinct query sequences per region.
     pub min_degree: usize,
+    /// Minimum distinct query sequences overlapping each output interval.
+    pub min_tree_coverage: usize,
     /// Minimum total aligned length per query.
     pub min_chain_length: i32,
     /// Optional file with sequence names to include.
@@ -215,6 +217,18 @@ pub fn run_query(
             }
         }
 
+        if opts.min_tree_coverage > 0 {
+            let before = results.len();
+            filter_by_tree_coverage(&mut results, opts.min_tree_coverage);
+            let dropped = before - results.len();
+            if dropped > 0 {
+                log::info!(
+                    "  min-tree-coverage: dropped {dropped} intervals with <{} overlapping sequences",
+                    opts.min_tree_coverage
+                );
+            }
+        }
+
         if opts.min_chain_length > 0 {
             filter_by_chain_length(&mut results, opts.min_chain_length);
         }
@@ -243,6 +257,49 @@ pub fn run_query(
     }
 
     Ok((idx, all_results, fasta_store))
+}
+
+/// Drop results whose target interval is overlapped by fewer than
+/// `min_tree_coverage` distinct query sequences (Cactus Tree Coverage analog:
+/// a block supported by too few genomes is sparsely distributed on the tree).
+/// Runs after the transitive closure, so multi-hop homologs count as support.
+pub fn filter_by_tree_coverage(results: &mut Vec<QueryResult>, min_tree_coverage: usize) {
+    if results.len() < min_tree_coverage {
+        results.clear();
+        return;
+    }
+    // Group by target sequence, then count, per result, the distinct query ids
+    // whose target interval overlaps it. Result sets per region are small, so
+    // a direct overlap scan within each target group is sufficient.
+    let mut by_target: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (i, (_, _, t_iv, _, _, _, _)) in results.iter().enumerate() {
+        by_target.entry(t_iv.metadata).or_default().push(i);
+    }
+    let mut coverage = vec![0usize; results.len()];
+    for idxs in by_target.values() {
+        for &i in idxs {
+            let t_i = results[i].2;
+            let mut seen: HashSet<u32> = HashSet::new();
+            for &j in idxs {
+                let (qid, _, t_j, _, _, _, _) = &results[j];
+                if t_i.first <= t_j.last && t_j.first <= t_i.last {
+                    seen.insert(*qid);
+                }
+            }
+            coverage[i] = seen.len();
+        }
+    }
+    // Compact in place, preserving the relative order of kept results.
+    let mut write = 0;
+    for (read, cov) in coverage.iter().enumerate() {
+        if *cov >= min_tree_coverage {
+            if write != read {
+                results.swap(write, read);
+            }
+            write += 1;
+        }
+    }
+    results.truncate(write);
 }
 
 /// Parse a region string `name:start-end` (0-based, PAF convention).

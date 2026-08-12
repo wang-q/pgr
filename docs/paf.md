@@ -195,9 +195,16 @@ pgr paf query aln.paf A:0-30
 # 带一致性过滤的传递式 BFS
 pgr paf query aln.paf A:0-30 --transitive --min-identity 0.8
 
+# 只保留支持序列数 >= 3 的区间（Cactus Tree Coverage 的查询层近似）
+pgr paf query aln.paf A:0-30 --min-tree-coverage 3
+
 # 从 BED 文件批量查询
 pgr paf query aln.paf.idx -b regions.bed
 ```
+
+`--min-tree-coverage N` 对传递闭包后的**每个输出区间**统计其目标区间上重叠的
+不同查询序列数（多跳同源计入），低于 N 的区间被丢弃。与 `--min-degree`（区域级、
+整区跳过）互补：它是 block 级过滤，可只保留区域内支持度高的部分。
 
 ### `to-bed` — 输出 BED3 坐标
 

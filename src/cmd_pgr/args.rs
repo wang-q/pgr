@@ -452,6 +452,7 @@ pub fn query_options_from_args(args: &ArgMatches) -> QueryOptions {
         min_output_len: *args.get_one::<i32>("min_output_len").unwrap(),
         merge_distance: *args.get_one::<i32>("merge_distance").unwrap(),
         min_degree: *args.get_one::<usize>("min_degree").unwrap(),
+        min_tree_coverage: *args.get_one::<usize>("min_tree_coverage").unwrap(),
         min_chain_length: *args.get_one::<i32>("min_chain_length").unwrap(),
         subset_list: args.get_one::<String>("subset_list").cloned(),
         syntenic_filter: args.get_one::<String>("syntenic_filter").cloned(),
@@ -705,6 +706,14 @@ pub fn add_query_args(cmd: Command) -> Command {
             .default_value("0")
             .value_parser(clap::value_parser!(usize))
             .help("Minimum distinct query sequences per region (default: 0 = off)"),
+    )
+    .arg(
+        Arg::new("min_tree_coverage")
+            .long("min-tree-coverage")
+            .num_args(1)
+            .default_value("0")
+            .value_parser(clap::value_parser!(usize))
+            .help("Minimum distinct query sequences overlapping each output interval (default: 0 = off)"),
     )
     .arg(
         Arg::new("min_chain_length")
