@@ -1,4 +1,4 @@
-# pgr fa / 2bit 命令族代码审核记录（2026-08-05）
+# pgr fa / 2bit 命令族代码审核记录（2026-08-05，2026-08-13 追加 split-even）
 
 > 原 `audit-fa-fq-2bit.md`。`fq` 部分已拆分至独立记录 `audit-fq.md`
 > （已随 fq 命令组迁到 anchr），本文件现仅覆盖 fa / 2bit。
@@ -110,6 +110,22 @@
   且正/负链输出不一致。修复：改用 `NT_COMP` 表逐字节补全（反向遍历，未知字节
   NT_COMP=255 原样保留）。实测 `ACGT-*NR-` → `-YN*-ACGT`。
 
+### `fa split about --even` 轮转语义回归（2026-08-13）
+
+- **现象**：`split about -e -c <size>` 开启 `-e` 后每 2 条记录轮转一个文件
+  （完全忽略 `-c` 大小阈值），得到 999 个 2 条序列的 part 文件，大量 reads
+  因 `--max-part` 上限被丢弃——破坏 anchr `4_down_sampling` /
+  `6_down_sampling`（每个 part 只剩 1 对 reads，bcalm 报 "no solid kmers"）。
+- **根因**：`libs/fasta/chunk.rs::SizeChunker::advance` 的 `is_even` 分支用
+  `record_count.is_multiple_of(2)` 作为轮转条件，与 `-c` size 阈值互斥
+  （重构引入，且首个提交起即存在，无测试兜底）。
+- **修复**：轮转条件改为"与"关系——`size_reached && 记录数为偶数`（按 `-c`
+  切分 + 配对完整才轮转）；doc 注释同步。
+- **验证**：单测 2 个（size 满+偶数→轮转；size 满+奇数→保持再装到偶数）；
+  集成测试 `command_fa_split_about_even_keeps_pairs`（10 条 100 bp、`-c 250`
+  → 3 part：4/4/2 条，记录数全偶）；真实数据 MG1655 1M reads（`-c 23.2M`）
+  → 75 part，每个 ~25.6 MB / 13.7 万条，记录数全偶。
+
 ### 文档一致性（一次性小修，已精简）
 
 `fa some/order/mask` 的 gzip 输出示例误导（`io::writer` 写端不压缩，压缩由专门
@@ -118,6 +134,6 @@
 
 ## 结论
 
-`fa`（18 子命令）与 `2bit`（5 子命令）命令族合计修复 23 处缺陷（Zero-Panic 3、
-数据安全 8、输入校验/静默错误 2、文档一致性 4、统计正确性 2、算法正确性 2），
-关键修复均附回归测试与文档澄清。经多轮纵深复审收敛，未再发现新问题。
+`fa`（18 子命令）与 `2bit`（5 子命令）命令族合计修复 24 处缺陷（Zero-Panic 3、
+数据安全 8、输入校验/静默错误 2、文档一致性 4、统计正确性 2、算法正确性 2、
+split-even 轮转 1），关键修复均附回归测试与文档澄清。经多轮纵深复审收敛。

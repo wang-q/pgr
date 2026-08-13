@@ -6,7 +6,8 @@
 /// Chunker that rotates output files after a size or record-count threshold.
 ///
 /// `max_size` is the approximate byte threshold per file (used in size mode).
-/// When `is_even` is true, files are rotated every 2 records (binary split).
+/// When `is_even` is true, rotation is deferred until the current file holds
+/// an even number of records (so paired reads stay together).
 /// `max_files` caps the number of output files; `max_files_exceeded()`
 /// signals the caller to stop.
 pub struct SizeChunker {
@@ -19,7 +20,8 @@ pub struct SizeChunker {
 }
 
 impl SizeChunker {
-    /// Create a new chunker. `max_size` is ignored when `is_even` is true.
+    /// Create a new chunker. Rotation is size-based; when `is_even` is true it
+    /// is deferred until the current file holds an even number of records.
     pub fn new(max_size: usize, is_even: bool, max_files: usize) -> Self {
         Self {
             max_size,
@@ -42,14 +44,16 @@ impl SizeChunker {
     }
 
     /// Account for a record of `seq_len` bytes that was just written.
-    /// Rotates to the next file if the threshold is reached.
+    /// Rotates to the next file once the size threshold is reached; when
+    /// `is_even` is set, rotation is deferred until the record count is even.
     pub fn advance(&mut self, seq_len: usize) {
         self.cur_size += seq_len;
         self.record_count += 1;
+        let size_reached = self.cur_size > self.max_size;
         let rotate = if self.is_even {
-            self.record_count.is_multiple_of(2)
+            size_reached && self.record_count.is_multiple_of(2)
         } else {
-            self.cur_size > self.max_size
+            size_reached
         };
         if rotate {
             self.cur_size = 0;
@@ -75,16 +79,25 @@ mod tests {
     }
 
     #[test]
-    fn test_even_mode_rotates_every_two_records() {
-        let mut c = SizeChunker::new(0, true, 999);
-        c.advance(10);
+    fn test_even_mode_rotates_when_size_reached_and_even() {
+        let mut c = SizeChunker::new(100, true, 999);
+        // 60 < 100, count 1 (odd) → stay
+        c.advance(60);
         assert_eq!(c.file_index(), 0);
-        c.advance(20);
+        // 60 + 50 = 110 > 100, count 2 (even) → rotate
+        c.advance(50);
         assert_eq!(c.file_index(), 1);
-        c.advance(30);
+    }
+
+    #[test]
+    fn test_even_mode_holds_until_record_count_is_even() {
+        let mut c = SizeChunker::new(100, true, 999);
+        // 110 > 100 but count 1 (odd) → hold, do not rotate
+        c.advance(110);
+        assert_eq!(c.file_index(), 0);
+        // 110 + 10 = 120 > 100, count 2 (even) → rotate
+        c.advance(10);
         assert_eq!(c.file_index(), 1);
-        c.advance(40);
-        assert_eq!(c.file_index(), 2);
     }
 
     #[test]

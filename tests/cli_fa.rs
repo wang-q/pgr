@@ -799,6 +799,69 @@ fn command_fa_split_output_not_overwrite_input() {
 }
 
 #[test]
+fn command_fa_split_about_even_keeps_pairs() {
+    // `split about -e -c`: rotate by size, but defer rotation until the
+    // current file holds an even number of records (paired reads stay
+    // together). Regression for the bug where `-e` rotated every two records
+    // and ignored `-c` entirely (999 tiny files, reads dropped).
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("pe.fa");
+    // 10 records, 100 bp each (5 R1/R2 pairs).
+    let mut fa = String::new();
+    for i in 0..10 {
+        fa.push_str(&format!(">r{i}\n{}\n", "A".repeat(100)));
+    }
+    fs::write(&input, fa).unwrap();
+
+    let out = temp.path().join("out");
+    // `-c 250`: 100/200 < 250, 300 > 250 (odd -> hold), 400 (even -> rotate),
+    // so parts hold 4 records each; the final 2 records stay in the last file.
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "split",
+            "about",
+            "-e",
+            "-c",
+            "250",
+            input.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    // The command must exit successfully; the assertion below on the output
+    // files is the real check.
+    assert!(
+        !stderr.contains("Error") && !stderr.contains("panic"),
+        "split failed: {stderr}"
+    );
+
+    let mut files: Vec<_> = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "fa"))
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 3, "expected 3 parts, got {:?}", files);
+    for f in &files {
+        let n = std::fs::read_to_string(f)
+            .unwrap()
+            .lines()
+            .filter(|l| l.starts_with('>'))
+            .count();
+        assert_eq!(n % 2, 0, "{} has odd record count {n}", f.display());
+    }
+    // First part must hold more than one pair (the buggy version wrote 2
+    // records per file and produced 5 files).
+    let first = std::fs::read_to_string(&files[0]).unwrap();
+    let first_n = first.lines().filter(|l| l.starts_with('>')).count();
+    assert_eq!(
+        first_n, 4,
+        "first part should hold 4 records, got {first_n}"
+    );
+}
+
+#[test]
 fn command_fa_range_output_not_overwrite_loc_index() {
     // `range` reads the `.loc` sidecar index after the output writer is
     // opened, so `-o` naming `infile.loc` would truncate the index before it
