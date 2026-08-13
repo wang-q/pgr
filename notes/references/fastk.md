@@ -286,11 +286,14 @@ FastK 的内部处理逻辑主要分为四个阶段（Phase）：
 1. **Super-mer + Minimizer 策略（未复刻）**：FastK 通过 Super-mer（共享同一
    Minimizer 的连续 k-mer 段）将数据量压缩 10-50 倍，再按 Minimizer 分桶并行排序。
    这套"先聚合后排序 + 磁盘分桶"是为 **TB 级数据**设计的。pgr 原生实现
-   **主动放弃**了 super-mer 与磁盘分桶（`kmer.md` §3.2）：直接全量收集 canonical
-   u128 key → 全局 `radix_sort_u128_par` 排序 → 一趟分组计数。细菌/真菌级
-   （~5 Mb–50 Mb）内存可承受（u128+u32 ≈ 20 B/唯一 k-mer，50 Mb 真菌 ≈ 1 GB），
-   用完即释放。**判断**：pgr 场景（单基因组/单库，≤ 数百 Mb）用不上 TB 级
-   分桶，简化是对的；若未来目标是 Gb 级基因组，才需在 `build_table` 内加分块。
+   不做磁盘分桶（`kmer.md` §3.2）；**2026-08-14 起 super-mer 两段计数已实现
+   原型**（`src/libs/kmer/supermer.rs`，`kmer.md` §3.6）：第一段按 super-mer
+   折叠相同 span、第二段展开加权 canonical k-mer，输出与直接路径逐字节一致。
+   基准显示收益**有条件**：span 级冗余（覆盖度高、span 短于读长）时快
+   1.4–4×；k 接近读长（150 bp 读、k=100）或无冗余（单拷贝基因组）时慢
+   1.2–2.7×（详见 `kmer.md` §3.6 结论）。磁盘分桶仍不做——pgr 场景
+   （单基因组/单库，≤ 数百 Mb）用不上 TB 级分桶；若未来目标是 Gb 级
+   基因组，才需在 `build_table` 内加分块。
 
 2. **Minimizer 的两种用途**：FastK 的 Minimizer 是**无损路由**（每个 k-mer 都被
    分配到对应桶，不丢弃数据，用于全量统计）；pgr 的 `src/libs/hash.rs` 中用于

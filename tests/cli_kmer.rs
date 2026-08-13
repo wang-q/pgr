@@ -93,6 +93,47 @@ fn command_kmer_table_end_to_end() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_kmer_table_supermer_matches_direct() -> anyhow::Result<()> {
+    // --supermer is an explicit user choice with byte-identical output to
+    // the default direct counter.
+    let temp = tempfile::TempDir::new()?;
+    let fa = temp.path().join("in.fa");
+    let direct = temp.path().join("direct.pkt");
+    let supermer = temp.path().join("supermer.pkt");
+    write_fa(&fa);
+
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            fa.to_str().unwrap(),
+            "-k",
+            "8",
+            "-o",
+            direct.to_str().unwrap(),
+        ])
+        .run();
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            fa.to_str().unwrap(),
+            "-k",
+            "8",
+            "--supermer",
+            "-o",
+            supermer.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(
+        std::fs::read(&direct)?,
+        std::fs::read(&supermer)?,
+        "--supermer table must be byte-identical to the direct path"
+    );
+    Ok(())
+}
+
+#[test]
 fn command_kmer_table_reads_gzip() -> anyhow::Result<()> {
     let temp = tempfile::TempDir::new()?;
     let fa = temp.path().join("in.fa");

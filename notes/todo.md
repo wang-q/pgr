@@ -6,14 +6,18 @@
 > 按类型组织（已完成 / 待实现 / 挂账待决 / 待验证等数据 / 低风险审计 /
 > 技术债 / 明确不做），不按会话轮次。
 
-## 0. 会话交接（2026-08-13，fq/asm/sam 迁移完成 + 全量文档整理）
+## 0. 会话交接（2026-08-14，supermer 两段计数原型完成，待接入决策）
 
 > 会话交接材料，供下一次会话恢复上下文；读取后按用户指示清理。
 
-**当前状态**：1556 测试通过，fmt/clippy 干净；`fq`/`asm`/`sam` 命令组已
+**当前状态**：1568 测试通过，fmt/clippy 干净；`fq`/`asm`/`sam` 命令组已
 迁移到 anchr（双轨 golden 核对后从 pgr 删除，阶段 1–4 完成），pgr 保留
 基础层（fmt/fq::qual/pairs/kmer/paf/io/ds/loc/sys，供 anchr 依赖）与
-`rg coverage`。工作树待提交：本次审查修正（§3 命令表、todo §0）。
+`rg coverage`。**2026-08-14 新增**：`libs/kmer/supermer.rs` FastK 式
+super-mer/minimizer 两段计数（阶段 B 原型，`unitig-bucket.md` §3.1），
+输出与直接路径逐字节一致（10 测试），基准显示收益有条件（span 级冗余时
+快 1.4–4×，k≈读长/无冗余时慢 1.2–2.7×），**接入 `build_table` 待决策**
+（§3 新条目、`design/kmer.md` §3.6）。
 **最近提交**：`638fbf3`（依赖清理收尾：probminhash/isal-rs 删除）、
 `6290d7d`（tera 移除 + regex 挪 dev-deps + pgi no-seq 警告）、`d167ac3`
 （pgi A1 + 键错位修复）、`f5bb2e7`（unitig 级 contain 预过滤）、
@@ -74,6 +78,13 @@ sam 删除）。
 
 ## 1. 已完成（一行结论，细节见链接）
 
+- **supermer 两段计数（阶段 B 原型 → 显式选项）**（2026-08-14）：
+  `libs/kmer/supermer.rs` FastK 式 minimizer/super-mer 两段计数，输出与
+  直接路径逐字节一致（10 测试）；FastK 端到端对照（99.5 M bp）确认折叠
+  行为与 FastK 逐项一致（k=31 ~4.5×、k=100 ~1.1×），k=100 短读折叠失效是
+  FastK 同样的事实，其领先来自工程效率。按用户决定不做自动判断，接入
+  `pgr kmer table --supermer` 显式选项（默认直接路径）。详见
+  `design/kmer.md` §3.6 与 `benchmarks/bench-supermer-vs-fastk.md`。
 - **依赖瘦身与审计**（2026-08-12）：release 17.0→12.62 MB。bio（死依赖）、
   tera（plot 模板改纯 Rust，8 个 golden 逐字节一致）、regex（生产 0 使用
   → dev-deps，-0.48MB 实测）、probminhash/isal-rs（零引用）；生产依赖全量

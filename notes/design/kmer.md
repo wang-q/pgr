@@ -32,8 +32,9 @@ e-kmer: FastK -t（repeat 库建表）→ FastK -p:repeat -k17 → genome.prof
 目标：用 `src/libs/kmer/` 原生实现替换 FastK（k-mer 计数 + profile 生成）和
 Profex（profile → run 提取），其余（runlist cover/fill/excise/fill、点号染色体名
 映射、`--keep-index` 缓存机制、tempdir 机制）保持现状（缓存文件格式另见
-§4.3）。不做 super-mer、磁盘分桶、`.ktab/.prof` 外部格式兼容 —— 那是 FASTK
-为 TB 级数据设计的，pgr 场景用不上。
+§4.3）。磁盘分桶与 `.ktab/.prof` 外部格式兼容不做（那是 FASTK 为 TB 级数据
+设计的，pgr 场景用不上）；**super-mer/minimizer 两段计数 2026-08-14 起实现**
+（`unitig-bucket.md` 阶段 B，pgr 侧计数层，见 §3.6）。
 
 ## 2. 行为契约（已实测）
 
@@ -180,11 +181,13 @@ pub fn load(path: &Path, k: usize) -> anyhow::Result<KmerTable>;   // header 校
 3. `ds::radix_sort::radix_sort_u128_par` 全局排序（与 pgi 一致）；
 4. 一趟分组得 `(keys, counts)`。
 
-不做 super-mer：内存中 `KmerTable` 用 u128 key（与 pgi 一致），
-u128 + u32 ≈ 20 B/唯一 k-mer：5 Mb 细菌 ~5 M key ≈ 100 MB；
-50 Mb 真菌 ~50 M key ≈ 1 GB，可接受（用完即释放）。超大输入的
-后备（分块计数）不在本期范围，接口上 `build_table` 与 `profile`
-分离即可，将来可换实现。持久化用紧凑编码，与内存表示无关（§4.3）。
+直接路径仍是默认：内存中 `KmerTable` 用打包字节 key（§12），
+~5 B/唯一 k-mer（k=17）：5 Mb 细菌 ~5 M key ≈ 25 MB。FastK 式
+super-mer 两段计数实现在 `supermer.rs`（§3.6），以 `pgr kmer table
+--supermer` **显式选项**接入（不做自动判断，选择权交给用户；默认仍是
+直接路径）。超大输入的后备（分块计数）不在本期范围，接口上
+`build_table` 与 `profile` 分离即可，将来可换实现。持久化用紧凑编码，
+与内存表示无关（§4.3）。
 
 ### 3.3 profile.rs：生成 profile
 
@@ -250,6 +253,77 @@ key（并行）→ `radix_sort_u128_par` 排序 → 与 `table.keys` 线性归�
 1.41 s → 270 ms（5.4×），`rept s-kmer` 整命令 1.67 s → 0.50 s（3.4×）。
 接口 `self_profiles`/`relative_profiles` 不变；语义由
 `sort_merge_matches_binary_search` 对照测试保证。
+
+### 3.6 supermer.rs：FastK 式两段计数（2026-08-14，阶段 B 原型）
+
+> 分工（`~/Scripts/anchr/notes/design/unitig-bucket.md` §3.1）：**pgr 实现计数
+> 层**（本模块），anchr 待接口更新后接入（分桶表 k-way 合并 + `TadpoleTable`
+> 构建入口）。本条目记录 pgr 侧实现与"先原型验证收益"的实测结论。
+
+**算法**（对照 `FASTK-master/split.c`/`count.c`，见 `notes/references/fastk.md`
+§3）：
+
+1. **m-mer 值**：每条序列按 N-free run 滚动 canonical m-mer（fwd/rc 两个
+   u32 滚动，取小者），m = min(12, k-1)（FastK 自适应 `PAD_LEN` 典型 10–13，
+   固定值简化实现）。
+2. **run 划分**：FastK 式——run 持续到出现严格更小的 m-mer 或距定义 m-mer
+   位置 ≥ MAX_SUPER = k-m+1 窗口（force cut）。pgr 用**无重叠**版本（切点
+   窗口归新 run；FastK 把边界窗口计入前后两个 span，靠第二段加权合并兜底，
+   计数语义等价但记录有 ~1 窗口/切的冗余）。
+3. **记录**：span 按定义 m-mer 的 canonical 方向打包（`flip` 使正反链同一
+   区域产出字节相同的 span，可在第一段合并），固定尺寸 = `ceil((2k-m+1)/4)`
+   字节 + u16 窗口数。
+4. **第一段**：整条记录做 `radix_sort_bytes_par` 排序，折叠相同 span
+   （多重度 ct）。
+5. **第二段**：每个唯一 span 展开 canonical k-mer（沿用 `canonical_keys`
+   的滚动 + 半长比较），每条以权重 ct 入数组（u32，超 u16 不封顶），
+   `radix_sort_bytes_par`（key=packed k-mer，payload=weight）后按 key 累加。
+   输出与 `count::count_keys` **逐字节一致**（`matches_direct_*` 系列测试）。
+
+**正确性测试**：随机数据（k=5/8/17/31/64/100）、含 N、大小写、重复读、
+70,000 重（>u16 权重）、k 全扫 3..=40、m 边界（k=3/m=2、m=k-1）、正反链合并、
+空/短输入、非法参数。
+
+**基准结论**（`benches/supermer_benchmark.rs` 内部对比 +
+`notes/benchmarks/bench-supermer-vs-fastk.md` 端到端 FastK 对照，
+mg1655 + 合成 reads，release，多次均值）：
+
+| 数据 | k | direct | supermer | 结论 |
+| :--- | ---: | ---: | ---: | :--- |
+| genome（单拷贝，无冗余） | 17 | 148 ms | 404 ms | **慢 2.7×** |
+| genome | 31 | 191 ms | 339 ms | 慢 1.8× |
+| genome | 100 | 288 ms | 367 ms | 慢 1.3× |
+| 150 bp reads ×20 覆盖（唯一起点，无重复读） | 17 | 303 ms | 211 ms | 快 1.4× |
+| 同上 | 31 | 321 ms | 209 ms | 快 1.5× |
+| 同上 | 100 | 254 ms | 483 ms | **慢 1.9×** |
+| 同 reads ×10 重复（极端高冗余） | 17/31/100 | — | — | 快 2.1–3.8× |
+
+阶段拆分（genome k=17）：gen ~154 ms（≈2–3× 直接生成）、stage1 排序 ~16 ms、
+**expand 单线程 ~145 ms（最大头）**、stage2 排序 ~48 ms。
+
+**与 FastK 端到端对照**（99.5 M bp / 663k reads，32 核）：
+FastK k=31 **0.74 s / 411 MB**、k=100 **0.95 s / 907 MB**；pgr 直接路径
+端到端 1.74 s / 1.46 GB（k=31）、1.60 s / 1.95 GB（k=100）；pgr supermer
+lib 0.87 s（k=31）/ 1.85 s（k=100）。同一输入下 pgr supermer 与 FastK 的
+span 实例数与 stage-2 加权 k-mer 数**几乎逐一对上**（k=31 均 ~4.5× 折叠、
+k=100 均 ~1.1×）——算法已同构。FastK k=100 依然快是因为窗口总量少
+（150 bp 读只有 51 窗口）+ **工程效率**（C 位打包、907 MB vs pgr 1.95 GB、
+32 线程），而非 super-mer 折叠（FastK 自己告警
+`Too much of the data is in reads on the order of the k-mer size`）。
+
+**结论**：super-mer 的收益**只来自 span 级冗余**（同一基因组区域被多条读
+覆盖时，内部 span 字节相同可在第一段折叠）；几何条件是 **span 长度 << 读长**
+（span ≈ 2k-m，k ≤ 读长/3 左右时折叠明显）。**k 接近读长时 span ≈ 整条读，
+无折叠，两段式变成纯开销**——这正是 `unitig-bucket.md` §3.1 想解决的长 k
+场景（k=100、150 bp 读），原型验证未达预期（慢 1.9×），**FastK 本体在该
+场景同样无折叠收益**（savings 1.1×），其领先来自工程效率。无冗余长序列
+（单拷贝基因组）同样无收益。可能的出路（未实现）：① 按
+自适应阈值切换路径；② bcalm 式"窗口 minimizer 相同才连段"的短 span
+变体（k=100 时 span ~100 bp，跨读折叠仍有戏，但 FastK 的 k=100 折叠实测
+只有 1.1×，预期有限）；③ 只用于中低 k（≤31）的读数据（k=31 时 pgr
+supermer 0.87 s 已接近 FastK 0.74 s）。**已定（2026-08-14，用户决定）：
+不做自动判断，接入为 `pgr kmer table --supermer` 显式选项（默认直接
+路径，输出逐字节一致，CLI 测试锁定）。**
 
 ## 4. 集成改动
 
@@ -799,7 +873,8 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
 >   非瓶颈但语义正确，保留。
 > * 结论：单线程 radix 240 ms 是 American-flag MSD 的随机访问
 >   本质成本；FastK 的进一步手段（super-mer 加权、LSD）依赖其
->   数据模型（pgr 明确不做 super-mer，§1），不迁移。当前 pgr
+>   数据模型（2026-08-14 起 pgr 已实现 super-mer 两段计数原型，
+>   收益有条件，见 §3.6；LSD 方向不迁移）。当前 pgr
 >   单线程/多线程均快于 FastK，此方向收尾。
 
 ### 12.4 风险与决策点
@@ -835,7 +910,8 @@ filter.fq.gz`，36384 reads，trim/filter 后）对 kmer 命令做真实数据�
   key/payload 并行交换、无限 cycle 栈、insertion 小段）。排序结果
   均为字节升序，等价。
 * **窗口滚动**（`count.c`）：FastK 在 super-mer 连续位流中滚动（
-  `fptr`/`rptr` 位偏移 `fs`/`rs`），k-mer 字节按偏移提取——依附
-  super-mer 位流编码（pgr 明确不做，§1）；pgr 的 Kmer 值类型直接维护
+  `fptr`/`rptr` 位偏移 `fs`/`rs`），k-mer 字节按偏移提取——super-mer
+  位流编码本身 pgr 不复刻（§3.6 用固定尺寸记录 + `Kmer::from_bytes` +
+  滚动展开，语义等价）；pgr 的 Kmer 值类型直接维护
   打包字节（`push_right`/`push_left` 整体移位），语义与位流滚动等价
   （golden 逐条一致），差异是内存模型配套的选择。

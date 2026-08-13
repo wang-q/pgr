@@ -6,7 +6,9 @@
 
 * **`pgr kmer table`** - builds a canonical k-mer count table from one or
   more FASTA/FASTQ files (FastK `-t1` semantics: all k-mers, including
-  singletons) and persists it as a `.pkt` file.
+  singletons) and persists it as a `.pkt` file. `--supermer` selects the
+  FastK-style super-mer / minimizer two-stage counter explicitly
+  (byte-identical output; the direct radix path remains the default).
 * **`pgr kmer profile`** - per-sequence k-mer profiles (`.pkp`): self counts
   by default, relative to a table with `-t <table>.pkt`.
 * **`pgr kmer hist`** - k-mer frequency histogram in the FastK `.hist`

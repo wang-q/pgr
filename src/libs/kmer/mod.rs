@@ -15,6 +15,7 @@ pub mod nbinom;
 pub mod profile;
 pub mod qcheck;
 pub mod quality;
+pub mod supermer;
 
 /// Sorted canonical k-mer table with parallel counts.
 #[derive(Debug, Clone, Default)]
