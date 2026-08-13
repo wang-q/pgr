@@ -130,6 +130,41 @@ fn command_kmer_table_supermer_matches_direct() -> anyhow::Result<()> {
         std::fs::read(&supermer)?,
         "--supermer table must be byte-identical to the direct path"
     );
+    // An explicit minimizer also stays byte-identical, and is rejected
+    // without --supermer.
+    let m = temp.path().join("m.pkt");
+    common::PgrCmd::new()
+        .args(&[
+            "kmer",
+            "table",
+            fa.to_str().unwrap(),
+            "-k",
+            "8",
+            "--supermer",
+            "--minimizer",
+            "5",
+            "-o",
+            m.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(
+        std::fs::read(&direct)?,
+        std::fs::read(&m)?,
+        "--minimizer table must be byte-identical"
+    );
+    let err = assert_cmd::Command::cargo_bin("pgr")?
+        .args([
+            "kmer",
+            "table",
+            "-k",
+            "8",
+            "--minimizer",
+            "5",
+            "-o",
+            "/tmp/x.pkt",
+        ])
+        .output()?;
+    assert!(!err.status.success(), "--minimizer requires --supermer");
     Ok(())
 }
 

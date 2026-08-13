@@ -13,21 +13,22 @@
 //! On high-coverage low-error data the stage-1 collapse shrinks the sorting
 //! volume by roughly the coverage factor (FastK's design target, see
 //! `notes/references/fastk.md` §3); on fully unique data the extra stage-1
-//! pass costs only a few percent. The minimizer is a fixed-length canonical
-//! m-mer (FastK adapts `PAD_LEN` per input; a fixed default matches its
-//! typical trained range and keeps the implementation simple).
+//! pass costs only a few percent. The minimizer is a canonical m-mer whose
+//! length follows the anchr-measured heuristic `min(12, max(5, k/4))`
+//! (`anchr notes/design/asm-assemble.md` §12.3: k=31 best at m=8, k=63/99
+//! at m=12), matching FastK's per-input training in the common range.
 
 use super::KmerTable;
 use rayon::prelude::*;
 
-/// Default minimizer length (FastK's adaptive `PAD_LEN` typically lands in
-/// 10..=13 after training).
+/// Minimizer length cap (FastK's adaptive `PAD_LEN` typically lands in
+/// 10..=13 after training; the heuristic starts at 5 for small k).
 pub const DEFAULT_M: usize = 12;
 
-/// Minimizer length for a given `k`. `m <= k - 1` keeps at least two m-mers
-/// in every k-mer window; the two-stage path is gated on `k >= 3`.
+/// Minimizer length for a given `k`: `min(12, max(5, ceil(k/4)))`, bounded
+/// by `m <= k - 1` so every k-mer window keeps at least two m-mers.
 pub fn minimizer_len(k: usize) -> usize {
-    DEFAULT_M.min(k.saturating_sub(1))
+    DEFAULT_M.min(5.max(k.div_ceil(4))).min(k.saturating_sub(1))
 }
 
 /// Two-stage super-mer count table with the default minimizer, byte-identical
@@ -38,6 +39,23 @@ pub fn build_table(seqs: &[Vec<u8>], k: usize) -> anyhow::Result<KmerTable> {
 
 /// [`build_table`] with an explicit minimizer length.
 pub fn build_table_with_m(seqs: &[Vec<u8>], k: usize, m: usize) -> anyhow::Result<KmerTable> {
+    build_impl(seqs, k, m)
+}
+
+/// [`build_table`] over borrowed sequence slices, so callers with a
+/// streaming path (e.g. anchr's `TadpoleTable`) can feed records without
+/// materializing `Vec<Vec<u8>>`.
+pub fn build_table_slices(seqs: &[&[u8]], k: usize) -> anyhow::Result<KmerTable> {
+    build_impl(seqs, k, minimizer_len(k))
+}
+
+/// [`build_table_slices`] with an explicit minimizer length.
+pub fn build_table_slices_with_m(seqs: &[&[u8]], k: usize, m: usize) -> anyhow::Result<KmerTable> {
+    build_impl(seqs, k, m)
+}
+
+/// Shared two-stage implementation over any slice of byte sequences.
+fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::Result<KmerTable> {
     anyhow::ensure!(
         k > 0 && k <= super::key::Kmer::MAX_K,
         "k must be in 1..={}, got {k}",
@@ -53,14 +71,32 @@ pub fn build_table_with_m(seqs: &[Vec<u8>], k: usize, m: usize) -> anyhow::Resul
     let max_span = 2 * k - m + 1;
     let span_bytes = max_span.div_ceil(4);
     let rec_bytes = span_bytes + 2;
-
-    let per_seq: Vec<Vec<u8>> = seqs
-        .par_iter()
-        .map(|seq| pack_sequence(seq, k, m, span_bytes, rec_bytes))
+    let codes = super::base_codes();
+    let ctx = PackCtx {
+        k,
+        m,
+        span_bytes,
+        rec_bytes,
+        codes: &codes,
+    };
+    // Pack in coarse chunks into one contiguous buffer per chunk (FastK
+    // packs per IO block): far fewer allocations than one `Vec` per read.
+    const PACK_CHUNK: usize = 4096;
+    let per_chunk: Vec<Vec<u8>> = seqs
+        .par_chunks(PACK_CHUNK)
+        .map(|chunk| {
+            let est = chunk.iter().map(|s| s.as_ref().len()).sum::<usize>();
+            let mut records =
+                Vec::with_capacity(est.saturating_sub(k) / (k - m).max(1) * rec_bytes + rec_bytes);
+            for seq in chunk {
+                pack_sequence_into(seq.as_ref(), &ctx, &mut records);
+            }
+            records
+        })
         .collect();
-    let n: usize = per_seq.iter().map(Vec::len).sum();
+    let n: usize = per_chunk.iter().map(Vec::len).sum();
     let mut records: Vec<u8> = Vec::with_capacity(n);
-    for mut rec in per_seq {
+    for mut rec in per_chunk {
         records.append(&mut rec);
     }
     let n_records = records.len() / rec_bytes;
@@ -78,31 +114,72 @@ pub fn build_table_with_m(seqs: &[Vec<u8>], k: usize, m: usize) -> anyhow::Resul
         rec_bytes,
         &mut vec![(); n_records],
     );
-
-    // Stage 2: expand each unique span into weighted canonical k-mers.
-    let mut keys: Vec<u8> = Vec::new();
-    let mut weights: Vec<u32> = Vec::new();
-    let mut i = 0usize;
-    while i < n_records {
-        let mut j = i + 1;
-        while j < n_records
-            && records[j * rec_bytes..(j + 1) * rec_bytes]
-                == records[i * rec_bytes..(i + 1) * rec_bytes]
-        {
-            j += 1;
+    // Stage 2: group identical spans (adjacent after the sort), then expand
+    // each unique span into weighted canonical k-mers. The boundary scan is
+    // a parallel filter over adjacent records; the expansion is parallelized
+    // over coarse blocks of groups (each block appends into its own buffers,
+    // so the writes never overlap).
+    let boundaries: Vec<usize> = (1..n_records)
+        .into_par_iter()
+        .filter(|&i| {
+            records[i * rec_bytes..(i + 1) * rec_bytes]
+                != records[(i - 1) * rec_bytes..i * rec_bytes]
+        })
+        .collect();
+    // Build the group table from the boundary indices without shifting the
+    // array (an `insert(0, ..)` here would move millions of elements).
+    let mut groups: Vec<(usize, u32, usize)> = Vec::with_capacity(boundaries.len() + 1); // (rec, ct, sln)
+    let mut prev = 0usize;
+    for &start in std::iter::once(&0)
+        .chain(boundaries.iter())
+        .chain(std::iter::once(&n_records))
+    {
+        if start != prev {
+            let rec = &records[prev * rec_bytes..(prev + 1) * rec_bytes];
+            let sln = ((rec[span_bytes] as usize) << 8) | rec[span_bytes + 1] as usize;
+            groups.push((prev, (start - prev) as u32, sln));
+            prev = start;
         }
-        expand_span(
-            &records[i * rec_bytes..(i + 1) * rec_bytes],
-            k,
-            key_bytes,
-            span_bytes,
-            (j - i) as u32,
-            &mut keys,
-            &mut weights,
-        );
-        i = j;
     }
-    let n_entries = weights.len();
+    if groups.is_empty() {
+        return Ok(KmerTable {
+            k,
+            keys: Vec::new(),
+            counts: Vec::new(),
+        });
+    }
+    const EXPAND_CHUNK: usize = 1 << 13; // groups per parallel block
+    let n_blocks = groups.len().div_ceil(EXPAND_CHUNK);
+    let per_block: Vec<(Vec<u8>, Vec<u32>)> = (0..n_blocks)
+        .into_par_iter()
+        .map(|b| {
+            let start = b * EXPAND_CHUNK;
+            let end = (start + EXPAND_CHUNK).min(groups.len());
+            let est: usize = groups[start..end].iter().map(|&(_, _, sln)| sln).sum();
+            let mut keys = Vec::with_capacity(est * key_bytes);
+            let mut weights = Vec::with_capacity(est);
+            for &(ri, ct, _) in &groups[start..end] {
+                expand_span(
+                    &records[ri * rec_bytes..(ri + 1) * rec_bytes],
+                    k,
+                    key_bytes,
+                    span_bytes,
+                    ct,
+                    &mut keys,
+                    &mut weights,
+                );
+            }
+            (keys, weights)
+        })
+        .collect();
+    let n_entries: usize = per_block.iter().map(|(k, _)| k.len() / key_bytes).sum();
+    let mut keys: Vec<u8> = Vec::with_capacity(n_entries * key_bytes);
+    let mut weights: Vec<u32> = Vec::with_capacity(n_entries);
+    for (mut kb, mut wb) in per_block {
+        keys.append(&mut kb);
+        weights.append(&mut wb);
+    }
+    debug_assert_eq!(keys.len(), weights.len() * key_bytes);
     if n_entries == 0 {
         return Ok(KmerTable {
             k,
@@ -145,18 +222,11 @@ struct PackCtx<'a> {
     codes: &'a [u64; 256],
 }
 
-/// Pack all super-mers of one sequence into fixed-size records (N-free runs
+/// Append the super-mer records of one sequence to `records` (N-free runs
 /// are partitioned independently, matching `canonical_keys`).
-fn pack_sequence(seq: &[u8], k: usize, m: usize, span_bytes: usize, rec_bytes: usize) -> Vec<u8> {
-    let codes = super::base_codes();
-    let ctx = PackCtx {
-        k,
-        m,
-        span_bytes,
-        rec_bytes,
-        codes: &codes,
-    };
-    let mut records = Vec::with_capacity(seq.len().saturating_sub(k) / (k - m).max(1) * rec_bytes);
+fn pack_sequence_into(seq: &[u8], ctx: &PackCtx, records: &mut Vec<u8>) {
+    let codes = ctx.codes;
+    let k = ctx.k;
     let n = seq.len();
     let mut start = 0usize;
     while start < n {
@@ -171,11 +241,10 @@ fn pack_sequence(seq: &[u8], k: usize, m: usize, span_bytes: usize, rec_bytes: u
             end += 1;
         }
         if end - start >= k {
-            pack_run(seq, start, end, &ctx, &mut records);
+            pack_run(seq, start, end, ctx, records);
         }
         start = end;
     }
-    records
 }
 
 /// Partition one N-free run into super-mers and append their records.
@@ -548,5 +617,19 @@ mod tests {
         assert!(build_table_with_m(&[b"ACGT".to_vec()], 3, 1).is_err());
         assert!(build_table_with_m(&[b"ACGT".to_vec()], 3, 3).is_err());
         assert!(build_table_with_m(&[b"ACGT".to_vec()], 129, 12).is_err());
+    }
+
+    #[test]
+    fn slices_api_matches_vec_api() {
+        let seqs = vec![random_block(500, 31), noisy_block(400, 32)];
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        for k in [17usize, 31, 100] {
+            let a = build_table(&seqs, k).unwrap();
+            let b = build_table_slices(&refs, k).unwrap();
+            let c = build_table_slices_with_m(&refs, k, 8).unwrap();
+            assert_same_table(&a, &b);
+            let d = build_table_with_m(&seqs, k, 8).unwrap();
+            assert_same_table(&c, &d);
+        }
     }
 }

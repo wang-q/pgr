@@ -284,6 +284,15 @@ key（并行）→ `radix_sort_u128_par` 排序 → 与 `table.keys` 线性归�
 70,000 重（>u16 权重）、k 全扫 3..=40、m 边界（k=3/m=2、m=k-1）、正反链合并、
 空/短输入、非法参数。
 
+**性能优化（2026-08-14，anchr `asm-assemble.md` §12.3 清单）**：
+自适应 minimizer（`min(12, max(5, ceil(k/4)))`，k=31→m=8）、stage-1 按
+4096 条 reads 分块连续打包、`build_table_slices` 借用切片 API、group 边界
+并行 filter、唯一 span 展开按 8192 组/块并行。k=31（mg1655 99.5 M bp）
+lib 0.87 → **0.595 s**，端到端 **0.79 s / 708 MB**；k=100 lib
+1.86 → **1.065 s**（仍无折叠、慢于直接路径）。回滚记录：
+`pack_span` 查表累积与 mval/flp 缓冲复用为负优化（串行依赖链 / 无收益）。
+详见 `benchmarks/bench-supermer-vs-fastk.md` §7。
+
 **基准结论**（`benches/supermer_benchmark.rs` 内部对比 +
 `notes/benchmarks/bench-supermer-vs-fastk.md` 端到端 FastK 对照，
 mg1655 + 合成 reads，release，多次均值）：

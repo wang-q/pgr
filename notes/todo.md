@@ -83,8 +83,10 @@ sam 删除）。
   直接路径逐字节一致（10 测试）；FastK 端到端对照（99.5 M bp）确认折叠
   行为与 FastK 逐项一致（k=31 ~4.5×、k=100 ~1.1×），k=100 短读折叠失效是
   FastK 同样的事实，其领先来自工程效率。按用户决定不做自动判断，接入
-  `pgr kmer table --supermer` 显式选项（默认直接路径）。详见
-  `design/kmer.md` §3.6 与 `benchmarks/bench-supermer-vs-fastk.md`。
+  `pgr kmer table --supermer` 显式选项（默认直接路径）。**§12.3 优化清单
+  落地**：自适应 minimizer、stage-1 分块连续打包、slices API、group 并行、
+  expand 并行——k=31 lib 0.87 → 0.595 s、端到端 0.79 s / 708 MB（详见
+  `design/kmer.md` §3.6 与 `benchmarks/bench-supermer-vs-fastk.md` §7）。
 - **依赖瘦身与审计**（2026-08-12）：release 17.0→12.62 MB。bio（死依赖）、
   tera（plot 模板改纯 Rust，8 个 golden 逐字节一致）、regex（生产 0 使用
   → dev-deps，-0.48MB 实测）、probminhash/isal-rs（零引用）；生产依赖全量

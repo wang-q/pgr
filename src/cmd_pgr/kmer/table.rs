@@ -23,6 +23,8 @@ Examples:
    pgr kmer table a.fa b.fa.gz -k 17 -o all.pkt
 3. Use the super-mer counter explicitly:
    pgr kmer table reads.fq.gz -k 31 --supermer -o reads.pkt
+4. Override the super-mer minimizer length:
+   pgr kmer table reads.fq.gz -k 31 --supermer --minimizer 8 -o reads.pkt
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("FASTA/FASTQ"))
@@ -33,6 +35,13 @@ Examples:
                 .long("supermer")
                 .action(ArgAction::SetTrue)
                 .help("Uses the FastK-style super-mer two-stage counter"),
+        )
+        .arg(
+            Arg::new("minimizer")
+                .long("minimizer")
+                .value_parser(clap::value_parser!(usize))
+                .requires("supermer")
+                .help("Minimizer length for --supermer (default: min(12, max(5, ceil(k/4))))"),
         )
 }
 
@@ -48,7 +57,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         seqs.extend(super::read_seqs(f)?);
     }
     let table = if args.get_flag("supermer") {
-        pgr::libs::kmer::supermer::build_table(&seqs, k)?
+        match args.get_one::<usize>("minimizer") {
+            Some(&m) => pgr::libs::kmer::supermer::build_table_with_m(&seqs, k, m)?,
+            None => pgr::libs::kmer::supermer::build_table(&seqs, k)?,
+        }
     } else {
         pgr::libs::kmer::count::build_table(&seqs, k)?
     };

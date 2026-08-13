@@ -35,11 +35,13 @@ singletons (FastK `-t1` semantics).
 | `-k`, `--kmer` | K-mer size (default: 17; range 1..=64) |
 | `-o`, `--outfile` | Output `.pkt` filename |
 | `--supermer` | Use the FastK-style super-mer two-stage counter (byte-identical output; faster only on read data with high coverage and moderate k, slower on genomes or when k approaches the read length) |
+| `--minimizer <int>` | Minimizer length for `--supermer` (requires it; default: `min(12, max(5, ceil(k/4)))`) |
 
 ```bash
 pgr kmer table reads.fq.gz -k 21 -o reads.pkt
 pgr kmer table a.fa b.fa.gz -k 17 -o all.pkt
 pgr kmer table reads.fq.gz -k 31 --supermer -o reads.pkt
+pgr kmer table reads.fq.gz -k 31 --supermer --minimizer 8 -o reads.pkt
 ```
 
 ### hist

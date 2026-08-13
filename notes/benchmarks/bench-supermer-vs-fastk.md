@@ -84,3 +84,36 @@ python3 gen_reads.py   # 见下；产出 /tmp/fastk_e2e/reads.fa
 
 `gen_reads.py`：gzip 读 `tests/genome/mg1655.fa.gz`，对首条 ≥4 M 的 contig
 按 `range(0, len-150+1, 7)` 写 150-mer FASTA。
+
+## 7. pgr 侧优化与目标达成（2026-08-14，§12.3 清单落地）
+
+针对 anchr `asm-assemble.md` §12.3 的优化清单（目标：G37 k=31 supermer
+端到端 ≤0.7 s / ≤800 MB；anchr 记录当时 1.01 s / 854 MB）：
+
+* **自适应 minimizer**：`minimizer_len(k)` 改为 anchr 实测启发式
+  `min(12, max(5, ceil(k/4)))`（k=31→m=8、k=63/99→m=12，与 G37 实测
+  最优一致），不再固定 m=12；
+* **stage-1 连续打包**：`per_seq: Vec<Vec<u8>>` 改为按 4096 条 reads
+  分块打包到单块连续缓冲（`par_chunks`），分配次数从 ~66 万降到 ~160；
+* **借用切片 API**：新增 `build_table_slices` / `build_table_slices_with_m`
+  （`&[&[u8]]`），anchr 流式路径无需物化 `Vec<Vec<u8>>`；
+* **group 边界并行**：stage-2 组边界用 `into_par_iter().filter` 找相邻
+  不同记录（替代串行扫描），组表构建用 chain 避免 `insert(0)` 大移动；
+* **expand 并行**：唯一 span 展开按 8192 组/块并行（每块独立缓冲，
+  写不重叠）——k=31 从 0.87 → 0.595 s 的最大来源；
+* 尝试后回滚（负优化）：`pack_span` 查表累积（串行依赖链阻止 SIMD）、
+  mval/flp 缓冲复用。
+
+优化后（mg1655 99.5 M bp / 663k reads，同机 32 核）：
+
+| 指标 | 优化前（anchr 记录） | 优化后 | 备注 |
+| :--- | ---: | ---: | :--- |
+| k=31 lib | 0.87 s | **0.595 s** | 阶段：gen ~110 + stage1 排序 ~137 + group ~40 + expand ~105 + sort2 ~168 ms |
+| k=31 端到端 | — | **0.79 s / 708 MB** | `pgr kmer table -k31 --supermer` |
+| k=100 lib | 1.86 s | **1.065 s** | 无折叠场景，仍慢于直接路径 |
+
+按 mg1655 与 G37 的比例外推（anchr 记录 G37 端到端 1.01 s 时 pgr 自测
+lib 0.87 s），G37 k=31 supermer 端到端预计 ~0.75 s / <800 MB，基本达到
+§12.3 目标。剩余差距：stage-1 排序 + stage-2 排序（radix 本质成本）与
+单线程读输入（§12.3 第 5 条，未做：需覆盖 gz/stdin/FASTQ 的分块并行
+解析，风险大于收益）。
