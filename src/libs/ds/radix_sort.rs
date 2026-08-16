@@ -13,12 +13,18 @@
 const SMALL: usize = 16;
 /// Record count above which the parallel variant distributes by top byte.
 const PAR_SMALL: usize = 1 << 18;
+/// Largest sortable key: kmer/supermer records pack up to a 2k-m+1 base
+/// span (Kmer::MAX_K bases), plus a 2-byte record header.
+const MAX_KEY_BYTES: usize = (2 * crate::libs::kmer::key::Kmer::MAX_K).div_ceil(4) + 2;
 
 /// Sort `keys` ascending (low `key_bits` bits significant) and permute
 /// `payloads` to match. MSD radix, big-endian byte order, in place.
 pub fn radix_sort_u128<T: Copy>(keys: &mut [u128], payloads: &mut [T], key_bits: u32) {
     assert_eq!(keys.len(), payloads.len());
     if keys.len() < 2 {
+        return;
+    }
+    if key_bits == 0 {
         return;
     }
     let key_bytes = key_bits.div_ceil(8) as usize;
@@ -154,8 +160,8 @@ fn insertion_sort<T: Copy>(keys: &mut [u128], payloads: &mut [T]) {
 
 /// Sort a small packed segment with a comparison sort.
 fn insertion_sort_bytes<T: Copy>(keys: &mut [u8], key_bytes: usize, payloads: &mut [T]) {
-    let mut tmp = [0u8; 64];
-    let mut prev = [0u8; 64];
+    let mut tmp = [0u8; MAX_KEY_BYTES];
+    let mut prev = [0u8; MAX_KEY_BYTES];
     for i in 1..payloads.len() {
         tmp[..key_bytes].copy_from_slice(&keys[i * key_bytes..(i + 1) * key_bytes]);
         let p = payloads[i];
@@ -380,12 +386,12 @@ fn partition_at_bytes<T: Copy>(
                 t = keys[off] as usize;
             }
             let last = stack[stack.len() - 1];
-            let mut lk = [0u8; 64];
+            let mut lk = [0u8; MAX_KEY_BYTES];
             lk[..key_bytes].copy_from_slice(&keys[last * key_bytes..(last + 1) * key_bytes]);
             let lp = payloads[last];
             for k in (1..stack.len()).rev() {
                 let (to, from) = (stack[k], stack[k - 1]);
-                let mut tmp = [0u8; 64];
+                let mut tmp = [0u8; MAX_KEY_BYTES];
                 tmp[..key_bytes].copy_from_slice(&keys[from * key_bytes..(from + 1) * key_bytes]);
                 keys[to * key_bytes..(to + 1) * key_bytes].copy_from_slice(&tmp[..key_bytes]);
                 payloads[to] = payloads[from];

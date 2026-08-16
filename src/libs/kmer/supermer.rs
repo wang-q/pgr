@@ -540,6 +540,19 @@ mod tests {
     }
 
     #[test]
+    fn long_k_supermer_sorts_large_records() {
+        // Regression: k > 128 makes super-mer records exceed 64 bytes
+        // (rec_bytes = ceil((2k-m+1)/4) + 2; k=160, m=12 -> 80 bytes), which
+        // overflowed the fixed [0u8; 64] scratch buffers in radix_sort_bytes.
+        let seqs = vec![random_block(600, 160), noisy_block(450, 161)];
+        for k in [141usize, 160, 256] {
+            let direct = count::build_table(&seqs, k).unwrap();
+            let supermer = build_table(&seqs, k).unwrap();
+            assert_same_table(&direct, &supermer);
+        }
+    }
+
+    #[test]
     fn kmer_shared_across_spans_sums_weights() {
         // A canonical k-mer appearing inside two different super-mers (with
         // different multiplicities) must accumulate both weights.

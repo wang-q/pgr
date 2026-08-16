@@ -69,6 +69,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = args.get_one::<String>("outfile").unwrap();
     let k = *args.get_one::<usize>("kmer").unwrap();
+    anyhow::ensure!(
+        k > 0 && k <= pgr::libs::kmer::key::Kmer::MAX_K,
+        "k must be in 1..={}, got {k}",
+        pgr::libs::kmer::key::Kmer::MAX_K
+    );
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str()])?;
 
     let mut reader = pgr::libs::fmt::seq::SeqReader::new(infile)

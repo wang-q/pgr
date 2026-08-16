@@ -13,6 +13,8 @@ fn key_to_kmer(key: u128, k: usize) -> Kmer {
 /// Why a read was flagged as bad (quorum sub/trunc events, no correction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadError {
+    /// k is outside the u128 rolling-key range 1..=64.
+    InvalidK,
     /// No high-quality anchor k-mer found.
     NoAnchor,
     /// A position with no continuation (quorum truncation).
@@ -64,6 +66,11 @@ impl Default for CheckParams {
 /// substitute or truncate. Only the presence of an error is reported; no
 /// corrected sequence is produced.
 pub fn check_read(table: &QualityTable, seq: &[u8], p: &CheckParams) -> Result<(), ReadError> {
+    // The rolling anchor/extend keys are u128 (2 bits per base), so k > 64
+    // would shift past the word boundary and panic; reject it up front.
+    if !(1..=64).contains(&p.k) {
+        return Err(ReadError::InvalidK);
+    }
     let Some((start, kx, kxr)) = find_anchor(table, seq, p) else {
         return Err(ReadError::NoAnchor);
     };
@@ -261,6 +268,22 @@ mod tests {
         CheckParams {
             k,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn rejects_k_beyond_u128_range() {
+        // k > 64 would shift past the u128 word in the rolling keys; the
+        // check must fail cleanly instead of panicking.
+        let read = b"ACGTACGTACGTACGTACGT".to_vec();
+        let quals = vec![b"I".repeat(20); 50];
+        let seqs = vec![read.clone(); 50];
+        let table = build_table(&seqs, &quals, 8, 38, 127);
+        for k in [0usize, 65, 256] {
+            assert_eq!(
+                check_read(&table, &read, &params(k)),
+                Err(ReadError::InvalidK)
+            );
         }
     }
 
