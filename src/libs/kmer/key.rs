@@ -6,12 +6,21 @@
 
 /// FastK-encoded k-mer key: `key_bytes = ceil(k/4)` significant bytes in a
 /// fixed-size array (no heap in the window-rolling hot path).
-const MAX_K: usize = 128;
+const MAX_K: usize = 256;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Kmer {
     k: usize,
     bytes: [u8; MAX_K / 4],
+}
+
+impl Default for Kmer {
+    fn default() -> Self {
+        Self {
+            k: 0,
+            bytes: [0; MAX_K / 4],
+        }
+    }
 }
 
 impl Kmer {
@@ -218,7 +227,7 @@ mod tests {
 
     #[test]
     fn rolling_matches_direct_encoding() {
-        for &k in &[4usize, 5, 7, 8, 9, 21, 51, 81] {
+        for &k in &[4usize, 5, 7, 8, 9, 21, 51, 81, 255, 256] {
             let seq = random_block(300, 1000 + k as u64);
             let mut win = Kmer::from_bases(&seq, k).unwrap();
             for i in 1..=seq.len() - k {
@@ -231,8 +240,8 @@ mod tests {
 
     #[test]
     fn push_left_matches_extension() {
-        for &k in &[4usize, 5, 8, 9, 81] {
-            let seq = random_block(200, 2000 + k as u64);
+        for &k in &[4usize, 5, 8, 9, 81, 256] {
+            let seq = random_block(100 + k + 50, 2000 + k as u64);
             // Extend leftwards one base at a time from the k-mer window at
             // position 100: prepend seq[99], seq[98], ...
             let mut win = Kmer::from_bases(&seq[100..100 + k], k).unwrap();
@@ -242,6 +251,27 @@ mod tests {
                 assert_eq!(win, expect, "push_left k={k} at {i}");
             }
         }
+    }
+
+    #[test]
+    fn max_k_bounds() {
+        assert!(Kmer::new(256).is_ok(), "k=256 must be accepted");
+        assert!(Kmer::new(0).is_err(), "k=0 must be rejected");
+        assert!(Kmer::new(257).is_err(), "k=257 must be rejected");
+    }
+
+    #[test]
+    fn rc_and_canonical_at_max_k() {
+        let seq = random_block(300, 4242);
+        let km = Kmer::from_bases(&seq[..256], 256).unwrap();
+        let rc = km.rc();
+        assert_eq!(rc.rc(), km);
+        let expect = if km.to_bytes() <= rc.to_bytes() {
+            km
+        } else {
+            rc
+        };
+        assert_eq!(km.canonical(), expect);
     }
 
     #[test]

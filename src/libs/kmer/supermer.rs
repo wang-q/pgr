@@ -616,7 +616,7 @@ mod tests {
     fn rejects_bad_parameters() {
         assert!(build_table_with_m(&[b"ACGT".to_vec()], 3, 1).is_err());
         assert!(build_table_with_m(&[b"ACGT".to_vec()], 3, 3).is_err());
-        assert!(build_table_with_m(&[b"ACGT".to_vec()], 129, 12).is_err());
+        assert!(build_table_with_m(&[b"ACGT".to_vec()], 257, 12).is_err());
     }
 
     #[test]
