@@ -54,6 +54,30 @@ pub fn build_table_slices_with_m(seqs: &[&[u8]], k: usize, m: usize) -> anyhow::
     build_impl(seqs, k, m)
 }
 
+/// [`build_table_slices`] with a sliding-window quality gate (anchr
+/// `min_prob` semantics): a window counts only when the product of its base
+/// correctness probabilities reaches `min_prob`; `min_prob <= 0.0` or empty
+/// qualities disable the gate.
+pub fn build_table_slices_qual(
+    seqs: &[&[u8]],
+    quals: &[&[u8]],
+    k: usize,
+    min_prob: f32,
+) -> anyhow::Result<KmerTable> {
+    build_impl_qual(seqs, quals, k, minimizer_len(k), min_prob)
+}
+
+/// [`build_table_slices_qual`] with an explicit minimizer length.
+pub fn build_table_slices_qual_with_m(
+    seqs: &[&[u8]],
+    quals: &[&[u8]],
+    k: usize,
+    m: usize,
+    min_prob: f32,
+) -> anyhow::Result<KmerTable> {
+    build_impl_qual(seqs, quals, k, m, min_prob)
+}
+
 /// Shared two-stage implementation over any slice of byte sequences.
 fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::Result<KmerTable> {
     anyhow::ensure!(
@@ -65,7 +89,6 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
         m >= 2 && m < k,
         "minimizer length m must be in 2..=k-1, got m={m} for k={k}"
     );
-    let key_bytes = k.div_ceil(4);
     // A span is at most 2k - m bases (m_pos - s <= k - m and the run closes
     // once q - m_pos >= k - m + 1); the +1 leaves slack for the re-scan.
     let max_span = 2 * k - m + 1;
@@ -94,6 +117,16 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
             records
         })
         .collect();
+    finish_records(per_chunk, &ctx)
+}
+
+/// Sort packed super-mer records, group identical spans, and expand them
+/// into weighted canonical k-mers (shared by plain and quality-gated paths).
+fn finish_records(per_chunk: Vec<Vec<u8>>, ctx: &PackCtx) -> anyhow::Result<KmerTable> {
+    let k = ctx.k;
+    let key_bytes = k.div_ceil(4);
+    let span_bytes = ctx.span_bytes;
+    let rec_bytes = ctx.rec_bytes;
     let n: usize = per_chunk.iter().map(Vec::len).sum();
     let mut records: Vec<u8> = Vec::with_capacity(n);
     for mut rec in per_chunk {
@@ -213,6 +246,80 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
     Ok(KmerTable { k, keys, counts })
 }
 
+/// Quality-gated two-stage count; `min_prob <= 0.0` or empty qualities fall
+/// back to the ungated path.
+fn build_impl_qual(
+    seqs: &[&[u8]],
+    quals: &[&[u8]],
+    k: usize,
+    m: usize,
+    min_prob: f32,
+) -> anyhow::Result<KmerTable> {
+    anyhow::ensure!(
+        k > 0 && k <= super::key::Kmer::MAX_K,
+        "k must be in 1..={}, got {k}",
+        super::key::Kmer::MAX_K
+    );
+    anyhow::ensure!(
+        m >= 2 && m < k,
+        "minimizer length m must be in 2..=k-1, got m={m} for k={k}"
+    );
+    if min_prob <= 0.0 || quals.is_empty() {
+        return build_impl(seqs, k, m);
+    }
+    anyhow::ensure!(
+        quals.len() == seqs.len(),
+        "{} sequences but {} quality strings",
+        seqs.len(),
+        quals.len()
+    );
+    for (seq, qual) in seqs.iter().zip(quals) {
+        anyhow::ensure!(
+            qual.is_empty() || qual.len() == seq.len(),
+            "sequence length {} does not match quality length {}",
+            seq.len(),
+            qual.len()
+        );
+    }
+    let max_span = 2 * k - m + 1;
+    let span_bytes = max_span.div_ceil(4);
+    let rec_bytes = span_bytes + 2;
+    let codes = super::base_codes();
+    let ctx = PackCtx {
+        k,
+        m,
+        span_bytes,
+        rec_bytes,
+        codes: &codes,
+    };
+    let (prob_correct, prob_correct_inv) = prob_tables();
+    // Pack in coarse chunks into one contiguous buffer per chunk (FastK
+    // packs per IO block): far fewer allocations than one `Vec` per read.
+    const PACK_CHUNK: usize = 4096;
+    let per_chunk: Vec<Vec<u8>> = seqs
+        .par_chunks(PACK_CHUNK)
+        .zip(quals.par_chunks(PACK_CHUNK))
+        .map(|(seq_chunk, qual_chunk)| {
+            let est = seq_chunk.iter().map(|s| s.len()).sum::<usize>();
+            let mut records =
+                Vec::with_capacity(est.saturating_sub(k) / (k - m).max(1) * rec_bytes + rec_bytes);
+            for (seq, qual) in seq_chunk.iter().zip(qual_chunk) {
+                pack_sequence_into_qual(
+                    seq,
+                    qual,
+                    &ctx,
+                    min_prob,
+                    &prob_correct,
+                    &prob_correct_inv,
+                    &mut records,
+                );
+            }
+            records
+        })
+        .collect();
+    finish_records(per_chunk, &ctx)
+}
+
 /// Fixed parameters shared by the per-sequence packers.
 struct PackCtx<'a> {
     k: usize,
@@ -242,6 +349,94 @@ fn pack_sequence_into(seq: &[u8], ctx: &PackCtx, records: &mut Vec<u8>) {
         }
         if end - start >= k {
             pack_run(seq, start, end, ctx, records);
+        }
+        start = end;
+    }
+}
+
+/// BBTools `QualityTools.PROB_ERROR` (q=0 -> 0.75, q=1 -> 0.7, else 10^-0.1q).
+fn prob_error() -> [f32; 128] {
+    let mut r = [0f32; 128];
+    for (i, v) in r.iter_mut().enumerate() {
+        *v = (10f64.powf(-0.1 * i as f64)) as f32;
+    }
+    r[0] = 0.75;
+    r[1] = 0.7;
+    r
+}
+
+/// Base correctness probability tables (BBTools `PROB_CORRECT[_INVERSE]`).
+fn prob_tables() -> ([f32; 128], [f32; 128]) {
+    let err = prob_error();
+    let mut correct = [0f32; 128];
+    let mut inverse = [0f32; 128];
+    for i in 0..128 {
+        let c = 1.0 - err[i];
+        correct[i] = c;
+        inverse[i] = 1.0 / c;
+    }
+    (correct, inverse)
+}
+
+/// Like [`pack_sequence_into`], but skips windows whose base correctness
+/// probability falls below `min_prob` (anchr `minprob` semantics); a skipped
+/// window cuts the super-mer run like an N boundary.
+fn pack_sequence_into_qual(
+    seq: &[u8],
+    qual: &[u8],
+    ctx: &PackCtx,
+    min_prob: f32,
+    prob_correct: &[f32; 128],
+    prob_correct_inv: &[f32; 128],
+    records: &mut Vec<u8>,
+) {
+    if qual.is_empty() {
+        // Empty quality disables the gate for this read (anchr per-read rule).
+        pack_sequence_into(seq, ctx, records);
+        return;
+    }
+    let codes = ctx.codes;
+    let k = ctx.k;
+    let n = seq.len();
+    let mut start = 0usize;
+    while start < n {
+        while start < n && codes[seq[start] as usize] == 4 {
+            start += 1;
+        }
+        if start >= n {
+            break;
+        }
+        let mut end = start;
+        while end < n && codes[seq[end] as usize] != 4 {
+            end += 1;
+        }
+        if end - start >= k {
+            // Sliding window probability in the same f32 order as anchr
+            // `count_read_kmers_packed`; invalid windows split the stretch
+            // into contiguous valid segments.
+            let mut seg_start = start;
+            let mut prob = 1.0f32;
+            let mut len = 0usize;
+            let mut i = start;
+            while i < end {
+                let q = (qual[i] as usize).min(127);
+                prob *= prob_correct[q];
+                if len >= k {
+                    prob *= prob_correct_inv[(qual[i - k] as usize).min(127)];
+                }
+                len += 1;
+                i += 1;
+                if len >= k && prob < min_prob {
+                    let win_start = i - k;
+                    if win_start > seg_start {
+                        pack_run(seq, seg_start, win_start, ctx, records);
+                    }
+                    seg_start = win_start + 1;
+                }
+            }
+            if end > seg_start && end - seg_start >= k {
+                pack_run(seq, seg_start, end, ctx, records);
+            }
         }
         start = end;
     }
@@ -643,6 +838,163 @@ mod tests {
             assert_same_table(&a, &b);
             let d = build_table_with_m(&seqs, k, 8).unwrap();
             assert_same_table(&c, &d);
+        }
+    }
+
+    /// Deterministic quality bytes in the Phred+33 range (30..=69).
+    fn random_quals(len: usize, seed: u64) -> Vec<u8> {
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                30 + ((x >> 33) as u8) % 40
+            })
+            .collect()
+    }
+
+    /// Reference: quality-gated emission + `count_keys`, mirroring anchr
+    /// `count_read_kmers_packed` (same sliding f32 order) but independent
+    /// of the super-mer record pipeline.
+    fn reference_qual_table(seqs: &[&[u8]], quals: &[&[u8]], k: usize, min_prob: f32) -> KmerTable {
+        let (pc, pci) = prob_tables();
+        let mut keys: Vec<u8> = Vec::new();
+        for (&seq, &qual) in seqs.iter().zip(quals) {
+            if qual.is_empty() {
+                crate::libs::kmer::canonical_keys(seq, k, |_, km| {
+                    keys.extend_from_slice(km.to_bytes());
+                });
+                continue;
+            }
+            let mut prob = 1.0f32;
+            let mut len = 0usize;
+            let mut i = 0usize;
+            while i < seq.len() {
+                if crate::libs::kmer::base_codes()[seq[i] as usize] == 4 {
+                    len = 0;
+                    prob = 1.0;
+                    i += 1;
+                    continue;
+                }
+                let q = (qual[i] as usize).min(127);
+                prob *= pc[q];
+                if len >= k {
+                    prob *= pci[(qual[i - k] as usize).min(127)];
+                }
+                len += 1;
+                i += 1;
+                if len >= k && prob >= min_prob {
+                    let start = i - k;
+                    let km = crate::libs::kmer::key::Kmer::from_bases(&seq[start..start + k], k)
+                        .expect("N-free window");
+                    keys.extend_from_slice(km.canonical().to_bytes());
+                }
+            }
+        }
+        count::count_keys(keys, k)
+    }
+
+    #[test]
+    fn qual_gated_matches_reference() {
+        let seqs: Vec<Vec<u8>> = (0..8u64)
+            .map(|s| random_block(250 + s as usize * 37, s + 11))
+            .collect();
+        let quals: Vec<Vec<u8>> = seqs
+            .iter()
+            .enumerate()
+            .map(|(i, s)| random_quals(s.len(), 100 + i as u64))
+            .collect();
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        let qrefs: Vec<&[u8]> = quals.iter().map(Vec::as_slice).collect();
+        for min_prob in [0.5f32, 0.9, 0.99, 1.0] {
+            for k in [7usize, 13, 31] {
+                let got = build_table_slices_qual(&refs, &qrefs, k, min_prob).unwrap();
+                let expected = reference_qual_table(&refs, &qrefs, k, min_prob);
+                assert_same_table(&expected, &got);
+            }
+        }
+    }
+
+    #[test]
+    fn qual_gated_zero_min_prob_matches_ungated() {
+        let seqs = [random_block(500, 21), noisy_block(400, 22)];
+        let quals: Vec<Vec<u8>> = seqs.iter().map(|s| random_quals(s.len(), 7)).collect();
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        let qrefs: Vec<&[u8]> = quals.iter().map(Vec::as_slice).collect();
+        for k in [13usize, 31] {
+            let a = build_table_slices(&refs, k).unwrap();
+            let b = build_table_slices_qual(&refs, &qrefs, k, 0.0).unwrap();
+            assert_same_table(&a, &b);
+        }
+    }
+
+    #[test]
+    fn qual_gated_empty_quals_matches_ungated() {
+        let seqs = [random_block(500, 31), noisy_block(400, 32)];
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        for k in [13usize, 31] {
+            let a = build_table_slices(&refs, k).unwrap();
+            let b = build_table_slices_qual(&refs, &[], k, 0.9).unwrap();
+            assert_same_table(&a, &b);
+        }
+    }
+
+    #[test]
+    fn qual_gated_length_mismatch_errors() {
+        let seqs = [random_block(100, 1), random_block(100, 2)];
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        let quals = [random_quals(100, 3)];
+        let qrefs: Vec<&[u8]> = quals.iter().map(Vec::as_slice).collect();
+        assert!(build_table_slices_qual(&refs, &qrefs, 13, 0.9).is_err());
+
+        let one = [random_block(100, 4)];
+        let refs1: Vec<&[u8]> = one.iter().map(Vec::as_slice).collect();
+        let short = [random_quals(99, 5)];
+        let qshort: Vec<&[u8]> = short.iter().map(Vec::as_slice).collect();
+        assert!(build_table_slices_qual(&refs1, &qshort, 13, 0.9).is_err());
+    }
+
+    #[test]
+    fn qual_gated_with_m_matches_default() {
+        let seqs = [random_block(500, 41), noisy_block(400, 42)];
+        let quals: Vec<Vec<u8>> = seqs.iter().map(|s| random_quals(s.len(), 9)).collect();
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        let qrefs: Vec<&[u8]> = quals.iter().map(Vec::as_slice).collect();
+        for k in [13usize, 31] {
+            let a = build_table_slices_qual(&refs, &qrefs, k, 0.9).unwrap();
+            let b =
+                build_table_slices_qual_with_m(&refs, &qrefs, k, minimizer_len(k), 0.9).unwrap();
+            assert_same_table(&a, &b);
+        }
+    }
+
+    #[test]
+    fn qual_gated_all_low_is_empty() {
+        let seq = random_block(300, 51);
+        let refs = [seq.as_slice()];
+        let quals = [vec![0u8; 300]];
+        let qrefs = [quals[0].as_slice()];
+        // q=0 -> correct 0.25; 0.25^13 < 0.99 gates out every window.
+        let table = build_table_slices_qual(&refs, &qrefs, 13, 0.99).unwrap();
+        assert!(table.keys.is_empty());
+        assert!(table.counts.is_empty());
+    }
+
+    #[test]
+    fn qual_gated_mixed_empty_quals() {
+        let seqs = [random_block(300, 61), random_block(400, 62)];
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        // One read without qualities: its windows must all count.
+        let quals: Vec<Vec<u8>> = vec![Vec::new(), random_quals(400, 63)];
+        let qrefs: Vec<&[u8]> = quals.iter().map(Vec::as_slice).collect();
+        for min_prob in [0.9f32, 0.99] {
+            let got = build_table_slices_qual(&refs, &qrefs, 13, min_prob).unwrap();
+            let expected = reference_qual_table(&refs, &qrefs, 13, min_prob);
+            assert_same_table(&expected, &got);
+            // The ungated read alone contributes all 300-13+1 windows.
+            let total: u32 = got.counts.iter().sum();
+            assert!(total >= (300 - 13 + 1) as u32);
         }
     }
 }
