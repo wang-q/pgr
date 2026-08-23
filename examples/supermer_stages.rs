@@ -4,18 +4,21 @@
 //! stage-1 pack / stage-1 sort / stage-2 expand / stage-2 sort breakdown
 //! emitted by `kmer::supermer`. Defaults to the MG1655 20x simulated read
 //! set (150 bp windows, 7 bp stride over 1 Mb); pass a FASTA path as the
-//! first argument to profile real reads instead.
+//! first argument to profile real reads instead, and an optional second
+//! argument (Mb) to scale the simulated region.
 
 use pgr::libs::kmer::supermer;
 use pgr::libs::pgi::build::read_fasta;
 
 fn main() -> anyhow::Result<()> {
-    let (seqs, label) = match std::env::args().nth(1) {
-        Some(path) => {
-            let seqs: Vec<Vec<u8>> = read_fasta(&path)?.into_iter().map(|(_, s)| s).collect();
-            (seqs, path)
+    let arg1 = std::env::args().nth(1);
+    let (seqs, label) = match arg1.as_deref() {
+        Some(path) if !path.bytes().all(|b| b.is_ascii_digit()) => {
+            let seqs: Vec<Vec<u8>> = read_fasta(path)?.into_iter().map(|(_, s)| s).collect();
+            (seqs, path.to_string())
         }
-        None => {
+        mb_arg => {
+            let mb = mb_arg.and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
             let genome = read_fasta(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/tests/genome/mg1655.fa.gz"
@@ -23,13 +26,14 @@ fn main() -> anyhow::Result<()> {
             let contig = genome
                 .iter()
                 .map(|(_, s)| s.as_slice())
-                .find(|s| s.len() >= 1_000_000)
-                .expect("mg1655 has a >= 1 Mb contig");
-            let reads: Vec<Vec<u8>> = (0..1_000_000usize - 150)
+                .find(|s| s.len() >= mb * 1_000_000)
+                .expect("mg1655 has a large enough contig");
+            let end = mb * 1_000_000;
+            let reads: Vec<Vec<u8>> = (0..end - 150)
                 .step_by(7)
                 .map(|p| contig[p..p + 150].to_vec())
                 .collect();
-            (reads, "mg1655 reads20x".to_string())
+            (reads, format!("mg1655 reads20x {mb}Mb"))
         }
     };
     let bases: usize = seqs.iter().map(Vec::len).sum();

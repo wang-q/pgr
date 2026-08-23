@@ -21,6 +21,21 @@
 use super::KmerTable;
 use rayon::prelude::*;
 
+/// Current resident set size in KiB (Linux `/proc`), for `PGR_SUPERMER_TIMING`.
+fn rss_kb() -> u64 {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
+        return 0;
+    };
+    status
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("VmRSS:")
+                .and_then(|v| v.trim().strip_suffix(" kB"))
+                .and_then(|v| v.trim().parse().ok())
+        })
+        .unwrap_or(0)
+}
+
 /// Minimizer length cap (FastK's adaptive `PAD_LEN` typically lands in
 /// 10..=13 after training; the heuristic starts at 5 for small k).
 pub const DEFAULT_M: usize = 12;
@@ -102,175 +117,160 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
         rec_bytes,
         codes: &codes,
     };
-    // Pack in coarse chunks into one contiguous buffer per chunk (FastK
-    // packs per IO block): far fewer allocations than one `Vec` per read.
-    const PACK_CHUNK: usize = 4096;
     let t0 = std::time::Instant::now();
-    let per_chunk: Vec<Vec<u8>> = seqs
-        .par_chunks(PACK_CHUNK)
-        .map(|chunk| {
-            let est = chunk.iter().map(|s| s.as_ref().len()).sum::<usize>();
-            let mut records =
-                Vec::with_capacity(est.saturating_sub(k) / (k - m).max(1) * rec_bytes + rec_bytes);
-            for seq in chunk {
-                pack_sequence_into(seq.as_ref(), &ctx, &mut records);
-            }
-            records
-        })
-        .collect();
+    let (span_recs, span_cts) = pack_spans(seqs, &ctx);
     let pack = t0.elapsed();
     let t1 = std::time::Instant::now();
-    let table = finish_records(per_chunk, &ctx)?;
+    let table = expand_spans(&span_recs, &span_cts, &ctx);
     let finish = t1.elapsed();
     if std::env::var_os("PGR_SUPERMER_TIMING").is_some() {
         eprintln!(
-            "supermer k={k} m={m}: pack={:.3}s finish={:.3}s total={:.3}s",
+            "supermer k={k} m={m}: pack={:.3}s finish={:.3}s total={:.3}s spans={} rss={}MB",
             pack.as_secs_f64(),
             finish.as_secs_f64(),
-            (pack + finish).as_secs_f64()
+            (pack + finish).as_secs_f64(),
+            span_cts.len(),
+            rss_kb() / 1024
         );
     }
     Ok(table)
 }
 
-/// Sort packed super-mer records, group identical spans, and expand them
-/// into weighted canonical k-mers (shared by plain and quality-gated paths).
-fn finish_records(per_chunk: Vec<Vec<u8>>, ctx: &PackCtx) -> anyhow::Result<KmerTable> {
+/// Pack super-mer records in bounded batches, sort + deduplicate each
+/// batch, and merge the per-batch span tables: peak memory is a few chunks'
+/// records plus the deduplicated span table (~unique spans), not all packed
+/// records.
+fn pack_spans<S: AsRef<[u8]> + Sync>(seqs: &[S], ctx: &PackCtx) -> (Vec<u8>, Vec<u32>) {
+    const PACK_CHUNK: usize = 4096;
+    const PACK_BATCH: usize = 16; // concurrently packed chunks
+    let chunks: Vec<&[S]> = seqs.par_chunks(PACK_CHUNK).collect();
+    let mut tables: Vec<(Vec<u8>, Vec<u32>)> = Vec::new();
+    for batch in chunks.chunks(PACK_BATCH) {
+        let batch_tables: Vec<(Vec<u8>, Vec<u32>)> = batch
+            .par_iter()
+            .map(|chunk| {
+                let est = chunk.iter().map(|s| s.as_ref().len()).sum::<usize>();
+                let mut records = Vec::with_capacity(
+                    est.saturating_sub(ctx.k) / (ctx.k - ctx.m).max(1) * ctx.rec_bytes
+                        + ctx.rec_bytes,
+                );
+                for seq in chunk.iter() {
+                    pack_sequence_into(seq.as_ref(), ctx, &mut records);
+                }
+                let n_records = records.len() / ctx.rec_bytes;
+                if n_records == 0 {
+                    return (Vec::new(), Vec::new());
+                }
+                crate::libs::ds::radix_sort::radix_sort_bytes_par(
+                    &mut records,
+                    ctx.rec_bytes,
+                    &mut vec![(); n_records],
+                );
+                compact_table(records, vec![1; n_records], ctx.rec_bytes)
+            })
+            .collect();
+        tables.extend(batch_tables);
+    }
+    merge_tables(tables, ctx.rec_bytes)
+}
+
+/// Merge sorted, deduplicated fixed-width-record tables: concatenate, sort,
+/// and compact (cross-table repeats merge their counts).
+fn merge_tables(tables: Vec<(Vec<u8>, Vec<u32>)>, rec_bytes: usize) -> (Vec<u8>, Vec<u32>) {
+    let n: usize = tables.iter().map(|(r, _)| r.len()).sum();
+    if n == 0 {
+        return (Vec::new(), Vec::new());
+    }
+    let n_records = n / rec_bytes;
+    let mut records = Vec::with_capacity(n);
+    let mut counts = Vec::with_capacity(n_records);
+    for (mut r, mut c) in tables {
+        records.append(&mut r);
+        counts.append(&mut c);
+    }
+    crate::libs::ds::radix_sort::radix_sort_bytes_par(&mut records, rec_bytes, &mut counts);
+    compact_table(records, counts, rec_bytes)
+}
+
+/// Expand the deduplicated span table into weighted canonical k-mers in
+/// bounded batches of blocks: each block's key buffer is sorted and
+/// deduplicated before the next batch, so peak memory is a few blocks' keys
+/// plus the deduplicated key tables, not all emitted keys.
+fn expand_spans(span_recs: &[u8], span_cts: &[u32], ctx: &PackCtx) -> KmerTable {
     let k = ctx.k;
     let key_bytes = k.div_ceil(4);
     let span_bytes = ctx.span_bytes;
     let rec_bytes = ctx.rec_bytes;
-    let n: usize = per_chunk.iter().map(Vec::len).sum();
-    let t0 = std::time::Instant::now();
-    let mut records: Vec<u8> = Vec::with_capacity(n);
-    for mut rec in per_chunk {
-        records.append(&mut rec);
-    }
-    let n_records = records.len() / rec_bytes;
-    if n_records == 0 {
-        return Ok(KmerTable {
+    let n_spans = span_cts.len();
+    if n_spans == 0 {
+        return KmerTable {
             k,
             keys: Vec::new(),
             counts: Vec::new(),
-        });
+        };
     }
-    // Stage 1: sort super-mer records (span + window count), grouping
-    // identical spans.
-    crate::libs::ds::radix_sort::radix_sort_bytes_par(
-        &mut records,
-        rec_bytes,
-        &mut vec![(); n_records],
-    );
-    let sort1 = t0.elapsed();
-    // Stage 2: group identical spans (adjacent after the sort), then expand
-    // each unique span into weighted canonical k-mers. The boundary scan is
-    // a parallel filter over adjacent records; the expansion is parallelized
-    // over coarse blocks of groups (each block appends into its own buffers,
-    // so the writes never overlap).
-    let t1 = std::time::Instant::now();
-    let boundaries: Vec<usize> = (1..n_records)
-        .into_par_iter()
-        .filter(|&i| {
-            records[i * rec_bytes..(i + 1) * rec_bytes]
-                != records[(i - 1) * rec_bytes..i * rec_bytes]
-        })
-        .collect();
-    // Build the group table from the boundary indices without shifting the
-    // array (an `insert(0, ..)` here would move millions of elements).
-    let mut groups: Vec<(usize, u32, usize)> = Vec::with_capacity(boundaries.len() + 1); // (rec, ct, sln)
-    let mut prev = 0usize;
-    for &start in std::iter::once(&0)
-        .chain(boundaries.iter())
-        .chain(std::iter::once(&n_records))
-    {
-        if start != prev {
-            let rec = &records[prev * rec_bytes..(prev + 1) * rec_bytes];
-            let sln = ((rec[span_bytes] as usize) << 8) | rec[span_bytes + 1] as usize;
-            groups.push((prev, (start - prev) as u32, sln));
-            prev = start;
-        }
-    }
-    if groups.is_empty() {
-        return Ok(KmerTable {
-            k,
-            keys: Vec::new(),
-            counts: Vec::new(),
-        });
-    }
-    const EXPAND_CHUNK: usize = 1 << 13; // groups per parallel block
-    let n_blocks = groups.len().div_ceil(EXPAND_CHUNK);
-    let per_block: Vec<(Vec<u8>, Vec<u32>)> = (0..n_blocks)
-        .into_par_iter()
-        .map(|b| {
-            let start = b * EXPAND_CHUNK;
-            let end = (start + EXPAND_CHUNK).min(groups.len());
-            let est: usize = groups[start..end].iter().map(|&(_, _, sln)| sln).sum();
-            let mut keys = Vec::with_capacity(est * key_bytes);
-            let mut weights = Vec::with_capacity(est);
-            for &(ri, ct, _) in &groups[start..end] {
-                expand_span(
-                    &records[ri * rec_bytes..(ri + 1) * rec_bytes],
-                    k,
-                    key_bytes,
-                    span_bytes,
-                    ct,
+    const EXPAND_CHUNK: usize = 1 << 13; // spans per block
+    const BATCH_BLOCKS: usize = 8;
+    let mut tables: Vec<(Vec<u8>, Vec<u32>)> = Vec::new();
+    let mut block_start = 0usize;
+    while block_start < n_spans {
+        let block_end = (block_start + EXPAND_CHUNK * BATCH_BLOCKS).min(n_spans);
+        let blocks: Vec<(usize, usize)> = (block_start..block_end)
+            .step_by(EXPAND_CHUNK)
+            .map(|s| (s, (s + EXPAND_CHUNK).min(block_end)))
+            .collect();
+        let batch_tables: Vec<(Vec<u8>, Vec<u32>)> = blocks
+            .par_iter()
+            .map(|&(gs, ge)| {
+                let est: usize = (gs..ge)
+                    .map(|i| {
+                        let rec = &span_recs[i * rec_bytes..(i + 1) * rec_bytes];
+                        ((rec[span_bytes] as usize) << 8) | rec[span_bytes + 1] as usize
+                    })
+                    .sum();
+                let mut keys = Vec::with_capacity(est * key_bytes);
+                let mut weights = Vec::with_capacity(est);
+                for (i, &ct) in span_cts[gs..ge].iter().enumerate() {
+                    expand_span(
+                        &span_recs[(gs + i) * rec_bytes..(gs + i + 1) * rec_bytes],
+                        k,
+                        key_bytes,
+                        span_bytes,
+                        ct,
+                        &mut keys,
+                        &mut weights,
+                    );
+                }
+                debug_assert_eq!(keys.len(), weights.len() * key_bytes);
+                crate::libs::ds::radix_sort::radix_sort_bytes_par(
                     &mut keys,
+                    key_bytes,
                     &mut weights,
                 );
-            }
-            (keys, weights)
-        })
-        .collect();
-    let expand = t1.elapsed();
-    let n_entries: usize = per_block.iter().map(|(k, _)| k.len() / key_bytes).sum();
-    let t2 = std::time::Instant::now();
+                compact_table(keys, weights, key_bytes)
+            })
+            .collect();
+        tables.extend(batch_tables);
+        block_start = block_end;
+    }
+    let n_entries: usize = tables.iter().map(|(k, _)| k.len() / key_bytes).sum();
     let mut keys: Vec<u8> = Vec::with_capacity(n_entries * key_bytes);
     let mut weights: Vec<u32> = Vec::with_capacity(n_entries);
-    for (mut kb, mut wb) in per_block {
+    for (mut kb, mut wb) in tables {
         keys.append(&mut kb);
         weights.append(&mut wb);
     }
     debug_assert_eq!(keys.len(), weights.len() * key_bytes);
-    if n_entries == 0 {
-        return Ok(KmerTable {
+    if keys.is_empty() {
+        return KmerTable {
             k,
             keys: Vec::new(),
             counts: Vec::new(),
-        });
+        };
     }
     crate::libs::ds::radix_sort::radix_sort_bytes_par(&mut keys, key_bytes, &mut weights);
-    // Sum weights of equal canonical keys (deduplicating the key buffer, same
-    // compaction as `count::count_keys`).
-    let mut counts: Vec<u32> = Vec::with_capacity(n_entries);
-    let mut w = 0usize;
-    let mut idx = 0usize;
-    while idx < n_entries {
-        let mut j = idx + 1;
-        while j < n_entries
-            && keys[j * key_bytes..(j + 1) * key_bytes]
-                == keys[idx * key_bytes..(idx + 1) * key_bytes]
-        {
-            j += 1;
-        }
-        let sum: u64 = weights[idx..j].iter().map(|&c| c as u64).sum();
-        if w != idx {
-            keys.copy_within(idx * key_bytes..(idx + 1) * key_bytes, w * key_bytes);
-        }
-        counts.push(sum.min(u32::MAX as u64) as u32);
-        w += 1;
-        idx = j;
-    }
-    keys.truncate(w * key_bytes);
-    let sort2 = t2.elapsed();
-    if std::env::var_os("PGR_SUPERMER_TIMING").is_some() {
-        eprintln!(
-            "  sort1={:.3}s expand={:.3}s sort2={:.3}s spans={n_records} emitted={n_entries}",
-            sort1.as_secs_f64(),
-            expand.as_secs_f64(),
-            sort2.as_secs_f64()
-        );
-    }
-    Ok(KmerTable { k, keys, counts })
+    let (keys, counts) = compact_table(keys, weights, key_bytes);
+    KmerTable { k, keys, counts }
 }
 
 /// Quality-gated two-stage count; `min_prob <= 0.0` or empty qualities fall
@@ -320,31 +320,68 @@ fn build_impl_qual(
         codes: &codes,
     };
     let (prob_correct, prob_correct_inv) = prob_tables();
-    // Pack in coarse chunks into one contiguous buffer per chunk (FastK
-    // packs per IO block): far fewer allocations than one `Vec` per read.
+    let (span_recs, span_cts) = pack_spans_qual(
+        seqs,
+        quals,
+        &ctx,
+        min_prob,
+        &prob_correct,
+        &prob_correct_inv,
+    );
+    Ok(expand_spans(&span_recs, &span_cts, &ctx))
+}
+
+/// Quality-gated variant of [`pack_spans`] (anchr `min_prob` semantics).
+fn pack_spans_qual(
+    seqs: &[&[u8]],
+    quals: &[&[u8]],
+    ctx: &PackCtx,
+    min_prob: f32,
+    prob_correct: &[f32; 128],
+    prob_correct_inv: &[f32; 128],
+) -> (Vec<u8>, Vec<u32>) {
     const PACK_CHUNK: usize = 4096;
-    let per_chunk: Vec<Vec<u8>> = seqs
+    const PACK_BATCH: usize = 16;
+    let chunks = seqs
         .par_chunks(PACK_CHUNK)
         .zip(quals.par_chunks(PACK_CHUNK))
-        .map(|(seq_chunk, qual_chunk)| {
-            let est = seq_chunk.iter().map(|s| s.len()).sum::<usize>();
-            let mut records =
-                Vec::with_capacity(est.saturating_sub(k) / (k - m).max(1) * rec_bytes + rec_bytes);
-            for (seq, qual) in seq_chunk.iter().zip(qual_chunk) {
-                pack_sequence_into_qual(
-                    seq,
-                    qual,
-                    &ctx,
-                    min_prob,
-                    &prob_correct,
-                    &prob_correct_inv,
-                    &mut records,
+        .collect::<Vec<_>>();
+    let mut tables: Vec<(Vec<u8>, Vec<u32>)> = Vec::new();
+    for batch in chunks.chunks(PACK_BATCH) {
+        let batch_tables: Vec<(Vec<u8>, Vec<u32>)> = batch
+            .par_iter()
+            .map(|&(seq_chunk, qual_chunk)| {
+                let est = seq_chunk.iter().map(|s| s.len()).sum::<usize>();
+                let mut records = Vec::with_capacity(
+                    est.saturating_sub(ctx.k) / (ctx.k - ctx.m).max(1) * ctx.rec_bytes
+                        + ctx.rec_bytes,
                 );
-            }
-            records
-        })
-        .collect();
-    finish_records(per_chunk, &ctx)
+                for (seq, qual) in seq_chunk.iter().zip(qual_chunk) {
+                    pack_sequence_into_qual(
+                        seq,
+                        qual,
+                        ctx,
+                        min_prob,
+                        prob_correct,
+                        prob_correct_inv,
+                        &mut records,
+                    );
+                }
+                let n_records = records.len() / ctx.rec_bytes;
+                if n_records == 0 {
+                    return (Vec::new(), Vec::new());
+                }
+                crate::libs::ds::radix_sort::radix_sort_bytes_par(
+                    &mut records,
+                    ctx.rec_bytes,
+                    &mut vec![(); n_records],
+                );
+                compact_table(records, vec![1; n_records], ctx.rec_bytes)
+            })
+            .collect();
+        tables.extend(batch_tables);
+    }
+    merge_tables(tables, ctx.rec_bytes)
 }
 
 /// Fixed parameters shared by the per-sequence packers.
@@ -630,6 +667,33 @@ fn expand_span(
         win_rc.push_left(3 - b);
         emit_canonical(&win, &win_rc, ct, keys, weights);
     }
+}
+
+/// Sort-adjacent dedup: sum the weights of equal keys, compacting in place
+/// (the same accumulation as `count::count_keys`' group tail).
+fn compact_table(mut keys: Vec<u8>, weights: Vec<u32>, key_bytes: usize) -> (Vec<u8>, Vec<u32>) {
+    let n = keys.len() / key_bytes;
+    let mut counts = Vec::with_capacity(n);
+    let mut w = 0usize;
+    let mut idx = 0usize;
+    while idx < n {
+        let mut j = idx + 1;
+        while j < n
+            && keys[j * key_bytes..(j + 1) * key_bytes]
+                == keys[idx * key_bytes..(idx + 1) * key_bytes]
+        {
+            j += 1;
+        }
+        let sum: u64 = weights[idx..j].iter().map(|&c| c as u64).sum();
+        if w != idx {
+            keys.copy_within(idx * key_bytes..(idx + 1) * key_bytes, w * key_bytes);
+        }
+        counts.push(sum.min(u32::MAX as u64) as u32);
+        w += 1;
+        idx = j;
+    }
+    keys.truncate(w * key_bytes);
+    (keys, counts)
 }
 
 /// Canonical emit matching `canonical_keys` (first-half-byte comparison).
