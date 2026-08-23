@@ -95,6 +95,25 @@ pub fn count_keys(mut keys: Vec<u8>, k: usize) -> KmerTable {
     KmerTable { k, keys, counts }
 }
 
+/// Sorts packed raw canonical key chunks (with duplicates) into a count table.
+///
+/// Each chunk must hold a whole number of `ceil(k/4)`-byte keys; the output
+/// is byte-identical to [`count_keys`] on their concatenation.
+pub fn count_keys_slices(chunks: &[&[u8]], k: usize) -> KmerTable {
+    let key_bytes = k.div_ceil(4);
+    let n: usize = chunks.iter().map(|c| c.len()).sum();
+    let mut keys = Vec::with_capacity(n);
+    for chunk in chunks {
+        debug_assert_eq!(
+            chunk.len() % key_bytes,
+            0,
+            "chunk is not a whole number of {key_bytes}-byte keys"
+        );
+        keys.extend_from_slice(chunk);
+    }
+    count_keys(keys, k)
+}
+
 /// Write `table` to `path` (`.pkt`) atomically: header (bincode) plus one
 /// packed key of `ceil(2k/8)` bytes and a `u32` count per entry.
 pub fn save(table: &KmerTable, path: &Path) -> anyhow::Result<()> {
@@ -289,6 +308,75 @@ mod tests {
         let lower = build_table(&[b"aaaa".to_vec()], 2).unwrap();
         assert_eq!(table.keys, lower.keys);
         assert_eq!(table.counts, lower.counts);
+    }
+
+    #[test]
+    fn count_keys_slices_matches_count_keys() {
+        let seqs = [
+            random_block(300, 1),
+            random_block(250, 2),
+            random_block(400, 3),
+        ];
+        let k: usize = 13;
+        let mut chunks: Vec<Vec<u8>> = Vec::new();
+        let mut merged = Vec::new();
+        for seq in &seqs {
+            let mut raw = Vec::new();
+            crate::libs::kmer::canonical_keys(seq, k, |_, km| {
+                raw.extend_from_slice(km.to_bytes());
+            });
+            merged.extend_from_slice(&raw);
+            chunks.push(raw);
+        }
+        let expected = count_keys(merged, k);
+        let slices: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
+        let got = count_keys_slices(&slices, k);
+        assert_eq!(got.k, expected.k);
+        assert_eq!(got.keys, expected.keys);
+        assert_eq!(got.counts, expected.counts);
+    }
+
+    #[test]
+    fn count_keys_slices_split_at_key_boundaries() {
+        let seq = random_block(1000, 7);
+        let k: usize = 21;
+        let key_bytes = k.div_ceil(4);
+        let mut raw = Vec::new();
+        crate::libs::kmer::canonical_keys(&seq, k, |_, km| {
+            raw.extend_from_slice(km.to_bytes());
+        });
+        let expected = count_keys(raw.clone(), k);
+
+        // Split at whole-key boundaries into uneven chunks, including the tail.
+        let step = key_bytes * 7;
+        let mut chunks = Vec::new();
+        let mut i = 0;
+        while i + step <= raw.len() {
+            chunks.push(&raw[i..i + step]);
+            i += step;
+        }
+        if i < raw.len() {
+            chunks.push(&raw[i..]);
+        }
+        assert!(chunks.len() > 1);
+
+        let got = count_keys_slices(&chunks, k);
+        assert_eq!(got.keys, expected.keys);
+        assert_eq!(got.counts, expected.counts);
+    }
+
+    #[test]
+    fn count_keys_slices_empty() {
+        let table = count_keys_slices(&[], 15);
+        assert_eq!(table.k, 15);
+        assert!(table.keys.is_empty());
+        assert!(table.counts.is_empty());
+
+        let empty_chunks = [b"" as &[u8], b""];
+        let table = count_keys_slices(&empty_chunks, 15);
+        assert_eq!(table.k, 15);
+        assert!(table.keys.is_empty());
+        assert!(table.counts.is_empty());
     }
 
     #[test]
