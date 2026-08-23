@@ -86,8 +86,8 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
         super::key::Kmer::MAX_K
     );
     anyhow::ensure!(
-        m >= 2 && m < k,
-        "minimizer length m must be in 2..=k-1, got m={m} for k={k}"
+        (2..=16).contains(&m) && m < k,
+        "minimizer length m must be in 2..=min(16, k-1), got m={m} for k={k}"
     );
     // A span is at most 2k - m bases (m_pos - s <= k - m and the run closes
     // once q - m_pos >= k - m + 1); the +1 leaves slack for the re-scan.
@@ -105,6 +105,7 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
     // Pack in coarse chunks into one contiguous buffer per chunk (FastK
     // packs per IO block): far fewer allocations than one `Vec` per read.
     const PACK_CHUNK: usize = 4096;
+    let t0 = std::time::Instant::now();
     let per_chunk: Vec<Vec<u8>> = seqs
         .par_chunks(PACK_CHUNK)
         .map(|chunk| {
@@ -117,7 +118,19 @@ fn build_impl<S: AsRef<[u8]> + Sync>(seqs: &[S], k: usize, m: usize) -> anyhow::
             records
         })
         .collect();
-    finish_records(per_chunk, &ctx)
+    let pack = t0.elapsed();
+    let t1 = std::time::Instant::now();
+    let table = finish_records(per_chunk, &ctx)?;
+    let finish = t1.elapsed();
+    if std::env::var_os("PGR_SUPERMER_TIMING").is_some() {
+        eprintln!(
+            "supermer k={k} m={m}: pack={:.3}s finish={:.3}s total={:.3}s",
+            pack.as_secs_f64(),
+            finish.as_secs_f64(),
+            (pack + finish).as_secs_f64()
+        );
+    }
+    Ok(table)
 }
 
 /// Sort packed super-mer records, group identical spans, and expand them
@@ -128,6 +141,7 @@ fn finish_records(per_chunk: Vec<Vec<u8>>, ctx: &PackCtx) -> anyhow::Result<Kmer
     let span_bytes = ctx.span_bytes;
     let rec_bytes = ctx.rec_bytes;
     let n: usize = per_chunk.iter().map(Vec::len).sum();
+    let t0 = std::time::Instant::now();
     let mut records: Vec<u8> = Vec::with_capacity(n);
     for mut rec in per_chunk {
         records.append(&mut rec);
@@ -147,11 +161,13 @@ fn finish_records(per_chunk: Vec<Vec<u8>>, ctx: &PackCtx) -> anyhow::Result<Kmer
         rec_bytes,
         &mut vec![(); n_records],
     );
+    let sort1 = t0.elapsed();
     // Stage 2: group identical spans (adjacent after the sort), then expand
     // each unique span into weighted canonical k-mers. The boundary scan is
     // a parallel filter over adjacent records; the expansion is parallelized
     // over coarse blocks of groups (each block appends into its own buffers,
     // so the writes never overlap).
+    let t1 = std::time::Instant::now();
     let boundaries: Vec<usize> = (1..n_records)
         .into_par_iter()
         .filter(|&i| {
@@ -205,7 +221,9 @@ fn finish_records(per_chunk: Vec<Vec<u8>>, ctx: &PackCtx) -> anyhow::Result<Kmer
             (keys, weights)
         })
         .collect();
+    let expand = t1.elapsed();
     let n_entries: usize = per_block.iter().map(|(k, _)| k.len() / key_bytes).sum();
+    let t2 = std::time::Instant::now();
     let mut keys: Vec<u8> = Vec::with_capacity(n_entries * key_bytes);
     let mut weights: Vec<u32> = Vec::with_capacity(n_entries);
     for (mut kb, mut wb) in per_block {
@@ -243,6 +261,15 @@ fn finish_records(per_chunk: Vec<Vec<u8>>, ctx: &PackCtx) -> anyhow::Result<Kmer
         idx = j;
     }
     keys.truncate(w * key_bytes);
+    let sort2 = t2.elapsed();
+    if std::env::var_os("PGR_SUPERMER_TIMING").is_some() {
+        eprintln!(
+            "  sort1={:.3}s expand={:.3}s sort2={:.3}s spans={n_records} emitted={n_entries}",
+            sort1.as_secs_f64(),
+            expand.as_secs_f64(),
+            sort2.as_secs_f64()
+        );
+    }
     Ok(KmerTable { k, keys, counts })
 }
 
@@ -261,8 +288,8 @@ fn build_impl_qual(
         super::key::Kmer::MAX_K
     );
     anyhow::ensure!(
-        m >= 2 && m < k,
-        "minimizer length m must be in 2..=k-1, got m={m} for k={k}"
+        (2..=16).contains(&m) && m < k,
+        "minimizer length m must be in 2..=min(16, k-1), got m={m} for k={k}"
     );
     if min_prob <= 0.0 || quals.is_empty() {
         return build_impl(seqs, k, m);
@@ -841,6 +868,25 @@ mod tests {
             assert_same_table(&a, &b);
             let d = build_table_with_m(&seqs, k, 8).unwrap();
             assert_same_table(&c, &d);
+        }
+    }
+
+    /// The minimizer length only affects stage-1 collapse, never the output:
+    /// every valid window is expanded exactly once regardless of the run
+    /// partition, so any legal `m` yields a byte-identical table. This is
+    /// the basis for reusing a fixed-m minimizer extraction across k.
+    #[test]
+    fn output_independent_of_minimizer() {
+        let seqs = [random_block(500, 91), noisy_block(400, 92)];
+        let refs: Vec<&[u8]> = seqs.iter().map(Vec::as_slice).collect();
+        for k in [13usize, 21, 31, 61] {
+            let base = build_table_slices(&refs, k).unwrap();
+            // m <= 16 keeps the packed m-mer inside u32 (2m bits); larger m
+            // is rejected by the API's validation.
+            for m in 2..=k.min(16).min(k - 1) {
+                let t = build_table_slices_with_m(&refs, k, m).unwrap();
+                assert_same_table(&base, &t);
+            }
         }
     }
 
