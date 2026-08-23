@@ -84,6 +84,7 @@ pub fn open_input(infile: &str, is_bgzf: bool) -> anyhow::Result<Input> {
 /// Open a FASTA file with .loc index for random access.
 /// Creates the .loc index if it doesn't exist, if `force_update` is true, or
 /// if the existing index is older than the FASTA file (stale index).
+/// Also builds the `.gzi` index for BGZF inputs under the same rules.
 /// Returns the Input reader and the loaded .loc index.
 #[allow(clippy::type_complexity)]
 pub fn open_indexed(
@@ -94,35 +95,50 @@ pub fn open_indexed(
     let loc_file = format!("{}.loc", infile);
     if !std::path::Path::new(&loc_file).is_file()
         || force_update
-        || !loc_is_fresh(infile, &loc_file)
+        || !index_is_fresh(infile, &loc_file)
     {
         create_loc(infile, &loc_file, is_bgzf)?;
+    }
+    if is_bgzf {
+        ensure_gzi(infile, force_update)?;
     }
     let loc_of = load_loc(&loc_file)?;
     let reader = open_input(infile, is_bgzf)?;
     Ok((reader, loc_of))
 }
 
-/// True when the `.loc` index exists and is not older than the FASTA file.
+/// True when the sidecar index exists and is not older than the data file.
 ///
-/// A stale index (e.g. the FASTA was edited after the index was built) would
+/// A stale index (e.g. the file was edited after the index was built) would
 /// serve wrong offsets/sizes, so callers rebuild it instead.
-fn loc_is_fresh(infile: &str, loc_file: &str) -> bool {
-    let Ok(fa_meta) = std::fs::metadata(infile) else {
+fn index_is_fresh(data_file: &str, index_file: &str) -> bool {
+    let Ok(data_meta) = std::fs::metadata(data_file) else {
         return false;
     };
-    let Ok(loc_meta) = std::fs::metadata(loc_file) else {
+    let Ok(index_meta) = std::fs::metadata(index_file) else {
         return false;
     };
-    if !loc_meta.is_file() {
+    if !index_meta.is_file() {
         return false;
     }
-    match (fa_meta.modified(), loc_meta.modified()) {
-        (Ok(fa_m), Ok(loc_m)) => loc_m >= fa_m,
+    match (data_meta.modified(), index_meta.modified()) {
+        (Ok(data_m), Ok(index_m)) => index_m >= data_m,
         // mtimes unavailable (e.g. unusual filesystems): keep the existing
         // index rather than rebuilding on every call.
         _ => true,
     }
+}
+
+/// Builds the `.gzi` sidecar for a BGZF `infile` when missing, stale, or forced.
+fn ensure_gzi(infile: &str, force_update: bool) -> anyhow::Result<()> {
+    let gzi_file = format!("{}.gzi", infile);
+    if !std::path::Path::new(&gzi_file).is_file()
+        || force_update
+        || !index_is_fresh(infile, &gzi_file)
+    {
+        crate::libs::bgzf::build_gzi_index(infile)?;
+    }
+    Ok(())
 }
 
 pub fn load_loc(loc_file: &str) -> anyhow::Result<IndexMap<String, (u64, usize)>> {
@@ -429,7 +445,7 @@ pub fn create_fq_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Resu
 }
 
 /// Opens a FASTQ file with its `.loc` index, building/rebuilding the index
-/// when missing, stale, or forced.
+/// when missing, stale, or forced; BGZF inputs also get a `.gzi` sidecar.
 #[allow(clippy::type_complexity)]
 pub fn open_fq_indexed(
     infile: &str,
@@ -445,9 +461,12 @@ pub fn open_fq_indexed(
     let loc_file = format!("{}.loc", infile);
     if !std::path::Path::new(&loc_file).is_file()
         || force_update
-        || !loc_is_fresh(infile, &loc_file)
+        || !index_is_fresh(infile, &loc_file)
     {
         create_fq_loc(infile, &loc_file, is_bgzf)?;
+    }
+    if is_bgzf {
+        ensure_gzi(infile, force_update)?;
     }
     let loc_of = load_loc(&loc_file)?;
     let reader = open_input(infile, is_bgzf)?;
@@ -477,7 +496,74 @@ pub fn query_fq_locs<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::libs::bgzf::writer::BgzfWriter;
     use std::time::{Duration, SystemTime};
+
+    fn write_bgzf(path: &std::path::Path, data: &[u8]) {
+        let mut writer = BgzfWriter::new(std::fs::File::create(path).unwrap()).unwrap();
+        writer.write_all(data).unwrap();
+        writer.finish().unwrap();
+    }
+
+    fn bgzf_fa(seq: &[u8]) -> Vec<u8> {
+        let mut data = b">chr1\n".to_vec();
+        data.extend_from_slice(seq);
+        data.push(b'\n');
+        data
+    }
+
+    /// A missing `.gzi` is built before the BGZF reader opens.
+    #[test]
+    fn bgzf_fa_open_indexed_builds_gzi() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa.gz");
+        write_bgzf(&fa, &bgzf_fa(&"ACGT".repeat(20_000).into_bytes()));
+
+        let (mut reader, loc_of) = open_indexed(fa.to_str().unwrap(), false).unwrap();
+        let gzi = crate::libs::bgzf::GziIndex::read(format!("{}.gzi", fa.display())).unwrap();
+        assert!(!gzi.is_empty());
+        let seq = fetch_range_seq(&mut reader, &loc_of, &Range::from("chr1", 1, 100)).unwrap();
+        assert_eq!(seq, "ACGT".repeat(25));
+    }
+
+    /// A `.gzi` older than its BGZF file is rebuilt, like the `.loc` sidecar.
+    #[test]
+    fn bgzf_fa_stale_gzi_is_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa.gz");
+        write_bgzf(&fa, &bgzf_fa(&"ACGT".repeat(20_000).into_bytes()));
+        let (mut reader, loc_of) = open_indexed(fa.to_str().unwrap(), false).unwrap();
+        let seq = fetch_range_seq(&mut reader, &loc_of, &Range::from("chr1", 1, 100)).unwrap();
+        assert_eq!(seq, "ACGT".repeat(25));
+
+        // Rewrite with different content (same length) and age the `.gzi`.
+        write_bgzf(&fa, &bgzf_fa(&"TGCA".repeat(20_000).into_bytes()));
+        std::fs::File::open(format!("{}.gzi", fa.display()))
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(10))
+            .unwrap();
+
+        let (mut reader, loc_of) = open_indexed(fa.to_str().unwrap(), false).unwrap();
+        let seq = fetch_range_seq(&mut reader, &loc_of, &Range::from("chr1", 1, 100)).unwrap();
+        assert_eq!(seq, "TGCA".repeat(25));
+    }
+
+    #[test]
+    fn bgzf_fq_open_indexed_builds_gzi() {
+        let dir = tempfile::tempdir().unwrap();
+        let fq = dir.path().join("r.fq.gz");
+        let data = format!(
+            "@r1\n{}\n+\n{}\n",
+            "ACGT".repeat(20_000),
+            "I".repeat(80_000)
+        );
+        write_bgzf(&fq, data.as_bytes());
+
+        let (_, loc_of) = open_fq_indexed(fq.to_str().unwrap(), false).unwrap();
+        let gzi = crate::libs::bgzf::GziIndex::read(format!("{}.gzi", fq.display())).unwrap();
+        assert!(!gzi.is_empty());
+        assert!(loc_of.contains_key("r1"));
+    }
 
     /// Regression: a `.loc` index older than its FASTA was served as-is, so
     /// an edited genome returned stale offsets/sizes (slice errors, or worse,
