@@ -429,7 +429,10 @@ fn pack_sequence_into_qual(
                 if len >= k && prob < min_prob {
                     let win_start = i - k;
                     if win_start > seg_start {
-                        pack_run(seq, seg_start, win_start, ctx, records);
+                        // Segment windows [seg_start, win_start), covering
+                        // bases [seg_start, win_start + k - 1); the end must
+                        // include the last window's final k-1 bases.
+                        pack_run(seq, seg_start, win_start + k - 1, ctx, records);
                     }
                     seg_start = win_start + 1;
                 }
@@ -995,6 +998,30 @@ mod tests {
             // The ungated read alone contributes all 300-13+1 windows.
             let total: u32 = got.counts.iter().sum();
             assert!(total >= (300 - 13 + 1) as u32);
+        }
+    }
+
+    /// Alternating valid/invalid windows: a q=0 base drags the k windows
+    /// containing it below `min_prob`, producing adjacent valid -> invalid
+    /// -> valid transitions and single-window segments. The ungated
+    /// high-quality windows are every `k+1`-th window, all others gated out.
+    #[test]
+    fn qual_gated_alternating_validity() {
+        let seq = random_block(400, 71);
+        let k = 7usize;
+        let mut qual = vec![40u8; seq.len()];
+        for i in (k..seq.len()).step_by(k + 1) {
+            qual[i] = 0;
+        }
+        let refs = [seq.as_slice()];
+        let qrefs = [qual.as_slice()];
+        for min_prob in [0.9f32, 0.95, 0.99] {
+            let got = build_table_slices_qual(&refs, &qrefs, k, min_prob).unwrap();
+            let expected = reference_qual_table(&refs, &qrefs, k, min_prob);
+            assert_same_table(&expected, &got);
+            // Valid windows are the multiples of k+1 (0, 8, 16, ... <= len-k).
+            let total: u32 = got.counts.iter().sum();
+            assert_eq!(total as usize, (seq.len() - k) / (k + 1) + 1);
         }
     }
 }
